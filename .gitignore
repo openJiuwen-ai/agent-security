@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Node.js / Frontend
+**/node_modules/
+dist/
+build/
+
+# Environment files
+.env
+.env_personal
+!.env.example
+
+# Apple code signing & notarization secrets — NEVER commit (contains private keys!)
+*.p12
+*.cer
+*.mobileprovision
+AuthKey_*.p8
+DeveloperID_backup.p12
+developerID_application.cer
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+.claude
+**/CLAUDE.md
+**/CLAUDE.local.md
+**/JIUWENCLAW.local.md
+**/JIUWENCLAW.md
+.jiuwen/settings.local.json
+workspace/agent-data.json
+
+# logs
+logs/
+
+# Browser automation runtime artifacts
+.browser/
+.browser-profiles/
+.playwright-mcp/
+
+# workspace
+workspace/session
+workspace/agent/memory/*.db
+workspace/agent/memory/*.db-shm
+workspace/agent/memory/*.db-wal
+
+.crossnote/
+.trae/
+
+# Build-time Node runtime cache used by packaging scripts.
+vendor/node/
