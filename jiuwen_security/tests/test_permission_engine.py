@@ -8,9 +8,11 @@ import pytest
 
 from jiuwen_security import PermissionEngine, PermissionLevel, PermissionResult
 from jiuwen_security.policy.component import PermissionComponent
+from jiuwen_security.policy.routing import CommandDialect, RouteInterest, SecurityTarget
 
 
 class ResultComponent:
+    interests = None
     def __init__(self, result: PermissionResult) -> None:
         self.result = result
         self.configured: list[dict[str, object]] = []
@@ -23,6 +25,18 @@ class ResultComponent:
         tool_name: str,
         tool_args: Mapping[str, object],
     ) -> PermissionResult:
+        return self.result
+
+
+class RouteComponent(ResultComponent):
+    interests = (RouteInterest(SecurityTarget.COMMAND, CommandDialect.POSIX_SHELL),)
+
+    def __init__(self, result: PermissionResult) -> None:
+        super().__init__(result)
+        self.routes = []
+
+    async def evaluate(self, tool_name, tool_args, route=None):
+        self.routes.append(route)
         return self.result
 
 
@@ -84,3 +98,24 @@ def test_invalid_input_is_rejected() -> None:
         asyncio_run(engine.check_permission("", {}))
     with pytest.raises(TypeError):
         asyncio_run(engine.check_permission("bash", []))  # type: ignore[arg-type]
+
+
+def test_route_aware_component_receives_matching_route() -> None:
+    component = RouteComponent(PermissionResult(permission=PermissionLevel.DENY))
+    engine = ComponentEngine(component)
+
+    result = asyncio_run(engine.check_permission("bash", {"command": "echo hi"}))
+
+    assert result.permission is PermissionLevel.DENY
+    assert component.routes[0].target is SecurityTarget.COMMAND
+    assert component.routes[0].command_dialect is CommandDialect.POSIX_SHELL
+
+
+def test_route_interest_skips_non_matching_component() -> None:
+    component = RouteComponent(PermissionResult(permission=PermissionLevel.DENY))
+    engine = ComponentEngine(component)
+
+    result = asyncio_run(engine.check_permission("read_file", {"path": "a.txt"}))
+
+    assert result.permission is PermissionLevel.ASK
+    assert component.routes == []
