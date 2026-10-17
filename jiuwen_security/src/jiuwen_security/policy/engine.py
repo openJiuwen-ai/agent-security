@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+import inspect
 from typing import Any
 
 from .component import PermissionComponent
 from .models import PermissionLevel, PermissionResult
+from .routing import RouteContext, resolve_route, route_matches
 
 
 class PermissionEngine:
@@ -58,13 +60,35 @@ class PermissionEngine:
         if not isinstance(tool_args, Mapping):
             raise TypeError("tool_args must be a mapping")
 
+        route = resolve_route(tool_name, tool_args)
         results: list[PermissionResult] = []
         for component in self._components:
-            result = await component.evaluate(tool_name, tool_args)
+            if not route_matches(route, getattr(component, "interests", None)):
+                continue
+            result = await self._evaluate_component(component, tool_name, tool_args, route)
             if result is not None:
                 results.append(result)
 
         return self._merge_results(results)
+
+    @staticmethod
+    async def _evaluate_component(
+        component: PermissionComponent,
+        tool_name: str,
+        tool_args: Mapping[str, Any],
+        route: RouteContext,
+    ) -> PermissionResult | None:
+        """Call new route-aware components and retain old two-argument ones."""
+
+        evaluate = component.evaluate
+        parameters = inspect.signature(evaluate).parameters
+        accepts_route = "route" in parameters or any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters.values()
+        )
+        if accepts_route:
+            return await evaluate(tool_name, tool_args, route=route)
+        return await evaluate(tool_name, tool_args)
 
     def update_config(self, config: Mapping[str, Any]) -> None:
         """Reconfigure all components using one complete configuration."""

@@ -3,10 +3,20 @@
 from .policy.component import PermissionComponent
 from .policy.engine import PermissionEngine
 from .policy.models import PermissionLevel, PermissionResult
+from .policy.routing import (
+    CommandDialect,
+    RouteContext,
+    RouteInterest,
+    SecurityTarget,
+)
 
 __all__ = [
     "PermissionComponent",
     "PermissionEngine",
     "PermissionLevel",
     "PermissionResult",
+    "CommandDialect",
+    "RouteContext",
+    "RouteInterest",
+    "SecurityTarget",
 ]
