@@ -17,6 +17,23 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 
+def read_policy_text(path: str | Path) -> str:
+    """Read a policy YAML file as text with cross-platform encoding handling.
+
+    Prefers UTF-8 (the canonical encoding for jiuwenbox policy files).
+    On Windows the default locale encoding is often GBK, so a policy file
+    written elsewhere may ``UnicodeDecodeError`` under a plain ``open``.
+    Fall back to UTF-8-sig / GB18030 / the ANSI code page before giving up.
+    """
+    raw = Path(path).read_bytes()
+    for enc in ("utf-8", "utf-8-sig", "gb18030", "mbcs"):
+        try:
+            return raw.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
 class PolicyValidationError(Exception):
     """Raised when a policy fails validation."""
 
@@ -296,8 +313,7 @@ class PolicyEngine:
     @staticmethod
     def load_policy_from_file(path: str | Path) -> SecurityPolicy:
         """Load a SecurityPolicy from a YAML file."""
-        with open(path) as f:
-            data = yaml.safe_load(f)
+        data = yaml.safe_load(read_policy_text(path))
         return SecurityPolicy.model_validate(data)
 
     def get_sandbox_policy_path(self, sandbox_id: str) -> Path | None:

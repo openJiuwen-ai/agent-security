@@ -35,12 +35,63 @@ def _mgr():
     return get_manager()
 
 
+@router.get("/capabilities")
+async def capabilities():
+    """Report the server's supported runtime backends and their capabilities.
+
+    Used for pre-deployment probing (design doc section 5.3 rule 4). A
+    runtime that cannot be loaded on this host is reported as unavailable
+    rather than silently listed.
+    """
+    from jiuwenbox.server.runtime.registry import (
+        available_runtime_names,
+        load_runtime_class,
+        resolve_runtime_name,
+    )
+
+    result: dict[str, Any] = {
+        "default_runtime": resolve_runtime_name(None),
+        "runtimes": {},
+    }
+    for name in ("bubblewrap", "windows", "conch"):
+        if name not in available_runtime_names():
+            result["runtimes"][name] = {"available": False}
+            continue
+        try:
+            cls = load_runtime_class(name)
+            caps = cls().capabilities()
+            result["runtimes"][name] = {
+                "available": True,
+                "capabilities": {
+                    field: getattr(caps, field)
+                    for field in (
+                        "local_pid",
+                        "background_jobs",
+                        "fast_file_io",
+                        "recursive_search",
+                        "live_policy_update",
+                        "network_identity",
+                        "filesystem_acl",
+                        "process_tree_containment",
+                        "egress_filter",
+                        "soft_delete",
+                    )
+                },
+            }
+        except Exception as exc:  # noqa: BLE001
+            result["runtimes"][name] = {"available": False, "error": str(exc)}
+    return result
+
+
 class CreateSandboxRequest(BaseModel):
     command: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     policy: dict[str, Any] | None = None
     policy_mode: PolicyMode = PolicyMode.OVERRIDE
     sandbox_id: str | None = None
+    #: Explicit runtime backend selection (``bubblewrap`` / ``windows`` /
+    #: ``conch``); defaults to the server default / platform default.
+    sandbox_runtime: str | None = None
 
 
 class ExecRequest(BaseModel):
@@ -65,7 +116,11 @@ async def create_sandbox(request: CreateSandboxRequest):
         sandbox_id = None
     else:
         sandbox_id = request.sandbox_id
-    spec = SandboxSpec(env=request.env, sandbox_id=sandbox_id)
+    spec = SandboxSpec(
+        env=request.env,
+        sandbox_id=sandbox_id,
+        sandbox_runtime=request.sandbox_runtime,
+    )
     return await _mgr().create_sandbox(
         spec,
         policy_data=request.policy,

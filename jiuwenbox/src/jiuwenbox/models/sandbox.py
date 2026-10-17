@@ -83,6 +83,10 @@ class SandboxSpec(BaseModel):
 
     env: dict[str, str] = Field(default_factory=dict)
     sandbox_id: str | None = None
+    #: Explicit runtime backend selection (``bubblewrap`` / ``windows`` /
+    #: ``conch``). ``None`` defers to the server default / platform default
+    #: (design doc section 5.4).
+    sandbox_runtime: str | None = None
 
 
 class SandboxRef(BaseModel):
@@ -90,8 +94,13 @@ class SandboxRef(BaseModel):
 
     id: str
     phase: SandboxPhase = SandboxPhase.PROVISIONING
+    #: Resolved runtime backend name (canonical: ``bubblewrap`` / ``windows``
+    #: / ``conch``). Defaults to the backward-compatible "process" alias for
+    #: API stability; the manager overwrites it with the canonical name.
     runtime: str = "process"
     pid: int | None = None
+    #: Network identity discovered by the runtime (design doc section 5.2).
+    ip_address: str | None = None
     created_at: datetime = Field(default_factory=datetime.now)
     started_at: datetime | None = None
     last_active_at: datetime | None = None

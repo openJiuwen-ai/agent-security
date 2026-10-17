@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -20,7 +21,7 @@ from jiuwenbox import __version__
 from jiuwenbox.server.auth import BearerTokenAuthMiddleware, get_configured_token
 from jiuwenbox.server.audit_logger import AuditLogger
 from jiuwenbox.models.sandbox import InvalidJobIdError, InvalidSandboxIdError
-from jiuwenbox.server.runtime.process import BackgroundJobNotFoundError
+from jiuwenbox.server.runtime.base import BackgroundJobNotFoundError, RuntimeAdapter
 from jiuwenbox.server.sandbox_manager import (
     SandboxConflictError,
     SandboxManager,
@@ -30,7 +31,17 @@ from jiuwenbox.server.sandbox_manager import (
 from jiuwenbox.server.policy_reader import PolicyReader
 from jiuwenbox.server.proxy_manager import ProxyManager
 from jiuwenbox.server.policy_engine import PolicyValidationError
-from jiuwenbox.server.runtime.process import enable_child_subreaper
+
+
+def _lazy_enable_child_subreaper() -> None:
+    """Become a subreaper for descendant processes (Linux-only; lazily
+    imported so importing ``app`` on Windows never touches ``prctl``)."""
+    if sys.platform == "win32":
+        logger.debug("PR_SET_CHILD_SUBREAPER unavailable on %s", sys.platform)
+        return
+    from jiuwenbox.server.runtime.process import enable_child_subreaper
+
+    enable_child_subreaper()
 
 # Operator-facing env: when set, the audit JSONL is persisted to this
 # directory using a ``{sandbox_id}-{ts}.audit.log`` filename per sandbox.
@@ -46,6 +57,11 @@ logger = logging.getLogger(__name__)
 
 _sandbox_manager: SandboxManager | None = None
 _proxy_manager: ProxyManager | None = None
+# Windows-only egress proxy asyncio task + its stop event. Started during
+# lifespan startup on win32 and cancelled during lifespan shutdown. Only
+# touched on Windows; the ``windows`` runtime adapter is the only consumer.
+_win_proxy_task: asyncio.Task | None = None
+_win_proxy_stop_event: asyncio.Event | None = None
 # Set during lifespan startup when the policy file only configures
 # ``inference_privacy_proxies``. In that mode we intentionally skip
 # building a ``SandboxManager``; ``get_sandbox_manager`` consults this
@@ -133,6 +149,36 @@ def _configure_loop_default_executor() -> None:
     )
 
 
+def _default_runtime() -> RuntimeAdapter | None:
+    """Resolve the server default runtime (jiuwenbox runtime selection step 2).
+
+    ``None`` means "use the manager's own default" (the historical
+    ``ProcessRuntime`` singleton). When ``JIUWENBOX_RUNTIME_PROFILE`` is set
+    the corresponding adapter is resolved and, if it cannot load on this
+    host, the manager is intentionally *not* constructed — matching the
+    fail-closed rule that a configured runtime must never silently fall back
+    to a local process backend.
+    """
+    from jiuwenbox.server.runtime.registry import (
+        RUNTIME_PROFILE_ENV,
+        get_runtime,
+        verify_runtime_available,
+    )
+
+    profile = os.environ.get(RUNTIME_PROFILE_ENV)
+    if not profile:
+        return None
+    if not verify_runtime_available(profile):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Configured runtime {profile!r} is unavailable on this host; "
+                "refusing to start the sandbox subsystem"
+            ),
+        )
+    return get_runtime(profile)
+
+
 def _build_sandbox_manager(policy_reader: PolicyReader | None = None) -> SandboxManager:
     """Construct the global ``SandboxManager``, honoring ``--save-logs DIR``.
 
@@ -157,6 +203,7 @@ def _build_sandbox_manager(policy_reader: PolicyReader | None = None) -> Sandbox
     structured audit log already carries the truncated stdout/stderr of
     every ``exec`` call, which is enough for routine debugging.
     """
+    runtime = _default_runtime()
     save_dir_raw = os.environ.get(ENV_SAVE_LOGS_DIR)
     if not save_dir_raw:
         # Single, prominent breadcrumb: ops should immediately know why
@@ -167,6 +214,8 @@ def _build_sandbox_manager(policy_reader: PolicyReader | None = None) -> Sandbox
             "audit JSONL.",
             ENV_SAVE_LOGS_DIR,
         )
+        if runtime is not None:
+            return SandboxManager(runtime=runtime, policy_reader=policy_reader)
         return SandboxManager(policy_reader=policy_reader)
     save_dir = Path(save_dir_raw).expanduser()
     try:
@@ -179,12 +228,17 @@ def _build_sandbox_manager(policy_reader: PolicyReader | None = None) -> Sandbox
             "Cannot create %s=%s (%s); falling back to disabled log persistence",
             ENV_SAVE_LOGS_DIR, save_dir_raw, exc,
         )
+        if runtime is not None:
+            return SandboxManager(runtime=runtime, policy_reader=policy_reader)
         return SandboxManager(policy_reader=policy_reader)
     logger.info("Per-sandbox audit log will be saved under %s", save_dir)
-    return SandboxManager(
-        audit_logger=AuditLogger(log_dir=save_dir, filename_strategy="timestamped"),
-        policy_reader=policy_reader,
-    )
+    kwargs: dict = {
+        "audit_logger": AuditLogger(log_dir=save_dir, filename_strategy="timestamped"),
+        "policy_reader": policy_reader,
+    }
+    if runtime is not None:
+        kwargs["runtime"] = runtime
+    return SandboxManager(**kwargs)
 
 
 def get_sandbox_manager() -> SandboxManager:
@@ -241,6 +295,90 @@ def _chmod_uds_socket_if_any() -> None:
 
 
 @asynccontextmanager
+async def _start_windows_backend(policy_reader: PolicyReader) -> None:
+    """One-time Windows environment prep + egress proxy (win32 only).
+
+    Runs exactly once per process boot on Windows hosts:
+
+    1. ``win_setup.ensure_windows_setup`` — create ``jbx-sandbox`` user /
+       group, grant interactive-logon right, install WFP filters and
+       preinstall read ACLs (elevating via UAC when needed). This is the
+       only place elevation is attempted; the runtime adapter itself never
+       pops a UAC dialog.
+    2. ``win_proxy.serve_windows_proxy`` — start the loopback egress proxy
+       that sandbox traffic is forced through by the WFP permit filter.
+
+    All failures are logged but non-fatal: the Windows runtime adapter
+    fails closed at sandbox-creation time if the environment was not
+    prepared.
+    """
+    global _win_proxy_task, _win_proxy_stop_event
+    from jiuwenbox.supervisor import win_proxy, win_setup
+    from jiuwenbox.supervisor import win_constants as _wconst
+
+    # 1. Environment preparation (elevates only when required).
+    try:
+        _root_policy = policy_reader.load_policy()
+        _preinstall = win_setup.collect_preinstall_paths(_root_policy)
+        _proxy_start = _root_policy.windows.proxy.port_range_start
+        _proxy_end = _root_policy.windows.proxy.port_range_end
+        _policy_path = str(getattr(policy_reader, "policy_path", "") or "")
+    except Exception:  # noqa: BLE001
+        logger.exception("Windows policy 读取失败, 使用默认 setup 参数")
+        _preinstall = None
+        _proxy_start = _wconst.DEFAULT_PROXY_PORT_RANGE_START
+        _proxy_end = _wconst.DEFAULT_PROXY_PORT_RANGE_END
+        _policy_path = ""
+
+    try:
+        win_setup.ensure_windows_setup(
+            preinstall_paths=_preinstall or None,
+            proxy_port_start=_proxy_start,
+            proxy_port_end=_proxy_end,
+            policy_path=_policy_path or None,
+            allow_elevation=False,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "ensure_windows_setup 失败; Windows 沙箱可能不可用",
+        )
+
+    # 2. Egress proxy (egress rules from the root policy's windows.network).
+    try:
+        root_policy = policy_reader.load_policy()
+        egress = root_policy.windows.network.egress
+        ingress = root_policy.windows.network.ingress
+        net_disable_all = bool(root_policy.windows.network.disable_all)
+        _win_proxy_stop_event = asyncio.Event()
+        _win_proxy_task, _win_proxy_stop_event = await win_proxy.serve_windows_proxy(
+            egress=egress,
+            ingress=ingress,
+            port_range_start=root_policy.windows.proxy.port_range_start,
+            port_range_end=root_policy.windows.proxy.port_range_end,
+            stop_event=_win_proxy_stop_event,
+            disable_all=net_disable_all,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Windows 出站代理启动失败; 沙箱网络隔离将不可用",
+        )
+
+
+async def _stop_windows_backend() -> None:
+    """Stop the Windows egress proxy task (idempotent, win32 only)."""
+    global _win_proxy_task, _win_proxy_stop_event
+    if _win_proxy_stop_event is not None:
+        _win_proxy_stop_event.set()
+    task = _win_proxy_task
+    _win_proxy_task = None
+    _win_proxy_stop_event = None
+    if task is not None and not task.done():
+        try:
+            await asyncio.wait_for(task, timeout=5.0)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            task.cancel()
+
+
 async def lifespan(_application: FastAPI):
     global _sandbox_manager, _proxy_manager, _proxy_only_mode
     # Both of these have to run after uvicorn has spun up its event loop -
@@ -268,13 +406,18 @@ async def lifespan(_application: FastAPI):
             "sandbox subsystem startup",
         )
     else:
+        # Windows: prepare the sandbox environment (jbx-sandbox user, WFP
+        # filters, preinstalled read ACLs) and start the egress proxy before
+        # the manager is built so the runtime adapter can rely on both.
+        if sys.platform == "win32":
+            await _start_windows_backend(policy_reader)
         # Become the subreaper for our descendant tree *before* any sandbox
         # spawns bwrap. PR_SET_CHILD_SUBREAPER only affects *future*
         # children, so doing it here (after the loop is up but before
         # SandboxManager might create a runtime that spawns bwrap) is the
         # earliest safe point. No-op on non-Linux / when prctl is denied;
         # logs internally.
-        enable_child_subreaper()
+        _lazy_enable_child_subreaper()
         _sandbox_manager = _build_sandbox_manager(policy_reader=policy_reader)
         # Wire the SIGCHLD-driven zombie reaper onto the running uvicorn
         # loop. Failure is non-fatal: the manager logs and the server keeps
@@ -330,6 +473,8 @@ async def lifespan(_application: FastAPI):
             await _proxy_manager.stop()
         except Exception:  # noqa: BLE001
             logger.exception("proxy_manager.stop failed during lifespan shutdown")
+        if sys.platform == "win32":
+            await _stop_windows_backend()
         # Stop the idle reaper *before* shutdown_all_sandboxes so the reaper
         # cannot race with the explicit teardown below (both grab
         # ``manager._lock`` and call ``delete_sandbox``; letting them

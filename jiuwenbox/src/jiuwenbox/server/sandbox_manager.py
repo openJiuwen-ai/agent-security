@@ -13,13 +13,49 @@ import base64
 import binascii
 import json
 import logging
-import os
 import textwrap
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+
+from jiuwenbox.logging_config import configure_logging
+from jiuwenbox.models.common import AuditEventType
+from jiuwenbox.models.policy import SecurityPolicy, TimeoutPolicy
+from jiuwenbox.models.sandbox import (
+    BackgroundExecResult,
+    BackgroundJobStatus,
+    BackgroundJobSummary,
+    ExecResult,
+    KillBackgroundJobResult,
+    PolicyMode,
+    SandboxPhase,
+    SandboxRef,
+    SandboxSpec,
+    generate_job_id,
+    generate_sandbox_id,
+    validate_custom_job_id,
+    validate_custom_sandbox_id,
+)
+from jiuwenbox.server.audit_logger import AuditLogger
+from jiuwenbox.server.policy_engine import PolicyEngine
+from jiuwenbox.server.policy_reader import PolicyReader
+from jiuwenbox.server.runtime.base import (
+    BackgroundJobNotFoundError,
+    RuntimeAdapter,
+    RuntimeBackgroundExecRequest,
+    RuntimeExecRequest,
+    RuntimeFileOpResult,
+)
+from jiuwenbox.server.runtime.registry import (
+    get_runtime,
+    resolve_runtime_name,
+)
+from jiuwenbox.server.workspace import JIUWENBOX_HOME
+
+configure_logging()
+logger = logging.getLogger(__name__)
 
 # Cap stdout/stderr at this many chars per audit event. Large model
 # completions can dump megabytes, which is fine to keep in the runtime
@@ -54,39 +90,6 @@ def _is_daemon_ipc_file_op_failure(result: RuntimeFileOpResult) -> bool:
     if result.ok:
         return False
     return result.error in ("daemon_unavailable", "transport_failure")
-
-from jiuwenbox.logging_config import configure_logging
-from jiuwenbox.models.common import AuditEventType
-from jiuwenbox.models.policy import SecurityPolicy, TimeoutPolicy
-from jiuwenbox.models.sandbox import (
-    BackgroundExecResult,
-    BackgroundJobStatus,
-    BackgroundJobSummary,
-    ExecResult,
-    KillBackgroundJobResult,
-    PolicyMode,
-    SandboxPhase,
-    SandboxRef,
-    SandboxSpec,
-    generate_job_id,
-    generate_sandbox_id,
-    validate_custom_job_id,
-    validate_custom_sandbox_id,
-)
-from jiuwenbox.server.audit_logger import AuditLogger
-from jiuwenbox.server.policy_engine import PolicyEngine
-from jiuwenbox.server.policy_reader import PolicyReader
-from jiuwenbox.server.runtime.base import (
-    RuntimeAdapter,
-    RuntimeBackgroundExecRequest,
-    RuntimeExecRequest,
-    RuntimeFileOpResult,
-)
-from jiuwenbox.server.runtime.process import BackgroundJobNotFoundError, ProcessRuntime
-from jiuwenbox.server.workspace import JIUWENBOX_HOME
-
-configure_logging()
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -144,7 +147,12 @@ class SandboxManager:
         policy_reader: PolicyReader | None = None,
         policy_path: Path | None = None,
     ) -> None:
-        self.runtime = runtime or ProcessRuntime()
+        if runtime is None:
+            # Resolve the default runtime lazily so a Windows user who never
+            # requests a sandbox doesn't import the Linux adapter.
+            runtime = get_runtime()
+        self.runtime = runtime
+        self._runtime_name = getattr(self.runtime, "runtime_name", "process")
         self.policy_engine = policy_engine or PolicyEngine()
         self.audit = audit_logger or AuditLogger()
         self.state_dir = state_dir or JIUWENBOX_HOME / "sandboxes"
@@ -172,6 +180,39 @@ class SandboxManager:
         # subsequent jiuwenbox launch never sees stale sandbox descriptors. This
         # avoids accidentally "reviving" dead sandboxes whose backing bubblewrap
         # processes / netns / cgroup state no longer exist.
+
+    def _runtime_for_spec(self, spec: SandboxSpec) -> RuntimeAdapter:
+        """Return the runtime adapter to use for ``spec``.
+
+        Applies runtime selection precedence (explicit ``sandbox_runtime``
+        field, then server default) but never falls back silently: an
+        explicitly-requested runtime that cannot resolve raises.
+        """
+        if spec.sandbox_runtime:
+            canonical = resolve_runtime_name(spec.sandbox_runtime)
+            return get_runtime(canonical)
+        return self.runtime
+
+    def _validate_runtime_capabilities(
+        self,
+        policy: SecurityPolicy,
+        runtime: RuntimeAdapter,
+    ) -> None:
+        """Fail-closed capability check (design doc section 5.3).
+
+        Only enforced when the runtime exposes ``capabilities`` (i.e. the
+        new adapter contract). The legacy ``ProcessRuntime`` alias resolves
+        to ``BubblewrapRuntime`` which does expose them; runtimes without the
+        optional method are skipped to preserve test doubles.
+        """
+        caps_method = getattr(runtime, "capabilities", None)
+        if caps_method is None:
+            return
+        from jiuwenbox.policy.capabilities import validate_policy_capabilities
+
+        warnings = validate_policy_capabilities(policy, caps_method())
+        for warning in warnings:
+            logger.warning("capability fallback: %s", warning)
 
     def _resolve_effective_policy(
         self,
@@ -520,6 +561,7 @@ class SandboxManager:
         policy_mode: PolicyMode = PolicyMode.OVERRIDE,
     ) -> SandboxRef:
         """Create a new sandbox."""
+        runtime = self._runtime_for_spec(spec)
         async with self._lock:
             if spec.sandbox_id is None:
                 sandbox_id = generate_sandbox_id()
@@ -535,10 +577,12 @@ class SandboxManager:
             policy = self._resolve_effective_policy(policy_data, policy_mode)
             logger.debug("Creating sandbox %s with policy %s", sandbox_id, str(policy))
             self.policy_engine.validate_policy(policy)
+            self._validate_runtime_capabilities(policy, runtime)
             # Create sandbox ref
             ref = SandboxRef(
                 id=sandbox_id,
                 phase=SandboxPhase.PROVISIONING,
+                runtime=getattr(runtime, "runtime_name", "process"),
                 env=dict(spec.env),
             )
             self._sandboxes[sandbox_id] = ref
@@ -554,7 +598,7 @@ class SandboxManager:
         # Runtime startup can be expensive. Do it outside the manager-wide lock
         # so independent sandboxes can start in parallel.
         try:
-            pid = await self.runtime.create(
+            instance = await runtime.create(
                 sandbox_id=sandbox_id,
                 policy_path=policy_path,
                 env=ref.env,
@@ -566,7 +610,9 @@ class SandboxManager:
                     cleanup_after_create = True
                 else:
                     ref.phase = SandboxPhase.READY
-                    ref.pid = pid
+                    ref.pid = instance.pid
+                    ref.ip_address = instance.ip_address
+                    ref.runtime = getattr(runtime, "runtime_name", "process")
                     now = datetime.now(timezone.utc)
                     ref.started_at = now
                     # 沙箱刚创建即视为最近一次活跃, 避免在第一次 exec 到来之前就被
@@ -574,7 +620,7 @@ class SandboxManager:
                     ref.last_active_at = now
                     self._save_state(ref)
             if cleanup_after_create:
-                await self.runtime.cleanup(sandbox_id)
+                await runtime.cleanup(sandbox_id)
         except Exception as e:
             async with self._lock:
                 current_ref = self._sandboxes.get(sandbox_id)
@@ -627,13 +673,14 @@ class SandboxManager:
             policy_path = self.policy_engine.write_sandbox_policy(sandbox_id, policy)
 
         try:
-            pid = await self.runtime.create(
+            instance = await self.runtime.create(
                 sandbox_id=sandbox_id,
                 policy_path=policy_path,
                 env=ref.env,
             )
             ref.phase = SandboxPhase.READY
-            ref.pid = pid
+            ref.pid = instance.pid
+            ref.ip_address = instance.ip_address
             now = datetime.now(timezone.utc)
             ref.started_at = now
             ref.last_active_at = now
