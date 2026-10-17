@@ -102,7 +102,7 @@ class PolicyReader:
         if not self.policy_path.exists():
             return False
         try:
-            with open(self.policy_path) as f:
+            with open(self.policy_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
         except (OSError, yaml.YAMLError):
             return False

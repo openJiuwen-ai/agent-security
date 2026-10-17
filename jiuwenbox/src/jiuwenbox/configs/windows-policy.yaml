@@ -1,0 +1,89 @@
+# Windows 沙箱 policy. 仅含 Windows 相关字段 (Linux 字段用模型默认值, 不必列出).
+# 用 JIUWENBOX_POLICY_PATH=<本文件> 指定加载.
+version: 1
+
+name: "windows-default"
+
+# 平台无关 env, 注入子进程.
+environment: {}
+
+# ---------------------------------------------------------------------------
+# Windows 专用配置 (docs/jiuwenbox三分支差异与独立仓统一设计.md 阶段 4)
+# ---------------------------------------------------------------------------
+windows:
+  # 出站代理端口范围: WFP Permit filter 仅放行指向 127.0.0.1:<port_range>
+  # 的流量, 沙箱出网必须经此代理做域名/IP 白名单过滤.
+  proxy:
+    port_range_start: 60080
+    port_range_end: 60089
+
+  filesystem:
+    # 一次性预装读 ACL 的路径 (安装阶段, 需提权). 只预装 jbx-sandbox 默认读不了且
+    # 沙箱运行必需的目录. 系统/用户大目录 (SystemRoot/ProgramFiles/ProgramData) 的
+    # 默认 DACL 已给 BUILTIN\Users 组授 GR/GE 且继承, jbx-sandbox 在 Users 组能读,
+    # 无需预装 (且 USERPROFILE 巨型目录递归 grant ACE 极慢会卡死 install).
+    # 实际预装只有 tool_paths 展开的工具目录 (非系统目录下, owner=Administrators,
+    # 默认 ACL 不放行 Users → 需预装; 目录小递归快).
+    # 由 collect_preinstall_paths 自动合并 read_acl_preinstall + tool_paths, 留空即可.
+    read_acl_preinstall: []
+    # 沙箱可写路径 (合成 SID 授 Allow Write+Execute+Delete). 第一个路径作为沙箱
+    # workspace 根 (占位符 "{{ workspace }}" 在运行时替换为 ~/.jiuwenbox/workspace/<id>).
+    allow_write:
+      - "{{ workspace }}"
+    # 沙箱可读路径 (合成 SID + 真实 SID 授 Allow Read+Execute).
+    allow_read: []
+    # 在 allow 范围内精细化封锁 (Deny Write).
+    deny_write:
+      - "{{ workspace }}/.git"
+      - "{{ workspace }}/.env"
+    # 非默认安装路径的工具目录/可执行. 受限 token 默认读不了 → CreateProcessAsUserW
+    # 返回 WinError 2/5. 配置后: ① 加进 read ACL 预装 (含 Execute) ② 拼进子进程 PATH.
+    # 全部留空则跳过, 依赖系统 PATH + 默认预装目录.
+    tool_paths:
+      git_dir: ''        # 如 D:\Files\Git (含 usr/bin/bash.exe)
+      node_dir: ''       # 如 D:\Files\nodejs
+      python_dir: ''     # 标准 CPython 目录 (非 uv venv)
+      bash_path: ''      # git_dir 未覆盖时用, 如 D:\Files\Git\usr\bin\bash.exe
+
+  network:
+    # wfp_loopback_proxy: WFP Block 所有出站 + Permit loopback:port_range.
+    # disabled: 不装 WFP filter, 沙箱可直接访问外网.
+    mode: wfp_loopback_proxy
+    egress:
+      # default: deny 时, 只有命中 allowed_domains/allowed_ips/allowed_ports 才放行.
+      # default: allow 时, 只拦截命中 blocked_* 的目标.
+      default: deny
+      allowed_domains:
+        - "pypi.org"
+        - "files.pythonhosted.org"
+        - "registry.npmjs.org"
+        - "nodejs.org"
+      blocked_domains:
+        - "ip.me"
+      allowed_ips:
+        - "127.0.0.1/32"
+        - "::1/128"
+      blocked_ips:
+        - "169.254.169.254/32"
+      allowed_ports:
+        - 443
+        - 80
+      blocked_ports:
+        - 22
+    ingress:
+      default: deny
+      allowed_domains:
+        - "localhost"
+      blocked_domains: []
+      allowed_ips:
+        - "127.0.0.1/32"
+        - "::1/128"
+      blocked_ips: []
+      allowed_ports: []
+      blocked_ports: []
+
+  resource:
+    # Job Object 限制 (对齐 Linux cgroup). 全部留空 = 不限制.
+    memory_max: 512M
+    cpu_rate: 50            # 百分比 (1-100), 对应 Job CpuRate.
+    max_processes: 32

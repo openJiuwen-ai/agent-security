@@ -13,11 +13,9 @@ import asyncio
 import base64
 import dataclasses
 import errno
-import grp
 import json
 import logging
 import os
-import pwd
 import shutil
 import signal
 import socket
@@ -32,6 +30,20 @@ from typing import Any
 
 import yaml
 
+# ``grp`` / ``pwd`` are POSIX-only. This module is the Linux
+# ``bubblewrap`` runtime adapter; it must fail *loudly* (not partially) when
+# imported on a non-POSIX platform. The module-level guard keeps the failure
+# explicit and prevents the WindowsRuntime discovery path from importing
+# this module's OS primitives on Windows.
+if sys.platform == "win32":
+    raise ImportError(
+        "jiuwenbox.server.runtime.process (BubblewrapRuntime) is Linux-only; "
+        "use jiuwenbox.server.runtime.windows.WindowsRuntime on Windows"
+    )
+
+import grp  # noqa: E402  (POSIX only; guarded above)
+import pwd  # noqa: E402  (POSIX only; guarded above)
+
 from jiuwenbox.logging_config import configure_logging
 from jiuwenbox.models.policy import NetworkMode, SecurityPolicy
 from jiuwenbox.models.sandbox import (
@@ -42,11 +54,14 @@ from jiuwenbox.models.sandbox import (
     KillBackgroundJobResult,
 )
 from jiuwenbox.server.runtime.base import (
+    BackgroundJobNotFoundError,
     RuntimeAdapter,
     RuntimeBackgroundExecRequest,
     RuntimeExecRequest,
     RuntimeFileOpResult,
+    RuntimeInstance,
 )
+from jiuwenbox.server.runtime.capabilities import RuntimeCapabilities
 from jiuwenbox.server.workspace import SANDBOX_WORKSPACE
 from jiuwenbox.supervisor import cgroup as cgroup_module
 from jiuwenbox.supervisor import network as network_module
@@ -347,10 +362,6 @@ class BackgroundJob:
     stderr: str = ""
 
 
-class BackgroundJobNotFoundError(Exception):
-    """Raised when a background job id is unknown for a sandbox."""
-
-
 def _resolve_zombie_reaper_interval() -> float:
     """Return the periodic-reaper interval in seconds.
 
@@ -545,8 +556,8 @@ def _summarize_command(command: list[str], max_length: int = 180) -> str:
     return f"{text[:max_length]}... ({len(text)} chars)"
 
 
-class ProcessRuntime(RuntimeAdapter):
-    """Runtime that spawns supervisor as a local process.
+class BubblewrapRuntime(RuntimeAdapter):
+    """Linux bubblewrap runtime (the ``develop`` mainline local process backend).
 
     Sandbox stdout/stderr (both the daemon and any background ``exec``)
     is dropped at the kernel level via ``subprocess.DEVNULL``: the
@@ -555,7 +566,31 @@ class ProcessRuntime(RuntimeAdapter):
     which already carries truncated stdout/stderr per command. Anyone
     needing the raw byte stream should attach a debugger or run the
     container with ``-it``; we no longer persist it to disk.
+
+    This is the runtime formerly named ``ProcessRuntime``. It is kept as a
+    Linux-only adapter so the registry can import it lazily; the historical
+    alias is preserved for backwards compatibility (see module bottom).
     """
+
+    runtime_name = "bubblewrap"
+    supported_platforms = ("linux",)
+
+    def capabilities(self) -> RuntimeCapabilities:
+        return RuntimeCapabilities(
+            runtime_name=self.runtime_name,
+            local_pid=True,
+            background_jobs=True,
+            fast_file_io=True,
+            recursive_search=True,
+            network_identity=True,
+            filesystem_acl=True,
+            process_tree_containment=True,
+            egress_filter=True,
+            soft_delete=False,
+            notes=(
+                "bwrap + landlock + seccomp + cgroup + netns isolation",
+            ),
+        )
 
     def __init__(self) -> None:
         self._processes: dict[str, subprocess.Popen] = {}
@@ -609,7 +644,7 @@ class ProcessRuntime(RuntimeAdapter):
 
     @staticmethod
     def _load_policy(policy_path: Path) -> SecurityPolicy:
-        with open(policy_path) as f:
+        with open(policy_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return SecurityPolicy.model_validate(data)
 
@@ -1807,7 +1842,7 @@ class ProcessRuntime(RuntimeAdapter):
         sandbox_id: str,
         policy_path: Path,
         env: dict[str, str] | None = None,
-    ) -> int:
+    ) -> RuntimeInstance:
         existing = self._processes.get(sandbox_id)
         if existing is not None:
             if existing.poll() is None:
@@ -2004,7 +2039,13 @@ class ProcessRuntime(RuntimeAdapter):
             except OSError:
                 pass
         logger.info("Sandbox daemon started for %s (pid=%d)", sandbox_id, proc.pid)
-        return proc.pid
+        return RuntimeInstance(
+            runtime_name=self.runtime_name,
+            instance_id=sandbox_id,
+            pid=proc.pid,
+            ip_address=None,
+            metadata={"netns": netns_name},
+        )
 
     async def _wait_daemon_ready(
         self,
@@ -3126,3 +3167,10 @@ class ProcessRuntime(RuntimeAdapter):
         # Runtime log files used to live here too; they were removed in
         # favour of the single ``audit.log`` written by ``AuditLogger``.
         # Nothing extra to clean up on this side any more.
+
+
+# Backwards-compatibility alias: ``ProcessRuntime`` was the pre-unification
+# name for the Linux local-process runtime. Historical callers (the manager,
+# tests, and operator code) can keep importing it; new code should use
+# :class:`BubblewrapRuntime` or the runtime registry.
+ProcessRuntime = BubblewrapRuntime

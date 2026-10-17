@@ -1,0 +1,2663 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+r"""Windows 沙箱一次性环境准备.
+
+对齐 docs/window沙箱.md 6.4:
+  - 创建 jbx-sandbox 本地用户 + jbx-sandbox-users 组 (随机密码, 标记
+    PASSWD_CANT_CHANGE|DONT_EXPIRE_PASSWD, 从登录界面隐藏).
+  - LsaAddAccountRights 授 SeInteractiveLogonRight (允许本地登录), 域控机
+    上 CreateProcessWithLogonW 缺此权利会 WinError 1385.
+  - LookupAccountName 取用户 SID, 写注册表供后续模块复用.
+  - 安装 WFP filter set (win_wfp.install_wfp_filters).
+  - 异步预装常用目录读 ACL (%USERPROFILE% / %SystemRoot% / Program Files /
+    ProgramData) — 后台线程, 进度写注册表支持断点续传.
+
+幂等: 通过注册表 ``HKLM\Software\JiuwenBox\WindowsSandbox\installed`` 标记
+判断是否已完成, 重复执行无副作用.
+
+安装入口:
+  - 独立 win-setup CLI (已提权) 调 ``jiuwenbox-win-setup --install --force --recreate-user``.
+  - 部署方启动 box-server 前检查环境, 必要时只提升 setup 子进程.
+"""
+
+from __future__ import annotations
+
+import ctypes
+import json
+import logging
+import os
+import secrets
+import sys
+import threading
+import time
+import argparse
+from pathlib import Path
+from ctypes import wintypes
+
+from jiuwenbox.logging_config import configure_logging
+from jiuwenbox.supervisor import win_constants as const
+
+configure_logging()
+logger = logging.getLogger(__name__)
+
+# Windows netapi32 (NetUserAdd 等).
+_netapi32: ctypes.WinDLL | None = None
+_advapi32: ctypes.WinDLL | None = None
+_kernel32: ctypes.WinDLL | None = None
+_shell32: ctypes.WinDLL | None = None
+# userenv.dll (DeleteProfileW — 删 profile 目录 + ProfileList 注册项).
+_userenv: ctypes.WinDLL | None = None
+# 并发创建沙箱时只允许一次 install / UAC, 避免连弹提权框并互删刚建的用户.
+_INSTALL_LOCK = threading.RLock()
+
+
+def _require_windows() -> None:
+    if sys.platform != "win32":
+        raise RuntimeError(
+            f"win_setup 仅在 Windows 平台可用; 当前平台 {sys.platform!r}"
+        )
+
+
+# ShellExecuteW 的 nShowWindow 取值: 0=SW_HIDE (不弹 CMD), 1=SW_SHOWNORMAL.
+# install/uninstall 提权子进程: 子进程 CMD 仍隐藏, 但 UAC 确认框必须可见 (桌面产品).
+SW_HIDE = 0
+SW_SHOWNORMAL = 1
+SW_UAC_SHOW = SW_SHOWNORMAL
+
+
+class ShellExecuteInfo(ctypes.Structure):
+    """SHELLEXECUTEINFOW, including its pointer-sized icon/monitor union."""
+
+    _fields_ = [
+        ("cbSize", wintypes.DWORD), ("fMask", wintypes.ULONG),
+        ("hwnd", wintypes.HWND), ("lpVerb", wintypes.LPCWSTR),
+        ("lpFile", wintypes.LPCWSTR), ("lpParameters", wintypes.LPCWSTR),
+        ("lpDirectory", wintypes.LPCWSTR), ("nShow", wintypes.INT),
+        ("hInstApp", wintypes.HINSTANCE), ("lpIDList", ctypes.c_void_p),
+        ("lpClass", wintypes.LPCWSTR), ("hkeyClass", wintypes.HKEY),
+        ("dwHotKey", wintypes.DWORD), ("hIcon", wintypes.HANDLE),
+        ("hProcess", wintypes.HANDLE),
+    ]
+
+
+def _resolve_install_log_dir() -> str:
+    """返回 install_force.log 应落盘的目录 (绝对路径)."""
+    try:
+        from jiuwenbox.server.workspace import JIUWENBOX_HOME
+        return str(JIUWENBOX_HOME)
+    except Exception:  # noqa: BLE001
+        return str(Path.home() / ".jiuwenbox")
+
+
+def _install_log_path() -> str:
+    """install_force.log 的绝对路径, 落在用户数据目录而非包目录."""
+    return os.path.join(_resolve_install_log_dir(), "install_force.log")
+
+
+_ACL_POLICY_PATHS_USER_CACHE = "acl_policy_paths.json"
+
+
+def _normalize_acl_path(path: str) -> str:
+    """统一 ACL 路径比较格式 (expandvars + normpath + normcase)."""
+    p = (path or "").strip()
+    if not p:
+        return ""
+    return os.path.normcase(os.path.normpath(os.path.expandvars(p)))
+
+
+def _user_acl_policy_cache_file() -> Path:
+    return Path(_resolve_install_log_dir()) / _ACL_POLICY_PATHS_USER_CACHE
+
+
+def _load_user_acl_policy_paths() -> set[str]:
+    """读用户目录下的 acl 路径缓存 (普通用户可写, 无需 HKLM)."""
+    cache = _user_acl_policy_cache_file()
+    try:
+        data = json.loads(cache.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return set()
+    if not isinstance(data, list):
+        return set()
+    return {
+        _normalize_acl_path(p)
+        for p in data
+        if isinstance(p, str) and p.strip()
+    }
+
+
+def _save_user_acl_policy_paths(paths: set[str]) -> None:
+    if not paths:
+        return
+    cache = _user_acl_policy_cache_file()
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(
+            json.dumps(sorted(paths), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        logger.warning("写入 acl_policy_paths 用户缓存失败 (非致命): %s", exc)
+
+
+def _get_acl_policy_paths_recorded() -> set[str]:
+    """已处理的 deny/allow 路径 = HKLM 注册表 ∪ 用户目录缓存."""
+    recorded: set[str] = set()
+    raw = reg_get_str(const.REG_VALUE_ACL_POLICY_PATHS)
+    if raw:
+        try:
+            recorded |= {
+                _normalize_acl_path(p)
+                for p in json.loads(raw)
+                if isinstance(p, str)
+            }
+        except (ValueError, TypeError):
+            pass
+    recorded |= _load_user_acl_policy_paths()
+    return {p for p in recorded if p}
+
+
+def is_install_completed() -> bool:
+    """据 install_force.log 是否含完成标志判断 install 是否成功."""
+    try:
+        with open(_install_log_path(), "r", encoding="utf-8") as fh:
+            return "Windows 沙箱安装完成" in fh.read()
+    except OSError:
+        return False
+
+
+def _get_netapi32() -> ctypes.WinDLL:
+    global _netapi32
+    if _netapi32 is None:
+        _netapi32 = ctypes.WinDLL("netapi32", use_last_error=True)
+        _netapi32.NetUserAdd.argtypes = [
+            wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_void_p,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        _netapi32.NetUserAdd.restype = wintypes.DWORD
+        _netapi32.NetLocalGroupAddMembers.argtypes = [
+            wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
+            ctypes.c_void_p, wintypes.DWORD,
+        ]
+        _netapi32.NetLocalGroupAddMembers.restype = wintypes.DWORD
+        # NetLocalGroupAdd(servername:LPCWSTR, level:DWORD, buf:LPBYTE, parm_err:LPDWORD)
+        # 原代码 argtypes 错位 (把 level 标成 LPCWSTR, buf 标成 DWORD),
+        # 调用时 int 0(level) 喂给 c_wchar_p → ctypes.ArgumentError.
+        _netapi32.NetLocalGroupAdd.argtypes = [
+            wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        _netapi32.NetLocalGroupAdd.restype = wintypes.DWORD
+        _netapi32.NetUserGetInfo.argtypes = [
+            wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        _netapi32.NetUserGetInfo.restype = wintypes.DWORD
+        # NetUserSetInfo(servername, username, level, buf, parm_err): 重设用户属性 (含密码).
+        _netapi32.NetUserSetInfo.argtypes = [
+            wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
+            ctypes.c_void_p, ctypes.POINTER(wintypes.DWORD),
+        ]
+        _netapi32.NetUserSetInfo.restype = wintypes.DWORD
+        # NetUserDel(servername, username): 删用户 (uninstall).
+        _netapi32.NetUserDel.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+        _netapi32.NetUserDel.restype = wintypes.DWORD
+        # NetLocalGroupDel(servername, groupname): 删本地组 (uninstall).
+        _netapi32.NetLocalGroupDel.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+        _netapi32.NetLocalGroupDel.restype = wintypes.DWORD
+        _netapi32.NetApiBufferFree.argtypes = [ctypes.c_void_p]
+        _netapi32.NetApiBufferFree.restype = wintypes.DWORD
+    return _netapi32
+
+
+def _get_advapi32() -> ctypes.WinDLL:
+    global _advapi32
+    if _advapi32 is None:
+        _advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+        _advapi32.LookupAccountNameW.argtypes = [
+            wintypes.LPCWSTR, wintypes.LPCWSTR,
+            ctypes.c_void_p, ctypes.POINTER(wintypes.DWORD),
+            ctypes.c_void_p, ctypes.POINTER(wintypes.DWORD),
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        _advapi32.LookupAccountNameW.restype = wintypes.BOOL
+        _advapi32.ConvertSidToStringSidW.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR),
+        ]
+        _advapi32.ConvertSidToStringSidW.restype = wintypes.BOOL
+        _advapi32.ConvertStringSidToSidW.argtypes = [
+            wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_void_p),
+        ]
+        _advapi32.ConvertStringSidToSidW.restype = wintypes.BOOL
+        _advapi32.RegCreateKeyExW.argtypes = [
+            wintypes.HKEY, wintypes.LPCWSTR, wintypes.DWORD,
+            wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD,
+            ctypes.c_void_p, ctypes.POINTER(wintypes.HKEY),
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        _advapi32.RegCreateKeyExW.restype = wintypes.LONG
+        _advapi32.RegSetValueExW.argtypes = [
+            wintypes.HKEY, wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+            ctypes.c_void_p, wintypes.DWORD,
+        ]
+        _advapi32.RegSetValueExW.restype = wintypes.LONG
+        _advapi32.RegQueryValueExW.argtypes = [
+            wintypes.HKEY, wintypes.LPCWSTR, ctypes.POINTER(wintypes.DWORD),
+            ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        _advapi32.RegQueryValueExW.restype = wintypes.LONG
+        _advapi32.RegCloseKey.argtypes = [wintypes.HKEY]
+        _advapi32.RegCloseKey.restype = wintypes.LONG
+    return _advapi32
+
+
+def get_kernel32() -> ctypes.WinDLL:
+    global _kernel32
+    if _kernel32 is None:
+        _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        _kernel32.CloseHandle.restype = wintypes.BOOL
+        # WaitForSingleObject: 主进程阻塞等待 install 子进程 SetEvent 通知完成.
+        # 不依赖提权子进程的 process handle (ShellExecuteW 拿不到), 改靠命名 Event.
+        _kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        _kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        _kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        _kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+        # CreateEventW: 主进程创建命名 Event (非信号态), 名字传给 install 子进程.
+        _kernel32.CreateEventW.argtypes = [
+            ctypes.c_void_p, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR,
+        ]
+        _kernel32.CreateEventW.restype = wintypes.HANDLE
+        # OpenEventW: install 子进程打开主进程创建的命名 Event.
+        _kernel32.OpenEventW.argtypes = [
+            wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR,
+        ]
+        _kernel32.OpenEventW.restype = wintypes.HANDLE
+        # SetEvent: install 子进程跑完所有步骤后 set, 通知主进程可以继续.
+        _kernel32.SetEvent.argtypes = [wintypes.HANDLE]
+        _kernel32.SetEvent.restype = wintypes.BOOL
+        _kernel32.GetComputerNameW.argtypes = [
+            wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD),
+        ]
+        _kernel32.GetComputerNameW.restype = wintypes.BOOL
+        # GetComputerNameExW: 对象选取器「查找位置」常用 DNS 主机名, 可比 NetBIOS 长.
+        _kernel32.GetComputerNameExW.argtypes = [
+            wintypes.INT, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD),
+        ]
+        _kernel32.GetComputerNameExW.restype = wintypes.BOOL
+        _kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+        _kernel32.LocalFree.restype = ctypes.c_void_p
+    return _kernel32
+
+
+def _get_shell32() -> ctypes.WinDLL:
+    global _shell32
+    if _shell32 is None:
+        _shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+        _shell32.ShellExecuteW.argtypes = [
+            wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR,
+            wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.INT,
+        ]
+        _shell32.ShellExecuteW.restype = wintypes.HINSTANCE
+        _shell32.ShellExecuteExW.argtypes = [ctypes.POINTER(ShellExecuteInfo)]
+        _shell32.ShellExecuteExW.restype = wintypes.BOOL
+    return _shell32
+
+
+def _get_userenv() -> ctypes.WinDLL:
+    """userenv.dll 的 DeleteProfileW: 删 profile 目录 + ProfileList 注册项.
+
+    这是删 Windows 用户 profile 的正规方式 (比 shutil.rmtree C:\\Users\\<x>
+    干净): 它会同时删除目录树 + HKLM\\...\\ProfileList\\<sid> 注册项. 仅
+    rmtree 目录会留 ProfileList 项, 下次同名用户登录 Windows 发现原目录没了
+    就建 .000/.001 备份 — 这正是 C:\\Users 下 jbx-sandbox.* 堆积的根因.
+    需 admin.
+    """
+    global _userenv
+    if _userenv is None:
+        _userenv = ctypes.WinDLL("userenv", use_last_error=True)
+        # DeleteProfileW(LPCWSTR lpSidString, LPCWSTR lpProfilePath,
+        #                LPCWSTR lpComputerName): lpProfilePath 传 None 让
+        # API 自己从 ProfileList 解析 (推荐, 避免 we 读到错路径).
+        _userenv.DeleteProfileW.argtypes = [
+            wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.LPCWSTR,
+        ]
+        _userenv.DeleteProfileW.restype = wintypes.BOOL
+    return _userenv
+
+
+# ---------------------------------------------------------------------------
+# 注册表读写.
+# ---------------------------------------------------------------------------
+HKEY_LOCAL_MACHINE = wintypes.HKEY(0x80000002)  # noqa: N816 - Win32 常量
+# Win32 SAM 权限位: KEY_READ=0x20019, KEY_WRITE=0x20006, KEY_READ|KEY_WRITE=0x2001F.
+# KEY_READ_ONLY 给 reg_get_str (普通用户可读已存在 key), KEY_READ_WRITE 给 _reg_open_create (写注册表, 需 admin).
+KEY_READ_ONLY = 0x20019  # noqa: N816 - Win32 常量
+KEY_READ_WRITE = 0x2001F  # noqa: N816 - Win32 常量
+REG_SZ = 1  # noqa: N816 - Win32 常量
+REG_DWORD = 4  # noqa: N816 - Win32 常量
+
+
+def _reg_open_create() -> wintypes.HKEY:
+    advapi32 = _get_advapi32()
+    hkey = wintypes.HKEY()
+    disp = wintypes.DWORD(0)
+    ret = advapi32.RegCreateKeyExW(
+        HKEY_LOCAL_MACHINE, const.REG_BASE_KEY, 0, None, 0,
+        KEY_READ_WRITE, None, ctypes.byref(hkey), ctypes.byref(disp),
+    )
+    if ret != 0:
+        raise ctypes.WinError(ret)
+    return hkey
+
+
+def _reg_set_str(name: str, value: str) -> None:
+    advapi32 = _get_advapi32()
+    hkey = _reg_open_create()
+    try:
+        buf = ctypes.create_unicode_buffer(value)
+        ret = advapi32.RegSetValueExW(
+            hkey, name, 0, REG_SZ, buf, (len(value) + 1) * 2,
+        )
+        if ret != 0:
+            raise ctypes.WinError(ret)
+    finally:
+        advapi32.RegCloseKey(hkey)
+
+
+def reg_get_str(name: str) -> str | None:
+    # 读操作只用 KEY_READ 打开已存在 key (RegOpenKeyEx, 不创建).
+    # 只读打开已存在 key: 用 KEY_READ_WRITE 会被普通用户拒 (WinError 5) 导致幂等检查抛错、提权分支走不到.
+    # key 不存在/无权限均返回 None, 让上层走 install() 正常提权路径.
+    advapi32 = _get_advapi32()
+    hkey = wintypes.HKEY()
+    ret = advapi32.RegOpenKeyExW(
+        HKEY_LOCAL_MACHINE, const.REG_BASE_KEY, 0, KEY_READ_ONLY,
+        ctypes.byref(hkey),
+    )
+    if ret != 0:
+        # ERROR_FILE_NOT_FOUND (2) / ERROR_ACCESS_DENIED (5) 均视为"未读到".
+        return None
+    try:
+        typ = wintypes.DWORD(0)
+        # 两阶段读: 先查真实 size (返回 ERROR_MORE_DATA=234) 再分配 buffer. 固定 512 chars 会截断 DPAPI 密码 blob.
+        size = wintypes.DWORD(0)
+        ret = advapi32.RegQueryValueExW(
+            hkey, name, None, ctypes.byref(typ), None, ctypes.byref(size),
+        )
+        if ret != 0 and ret != 234:
+            return None
+        # size 是字节数 (含 NUL). REG_SZ 是 UTF-16, char 数 = size/2.
+        char_count = max(1, size.value // 2 + 1)
+        buf = ctypes.create_unicode_buffer(char_count)
+        ret = advapi32.RegQueryValueExW(
+            hkey, name, None, ctypes.byref(typ), buf, ctypes.byref(size),
+        )
+        if ret != 0:
+            return None
+        return buf.value
+    finally:
+        advapi32.RegCloseKey(hkey)
+
+
+def get_preinstalled_read_paths() -> "set[str]":
+    """读 install 写入注册表的"已预装读 ACL 路径"清单.
+
+    Returns: 已预装读 ACL 的路径集合 (展开后, 规范化小写比较). 读不到/解析失败
+             返回空集 (空集 = 不跳过任何路径 = 行为同现状, 安全降级).
+    """
+    import json as _json
+    raw = reg_get_str(const.REG_VALUE_PREINSTALLED_PATHS)
+    try:
+        paths = _json.loads(raw or "[]")
+    except (ValueError, TypeError):  # noqa: BLE001
+        paths = []
+    if not isinstance(paths, list):
+        paths = []
+    try:
+        cached = _json.loads((Path(_resolve_install_log_dir()) / "preinstalled_paths.json").read_text(encoding="utf-8"))
+        if isinstance(cached, list):
+            paths += cached
+    except (OSError, ValueError, TypeError):
+        pass
+    return {os.path.expandvars(p).rstrip("\\/").lower() for p in paths if isinstance(p, str) and p}
+
+
+def _reg_set_dword_under(full_subkey: str, name: str, value: int) -> None:
+    """在 HKLM\\<full_subkey> 下写一个 REG_DWORD (用于隐藏登录界面用户等).
+
+    ``full_subkey`` 是相对 HKLM 的完整路径 (不拼 REG_BASE_KEY).
+    """
+    advapi32 = _get_advapi32()
+    hkey = wintypes.HKEY()
+    disp = wintypes.DWORD(0)
+    ret = advapi32.RegCreateKeyExW(
+        HKEY_LOCAL_MACHINE, full_subkey, 0, None, 0, KEY_READ_WRITE,
+        None, ctypes.byref(hkey), ctypes.byref(disp),
+    )
+    if ret != 0:
+        raise ctypes.WinError(ret)
+    try:
+        dword = wintypes.DWORD(value)
+        advapi32.RegSetValueExW(
+            hkey, name, 0, REG_DWORD, ctypes.byref(dword),
+            ctypes.sizeof(wintypes.DWORD),
+        )
+    finally:
+        advapi32.RegCloseKey(hkey)
+
+
+# ---------------------------------------------------------------------------
+# 用户/组创建.
+# ---------------------------------------------------------------------------
+class UserInfo1(ctypes.Structure):
+    _fields_ = [
+        ("usri1_name", wintypes.LPWSTR),
+        ("usri1_password", wintypes.LPWSTR),
+        ("usri1_password_age", wintypes.DWORD),
+        ("usri1_priv", wintypes.DWORD),
+        ("usri1_home_dir", wintypes.LPWSTR),
+        ("usri1_comment", wintypes.LPWSTR),
+        ("usri1_flags", wintypes.DWORD),
+        ("usri1_script_path", wintypes.LPWSTR),
+    ]
+
+
+USER_PRIV_USER = 1  # noqa: N816 - Win32 常量
+# lmerr.h: 沙箱用户重建/校验用.
+NERR_USER_NOT_FOUND = 2221  # noqa: N816 - Win32 常量
+NERR_USER_EXISTS = 2224  # noqa: N816 - Win32 常量
+# CryptProtectData 机器绑定; 旧版 flags=0 换 Windows 用户后无法解密.
+CRYPTPROTECT_LOCAL_MACHINE = 0x4  # noqa: N816 - Win32 常量
+
+# 沙箱用户缺失或无法登录时的修复提示 (运行时无管理员权限, 不能 NetUserAdd).
+_SANDBOX_USER_REPAIR = (
+    "请重新运行安装包, 或管理员执行 "
+    "jiuwenbox-win-setup --install --force --recreate-user"
+)
+
+
+def _generate_password() -> str:
+    """生成 jbx-sandbox 用户随机密码.
+
+    用 ``secrets.token_urlsafe`` 生成强随机密码 (长度 ~SANDBOX_USER_PASSWORD_LENGTH
+    字符的 URL 安全 base64). 持久化靠 DPAPI 注册表 (见 install 流程
+    ``_save_sandbox_user_password``): install 时存一次, 后续 install/运行时经
+    ``get_sandbox_user_password`` 读回, 重启后仍可登录. 已存在用户不重设密码
+    (见 ``_create_sandbox_user``), 避免运行中沙箱凭据失效.
+    """
+    # token_urlsafe(n) 返回 ~1.3n 字符; 取 48 字节字节熵 (~64 字符), 满足密码
+    # 复杂度策略 (含字母数字, 无需符号即可过 Windows 强密码策略).
+    return secrets.token_urlsafe(48)
+
+
+def _sandbox_user_exists() -> bool:
+    """SAM 中是否仍有 jbx-sandbox. 与注册表 installed=1 / DPAPI 密码独立."""
+    netapi32 = _get_netapi32()
+    buf = ctypes.c_void_p()
+    ret = netapi32.NetUserGetInfo(
+        None, const.SANDBOX_USER_NAME, 0, ctypes.byref(buf),
+    )
+    try:
+        return ret == 0
+    finally:
+        if buf:
+            netapi32.NetApiBufferFree(buf)
+
+
+def _logon_sandbox_user(password: str, *, interactive: bool = False) -> bool:
+    """用给定密码 LogonUserW 校验 jbx-sandbox 能否登录 (不加载 profile)."""
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    token = ctypes.c_void_p()
+    logon_provider_default = 0  # noqa: N806 - Win32 常量
+    # 登录类型优先 NETWORK (3) 非 INTERACTIVE (2): 本函数只校验密码不加载 profile.
+    # INTERACTIVE 首次登录会物理建 C:\Users\jbx-sandbox 目录 + 挂载 NTUSER.DAT.
+    logon_network = 3  # noqa: N806 - Win32 常量
+    logon_interactive = 2  # noqa: N806 - Win32 常量
+    ok = advapi32.LogonUserW(
+        const.SANDBOX_USER_NAME, None, password,
+        logon_interactive if interactive else logon_network, logon_provider_default,
+        ctypes.byref(token),
+    )
+    if not ok and not interactive:
+        network_err = ctypes.get_last_error()
+        logger.debug(
+            "jbx-sandbox network logon 失败 (WinError %d), 回退 interactive 校验密码",
+            network_err,
+        )
+        ok = advapi32.LogonUserW(
+            const.SANDBOX_USER_NAME, None, password,
+            logon_interactive, logon_provider_default,
+            ctypes.byref(token),
+        )
+    if ok:
+        try:
+            ctypes.WinDLL("kernel32").CloseHandle(token)
+        except OSError:
+            pass
+        return True
+    return False
+
+
+def _save_sandbox_user_password(password: str) -> None:
+    """DPAPI 加密密码写入 HKLM (机器绑定, 本机任意用户可解密)."""
+    try:
+        import win32crypt  # type: ignore[import-not-found]
+        enc = win32crypt.CryptProtectData(
+            password.encode("utf-8"), "jbx-sandbox-pw", None, None, None,
+            CRYPTPROTECT_LOCAL_MACHINE,
+        )
+        _reg_set_str(const.REG_VALUE_SANDBOX_USER_PW, enc.hex())
+    except ImportError:  # pragma: no cover
+        logger.warning("pywin32 缺失, 沙箱用户密码未加密存储 (仅开发环境)")
+
+
+def _create_sandbox_user(password: str, *, retries: int = 1) -> bool:
+    """创建 jbx-sandbox 本地用户 (幂等: 已存在则跳过).
+
+    retries>1 用于刚 NetUserDel 后的 pending-delete (Add 返回 2224).
+    Returns: True=本次新建; False=已存在 (未改密码, 调用方用 DPAPI 旧密码).
+    """
+    netapi32 = _get_netapi32()
+    info = UserInfo1()
+    # LPWSTR 字段直接赋 str: ctypes 自动转 NUL 结尾宽字符串指针并绑定生命周期.
+    # 不能用 create_unicode_buffer (返回 c_wchar_Array_N, py3.13 ctypes 拒绝数组→指针赋值).
+    info.usri1_name = const.SANDBOX_USER_NAME
+    info.usri1_password = password
+    info.usri1_password_age = 0
+    info.usri1_priv = USER_PRIV_USER
+    info.usri1_home_dir = None
+    info.usri1_comment = "JiuwenBox sandbox user"
+    info.usri1_flags = const.SANDBOX_USER_FLAGS
+    info.usri1_script_path = None
+
+    attempts = max(1, retries)
+    last_ret = 0
+    last_err = 0
+    for attempt in range(attempts):
+        err = wintypes.DWORD(0)
+        ret = netapi32.NetUserAdd(
+            None, const.USER_INFO_1_LEVEL, ctypes.byref(info), ctypes.byref(err),
+        )
+        if ret == 0:
+            logger.info("创建沙箱用户 %s 成功", const.SANDBOX_USER_NAME)
+            return True
+        if ret == NERR_USER_EXISTS:
+            if attempt + 1 < attempts:
+                logger.warning(
+                    "NetUserAdd 用户已存在 (可能 pending-delete), 0.5s 后重试 (%d/%d)",
+                    attempt + 1, attempts,
+                )
+                time.sleep(0.5)
+                continue
+            # 用户已存在不重设密码: 随机密码下本次生成的新密码与实际不一致, 不能用它存 DPAPI (否则重现 1326).
+            # 调用方应读 DPAPI 旧密码存注册表, 读不到时由 _verify_or_reset 重设.
+            logger.info(
+                "沙箱用户 %s 已存在, 跳过 (不重设密码, 用 DPAPI 旧密码)",
+                const.SANDBOX_USER_NAME,
+            )
+            return False
+        last_ret, last_err = ret, err.value
+        if attempt + 1 < attempts:
+            logger.warning(
+                "NetUserAdd 失败 ret=%d err=%d, 0.5s 后重试 (%d/%d)",
+                ret, err.value, attempt + 1, attempts,
+            )
+            time.sleep(0.5)
+            continue
+        raise RuntimeError(
+            f"NetUserAdd 失败: ret={last_ret} err={last_err}"
+        )
+    raise RuntimeError(
+        f"NetUserAdd 失败: ret={last_ret} err={last_err}"
+    )
+
+
+def _set_user_password(user_name: str, password: str) -> None:
+    """重设已有用户的密码 (NetUserSetInfo level=1).
+
+    install 幂等场景: 用户已存在时把密码重设为本次生成的值, 保证用户密码
+    与注册表 DPAPI 密码一致 (见 1326). 需 admin (install 本身 admin).
+    """
+    netapi32 = _get_netapi32()
+    info = UserInfo1()
+    info.usri1_name = user_name  # LPWSTR 直接赋 str (见 _create_sandbox_user 注释)
+    info.usri1_password = password
+    info.usri1_password_age = 0
+    info.usri1_priv = USER_PRIV_USER
+    info.usri1_home_dir = None
+    info.usri1_comment = "JiuwenBox sandbox user"
+    info.usri1_flags = const.SANDBOX_USER_FLAGS
+    info.usri1_script_path = None
+    err = wintypes.DWORD(0)
+    ret = netapi32.NetUserSetInfo(
+        None, user_name, const.USER_INFO_1_LEVEL, ctypes.byref(info), ctypes.byref(err),
+    )
+    if ret != 0:
+        raise RuntimeError(
+            f"NetUserSetInfo 失败: ret={ret} err={err.value}"
+        )
+
+
+# GetComputerNameExW NameType (sysinfoapi.h COMPUTER_NAME_FORMAT).
+_COMPUTER_NAME_NETBIOS = 0
+_COMPUTER_NAME_DNS_HOSTNAME = 1
+_COMPUTER_NAME_PHYSICAL_DNS_HOSTNAME = 5
+_ADD_LOCALGROUP_MEMBER_OK = (
+    0, const.ERROR_MEMBER_IN_ALIAS, const.ERROR_MEMBER_NOT_IN_ALIAS,
+)
+
+
+def _computer_name_ex(name_format: int) -> str | None:
+    """GetComputerNameExW; 失败返回 None."""
+    kernel32 = get_kernel32()
+    size = wintypes.DWORD(0)
+    kernel32.GetComputerNameExW(name_format, None, ctypes.byref(size))
+    cap = size.value if size.value > 1 else 256
+    buf = ctypes.create_unicode_buffer(cap)
+    nsize = wintypes.DWORD(cap)
+    if not kernel32.GetComputerNameExW(name_format, buf, ctypes.byref(nsize)):
+        return None
+    name = buf.value or ""
+    return name.strip() or None
+
+
+def _local_computer_names() -> list[str]:
+    """本机 NetBIOS / DNS 主机名 (去重保序).
+
+    域加入机器上对象选取器「查找位置」用的是本机名 (如 D00624812-PD7AX),
+    不一定等于 GetComputerNameW 的 15 字符 NetBIOS 名.
+    """
+    names: list[str] = []
+    seen: set[str] = set()
+
+    def _add(name: str | None) -> None:
+        text = (name or "").strip()
+        if not text:
+            return
+        key = text.casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        names.append(text)
+
+    try:
+        kernel32 = get_kernel32()
+        size = wintypes.DWORD(256)
+        buf = ctypes.create_unicode_buffer(256)
+        if kernel32.GetComputerNameW(buf, ctypes.byref(size)):
+            _add(buf.value)
+    except Exception:  # noqa: BLE001
+        logger.debug("GetComputerNameW 失败", exc_info=True)
+    for fmt in (
+        _COMPUTER_NAME_DNS_HOSTNAME,
+        _COMPUTER_NAME_PHYSICAL_DNS_HOSTNAME,
+        _COMPUTER_NAME_NETBIOS,
+    ):
+        try:
+            _add(_computer_name_ex(fmt))
+        except Exception:  # noqa: BLE001
+            logger.debug("GetComputerNameExW(%d) 失败", fmt, exc_info=True)
+    return names
+
+
+def _sandbox_group_member_names() -> list[str]:
+    """本机沙箱账户的加组名字候选, 对齐手动「查找位置=本机」.
+
+    域机上裸名 ``jbx-sandbox`` 会先查域, NetLocalGroupAddMembers 返回 1387.
+    必须用 ``计算机名\\jbx-sandbox`` 或 ``.\\jbx-sandbox``.
+    """
+    user = const.SANDBOX_USER_NAME
+    names: list[str] = []
+    seen: set[str] = set()
+
+    def _add(name: str) -> None:
+        key = name.casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        names.append(name)
+
+    for host in _local_computer_names():
+        _add(f"{host}\\{user}")
+    _add(f".\\{user}")
+    _add(user)
+    return names
+
+
+def _net_local_group_add_member_name(
+    netapi32: ctypes.WinDLL, group: str, member_name: str,
+) -> int:
+    """NetLocalGroupAddMembers level 3 (名字). 返回 netapi 错误码."""
+
+    class LocalGroupMembersInfo3(ctypes.Structure):
+        _fields_ = [("lgrpi3_domainandname", wintypes.LPWSTR)]
+
+    name_buf = ctypes.create_unicode_buffer(member_name)
+    member = LocalGroupMembersInfo3()
+    member.lgrpi3_domainandname = ctypes.cast(name_buf, wintypes.LPWSTR)
+    return netapi32.NetLocalGroupAddMembers(
+        None, group, const.LOCALGROUP_MEMBERS_INFO_3,
+        ctypes.byref(member), 1,
+    )
+
+
+def _net_local_group_add_member_sid(
+    netapi32: ctypes.WinDLL, group: str, sid_str: str,
+) -> int:
+    """NetLocalGroupAddMembers level 0 (SID), 避开名字解析."""
+    advapi32 = _get_advapi32()
+    psid = ctypes.c_void_p()
+    if not advapi32.ConvertStringSidToSidW(sid_str, ctypes.byref(psid)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        class LocalGroupMembersInfo0(ctypes.Structure):
+            _fields_ = [("lgrmi0_sid", ctypes.c_void_p)]
+
+        member = LocalGroupMembersInfo0()
+        member.lgrmi0_sid = psid
+        return netapi32.NetLocalGroupAddMembers(
+            None, group, const.LOCALGROUP_MEMBERS_INFO_0,
+            ctypes.byref(member), 1,
+        )
+    finally:
+        get_kernel32().LocalFree(psid)
+
+
+def _add_user_to_group() -> None:
+    """把 jbx-sandbox 加入 jbx-sandbox-users 组 (幂等, 失败 raise).
+
+    域加入机器必须用本机限定名 ``计算机名\\jbx-sandbox`` (与对象选取器
+    「查找位置=本机」一致); 裸名会解析到域, 返回 1387.
+    """
+    netapi32 = _get_netapi32()
+    # 先尝试建组 (已存在则忽略, 错误码 2237 = NERR_GroupExists).
+
+    class LocalGroupInfo0(ctypes.Structure):
+        _fields_ = [("lgrpi0_name", wintypes.LPWSTR)]
+
+    grp_info = LocalGroupInfo0()
+    grp_name_buf = ctypes.create_unicode_buffer(const.SANDBOX_USER_GROUP)
+    grp_info.lgrpi0_name = ctypes.cast(grp_name_buf, wintypes.LPWSTR)
+    ret = netapi32.NetLocalGroupAdd(
+        None, 0, ctypes.byref(grp_info), None,
+    )
+    if ret == 0:
+        logger.info("创建组 %s 成功", const.SANDBOX_USER_GROUP)
+    elif ret in (2237, 1379):
+        logger.info("组 %s 已存在, 跳过", const.SANDBOX_USER_GROUP)
+    else:
+        # 组创建失败是致命 (S12): 没组就没法加成员, 后续组级 ACL 全废。
+        raise RuntimeError(f"NetLocalGroupAdd 失败 ret={ret}")
+
+    last_ret = -1
+    tried: list[str] = []
+    # SID 加组不走名字解析, 域机最稳; LookupAccountName 失败再退回限定名.
+    try:
+        sid = _lookup_user_sid(const.SANDBOX_USER_NAME)
+        last_ret = _net_local_group_add_member_sid(
+            netapi32, const.SANDBOX_USER_GROUP, sid,
+        )
+        tried.append(f"SID:{sid}")
+        if last_ret in _ADD_LOCALGROUP_MEMBER_OK:
+            logger.info(
+                "用户 %s 已加入组 %s (via SID)",
+                const.SANDBOX_USER_NAME, const.SANDBOX_USER_GROUP,
+            )
+            return
+        logger.warning("SID 加组失败 ret=%d, 回退计算机名限定名", last_ret)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("SID 加组失败, 回退计算机名限定名: %s", exc)
+
+    for member_name in _sandbox_group_member_names():
+        tried.append(member_name)
+        last_ret = _net_local_group_add_member_name(
+            netapi32, const.SANDBOX_USER_GROUP, member_name,
+        )
+        if last_ret in _ADD_LOCALGROUP_MEMBER_OK:
+            logger.info(
+                "用户 %s 已加入组 %s (member=%s)",
+                const.SANDBOX_USER_NAME, const.SANDBOX_USER_GROUP, member_name,
+            )
+            return
+        logger.warning(
+            "NetLocalGroupAddMembers ret=%d member=%s", last_ret, member_name,
+        )
+
+    raise RuntimeError(
+        f"NetLocalGroupAddMembers 失败 ret={last_ret} "
+        f"(user={const.SANDBOX_USER_NAME} group={const.SANDBOX_USER_GROUP} "
+        f"tried={tried})"
+    )
+
+
+def _lsa_account_rights(win32security: object, policy: object, sid: object) -> list[str]:
+    """枚举 SID 已有的 LSA 用户权利; 账户尚无 LSA 对象时返回空列表."""
+    try:
+        rights = win32security.LsaEnumerateAccountRights(policy, sid)  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001
+        return []
+    if not rights:
+        return []
+    return [str(r) for r in rights]
+
+
+def _grant_interactive_logon_right(sid_str: str) -> None:
+    """给 SID 授 SeInteractiveLogonRight (允许本地登录), 幂等.
+
+    对齐 secpol.msc → 本地策略 → 用户权限分配 → 允许本地登录.
+    域加入机器上第一跳 CreateProcessWithLogonW(LOGON_WITH_PROFILE) 必须有此权利,
+    否则 WinError 1385. 若域 GPO 同样配置了该权利, 下次 gpupdate 可能覆盖本机设置.
+    """
+    try:
+        import win32security  # type: ignore[import-not-found]
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError(
+            "授 SeInteractiveLogonRight 需要 pywin32 (win32security)"
+        ) from exc
+    if not sid_str:
+        raise RuntimeError("授 SeInteractiveLogonRight 缺少用户 SID")
+    sid = win32security.ConvertStringSidToSid(sid_str)
+    policy = win32security.LsaOpenPolicy(None, const.POLICY_GRANT_LOGON_RIGHTS_ACCESS)
+    try:
+        existing = _lsa_account_rights(win32security, policy, sid)
+        if const.SE_DENY_INTERACTIVE_LOGON_NAME in existing:
+            logger.warning(
+                "账户已有 %s (拒绝本地登录), 优先于允许权利; "
+                "CreateProcessWithLogonW 仍会失败. 请从域 GPO / 本地策略中移除拒绝项",
+                const.SE_DENY_INTERACTIVE_LOGON_NAME,
+            )
+        if const.SE_INTERACTIVE_LOGON_NAME in existing:
+            logger.info(
+                "用户 %s 已有 %s, 跳过",
+                const.SANDBOX_USER_NAME, const.SE_INTERACTIVE_LOGON_NAME,
+            )
+            return
+        try:
+            win32security.LsaAddAccountRights(
+                policy, sid, [const.SE_INTERACTIVE_LOGON_NAME],
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                f"LsaAddAccountRights({const.SE_INTERACTIVE_LOGON_NAME}) 失败: {exc}. "
+                "域控机上 jbx-sandbox 需要「允许本地登录」才能 CreateProcessWithLogonW"
+            ) from exc
+        logger.info(
+            "已授 %s 给 %s (允许本地登录). "
+            "若本机加入域且 GPO 配置了同一用户权利, 下次 gpupdate 可能覆盖",
+            const.SE_INTERACTIVE_LOGON_NAME, const.SANDBOX_USER_NAME,
+        )
+        verified = _lsa_account_rights(win32security, policy, sid)
+        if const.SE_INTERACTIVE_LOGON_NAME not in verified:
+            logger.warning(
+                "LsaAddAccountRights 后枚举仍无 %s, 可能被域 GPO 立即覆盖. "
+                "请让域管把组 %s 加入「允许本地登录」, 或把 %s 加入 GPO 已放行的组",
+                const.SE_INTERACTIVE_LOGON_NAME,
+                const.SANDBOX_USER_GROUP,
+                const.SANDBOX_USER_NAME,
+            )
+    finally:
+        try:
+            win32security.LsaClose(policy)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _ensure_interactive_logon_right(sid_str: str, *, fatal: bool = True) -> None:
+    """install 主路径失败则 raise; 已装补授路径失败只记日志."""
+    try:
+        _grant_interactive_logon_right(sid_str)
+    except Exception as exc:
+        if fatal:
+            raise
+        logger.warning("补授 SeInteractiveLogonRight 失败 (非致命): %s", exc)
+
+
+def _revoke_interactive_logon_right(sid_str: str) -> None:
+    """卸载 / 回滚时收回 SeInteractiveLogonRight, best-effort."""
+    if not sid_str:
+        return
+    try:
+        import win32security  # type: ignore[import-not-found]
+    except ImportError:
+        return
+    try:
+        sid = win32security.ConvertStringSidToSid(sid_str)
+        policy = win32security.LsaOpenPolicy(
+            None, const.POLICY_GRANT_LOGON_RIGHTS_ACCESS,
+        )
+        try:
+            win32security.LsaRemoveAccountRights(
+                policy, sid, False, [const.SE_INTERACTIVE_LOGON_NAME],
+            )
+        finally:
+            try:
+                win32security.LsaClose(policy)
+            except Exception:  # noqa: BLE001
+                pass
+    except Exception:  # noqa: BLE001
+        logger.warning("收回 SeInteractiveLogonRight 失败 (非致命)", exc_info=True)
+
+
+def _lookup_account_sid(system_name: str | None, account_name: str) -> str:
+    """LookupAccountName 取 SID 字符串; 找不到 raise WinError."""
+    advapi32 = _get_advapi32()
+    sid_buf = (ctypes.c_byte * 256)()
+    sid_size = wintypes.DWORD(256)
+    domain_buf = ctypes.create_unicode_buffer(256)
+    domain_size = wintypes.DWORD(256)
+    use = wintypes.DWORD(0)
+    ok = advapi32.LookupAccountNameW(
+        system_name, account_name, sid_buf, ctypes.byref(sid_size),
+        domain_buf, ctypes.byref(domain_size), ctypes.byref(use),
+    )
+    if not ok:
+        sid_buf = (ctypes.c_byte * max(sid_size.value, 1))()
+        domain_buf = ctypes.create_unicode_buffer(max(domain_size.value, 1))
+        ok = advapi32.LookupAccountNameW(
+            system_name, account_name, sid_buf, ctypes.byref(sid_size),
+            domain_buf, ctypes.byref(domain_size), ctypes.byref(use),
+        )
+        if not ok:
+            raise ctypes.WinError(ctypes.get_last_error())
+    sid_str = wintypes.LPWSTR()
+    if not advapi32.ConvertSidToStringSidW(sid_buf, ctypes.byref(sid_str)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    result = sid_str.value
+    _free_sid_str(sid_str)
+    return result
+
+
+def _lookup_user_sid(user_name: str) -> str:
+    """LookupAccountName 取用户 SID 字符串.
+
+    本机沙箱账户先按「查找位置=本机」解析 (计算机名\\jbx-sandbox),
+    避免域加入机器把裸名解析到域.
+    """
+    attempts: list[tuple[str | None, str]] = []
+    if "\\" in user_name:
+        attempts.append((None, user_name))
+    elif user_name.casefold() == const.SANDBOX_USER_NAME.casefold():
+        for host in _local_computer_names():
+            attempts.append((host, user_name))
+            attempts.append((None, f"{host}\\{user_name}"))
+        attempts.append((None, f".\\{user_name}"))
+        attempts.append((None, user_name))
+    else:
+        attempts.append((None, user_name))
+
+    last_exc: BaseException | None = None
+    seen: set[tuple[str | None, str]] = set()
+    for system, account in attempts:
+        key = (system.casefold() if system else None, account.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            return _lookup_account_sid(system, account)
+        except OSError as exc:
+            last_exc = exc
+            continue
+    if last_exc:
+        raise last_exc
+    raise RuntimeError(f"LookupAccountName 失败: {user_name}")
+
+
+def _lookup_current_user_sid() -> str | None:
+    """当前进程 TokenUser SID; 域账户不能靠 LookupAccountName(getpass.getuser())."""
+    try:
+        import win32api  # type: ignore[import-not-found]
+        import win32con  # type: ignore[import-not-found]
+        import win32security  # type: ignore[import-not-found]
+        token = win32security.OpenProcessToken(
+            win32api.GetCurrentProcess(), win32con.TOKEN_QUERY,
+        )
+        try:
+            info = win32security.GetTokenInformation(
+                token, win32security.TokenUser,
+            )
+            user = info[0] if isinstance(info, (tuple, list)) else info
+            return win32security.ConvertSidToStringSid(user)
+        finally:
+            try:
+                win32api.CloseHandle(token)
+            except Exception:  # noqa: BLE001
+                pass
+    except Exception:  # noqa: BLE001
+        logger.debug("取当前用户 Token SID 失败, 回落 LookupAccountName", exc_info=True)
+    try:
+        import getpass as _getpass
+        return _lookup_user_sid(_getpass.getuser())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _path_owned_by_current_user(path: str) -> bool:
+    """当前用户是否已是 ``path`` (或其最近存在的父目录) 的 owner.
+
+    owner 是当前用户时运行时就能改 DACL, 不必为每个沙箱 workspace 弹 UAC.
+    """
+    probe = path
+    while probe and not os.path.exists(probe):
+        parent = os.path.dirname(probe)
+        if parent == probe:
+            break
+        probe = parent
+    if not probe or not os.path.exists(probe):
+        return False
+    probe = os.path.normpath(probe)
+    try:
+        import win32security  # type: ignore[import-not-found]
+        current = _lookup_current_user_sid()
+        if not current:
+            return False
+        sd = win32security.GetFileSecurity(
+            probe, win32security.OWNER_SECURITY_INFORMATION,
+        )
+        owner = sd.GetSecurityDescriptorOwner()
+        owner_sid = win32security.ConvertSidToStringSid(owner)
+        return os.path.normcase(owner_sid) == os.path.normcase(current)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _free_sid_str(sid_str: wintypes.LPWSTR) -> None:
+    kernel32 = get_kernel32()
+    try:
+        kernel32.LocalFree(sid_str)  # type: ignore[arg-type]
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _is_admin() -> bool:
+    """检测当前进程是否以管理员身份运行."""
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _delete_profile_by_sid(sid_str: str) -> bool:
+    """DeleteProfileW 按 SID 删用户 profile (目录树 + ProfileList 注册项).
+
+    需 admin. lpProfilePath 传 None 让 API 自己从 ProfileList 解析路径.
+    返回 True=已删或本就无 profile; False=删除失败 (常见: profile 正被
+    占用, 此情形下注册表项仍会被清理, 目录待下次重启后可手动删).
+
+    本接口保留, 仅在 uninstall / reinstall 流程调用 (见 uninstall / install 回滚),
+    不在沙箱运行期调用: 运行期 profile 由 win_exec.two_hop_spawn 的
+    CreateProcessWithLogonW(LOGON_WITH_PROFILE) 首次登录创建, 首次后复用,
+    运行期无需再删. 保留它是为了卸载干净 + reinstall 清理历史残留目录.
+    """
+    if not sid_str:
+        return False
+    userenv = _get_userenv()
+    ok = userenv.DeleteProfileW(sid_str, None, None)
+    if ok:
+        return True
+    err = ctypes.get_last_error()
+    # ERROR_FILE_NOT_FOUND (2): 无 profile 可删, 视为幂等成功.
+    if err == 2:
+        return True
+    logger.warning(
+        "DeleteProfileW(sid=%s) 失败 last_error=%d (profile 可能正被占用; "
+        "注册表项已清, 目录待重启后可手动删)", sid_str, err,
+    )
+    return False
+
+
+def _purge_stale_profile_dirs() -> None:
+    """清理 C:\\Users 下 jbx-sandbox* 历史残留 profile 目录.
+
+    反复 reinstall 时 Windows 会建 jbx-sandbox.DESKTOP-XXX / .000 / .001 ...
+    备份目录 (DeleteProfile 按 SID 只能删当前 SID 对应的那一个, 历史 RID
+    对应的目录删不到). 这里按目录名前缀兜底 rmtree, 把所有
+    jbx-sandbox / jbx-sandbox.* 一次性清掉. best-effort, 失败仅 warning.
+
+    注意 profile 里有 WinX (Win+X 快捷菜单的 reparse point 目录, 系统锁定
+    ACL), shutil.rmtree 默认遇 WinError 5 中止 → 前面删了的留半删残留. 用
+    onerror 回调: 对每个失败文件 chmod 后重试, 仍失败则 warning 跳过并继续删
+    其余 (而非整体中止). WinX 本身留作 reparse point 由 DeleteProfileW / 系统
+    处理, 不阻断 profile 目录整体清理 (实测: 加 onerror 后 WinX 单文件失败但
+    其余全删干净, 目录树最终 rmdir 成功).
+
+    本接口保留, 仅在 uninstall / install 回滚流程调用, 不在沙箱运行期调用
+    (运行期 profile 复用单一目录, 无残留堆积). 保留它专为 reinstall 清理历史
+    残留 + uninstall 卸载干净, 见 _delete_profile_by_sid 注释.
+    """
+    import shutil
+
+    def _rmtree_onerror(func, fpath, exc_info):
+        # 对单文件/目录失败: 尝试改可写后重试一次. 仍失败则 warning 跳过,
+        # 让 rmtree 继续删下一个 (默认行为是抛出中止整个 rmtree).
+        try:
+            os.chmod(fpath, 0o777)
+            func(fpath)
+        except OSError as exc:
+            # 不阻断: 记 warning 后, rmtree 遇 onerror 返回 None 会继续后续文件.
+            logger.debug("清理残留 profile: 跳过 %s (%s)", fpath, exc)
+
+    users_root = os.environ.get("SystemDrive", "C:") + "\\Users"  # pylint: disable=use-system-path
+    try:
+        entries = os.listdir(users_root)
+    except OSError as exc:
+        logger.warning("列出 %s 失败, 跳过残留 profile 清理: %s", users_root, exc)
+        return
+    for name in entries:
+        # 严格前缀匹配, 避免误删无关目录 (如 sandbox-other).
+        if name == const.SANDBOX_USER_NAME or name.startswith(
+            const.SANDBOX_USER_NAME + "."
+        ):
+            path = os.path.join(users_root, name)
+            try:
+                shutil.rmtree(path, onerror=_rmtree_onerror)
+                # rmtree 不抛 (onerror 吞错) 即视为删完. 再确认目录还在不在
+                # (onerror 全跳过时会残留), 仍在则 rmdir 兜底 (空目录可删).
+                if os.path.isdir(path):
+                    try:
+                        os.rmdir(path)
+                    except OSError:
+                        logger.warning(
+                            "残留 profile 目录 %s 删不尽 (含系统锁定子项如 WinX), "
+                            "留待重启后删", path,
+                        )
+                        continue
+                logger.info("删除残留 profile 目录 %s", path)
+            except OSError as exc:
+                # 正被占用 / 权限不足: 目录留待重启后删, 不阻断卸载.
+                logger.warning(
+                    "删除 %s 失败 (可能正被占用): %s", path, exc,
+                )
+
+
+def _load_policy_preinstall_paths(policy_path: str) -> list[str]:
+    """从 windows-policy.yaml 读 read_acl_preinstall + tool_paths, 返回去重后的
+    预装路径列表 (含 git_dir 的 usr/bin, bin 子目录 + bash_path 父目录).
+
+    install 时调: 用户改 tool_paths 后 --force 重装, 把工具目录的读 ACL
+    预装上 (运行时普通用户无权改这些目录 DACL).
+
+    P1-11: 复用 PolicyReader.load_policy() 走 _resolve_tool_paths 探测填充
+    (基底 tool_paths 四字段为空串时, load_policy 用 sys.executable/PATH 自动
+    填充 python_dir/node_dir/git_dir/bash_path). 旧版直接 yaml.safe_load 读
+    原始值, --force --policy-path 重装时 tool_paths 全空 → 预装集丢失工具目录
+    → 重装后受限 token 读不了 tools/python. 现保证 install 与 runtime 读同一份
+    填充后 tool_paths.
+    """
+    from pathlib import Path as _Path
+    from jiuwenbox.server.policy_reader import PolicyReader
+    # PolicyReader(policy_path=...) 加载指定文件; 若该路径等于基底则不合并副本
+    # (policy_reader.py:182-185), 即只读该文件本身, 符合 install 提权场景.
+    reader = PolicyReader(policy_path=_Path(policy_path))
+    policy = reader.load_policy()
+    win_fs = policy.windows.filesystem
+    paths: list[str] = []
+    for p in win_fs.read_acl_preinstall or []:
+        if isinstance(p, str) and p:
+            paths.append(p)
+    tp = win_fs.tool_paths
+    for key in ("git_dir", "node_dir", "python_dir"):
+        v = getattr(tp, key, None)
+        if isinstance(v, str) and v:
+            paths.append(v)
+            if key == "git_dir":
+                paths.append(v.rstrip("\\/").replace("/", "\\") + "\\usr\\bin")  # pylint: disable=use-system-path
+                paths.append(v.rstrip("\\/").replace("/", "\\") + "\\bin")  # pylint: disable=use-system-path
+    bash_p = getattr(tp, "bash_path", None)
+    if isinstance(bash_p, str) and bash_p:
+        paths.append(os.path.dirname(bash_p))
+    # 去重保序.
+    seen: set[str] = set()
+    out: list[str] = []
+    for p in paths:
+        if p and p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
+
+
+def _load_policy_acl_paths(policy_path: str) -> list[str]:
+    """从 windows-policy.yaml 读所有需要施加 ACE 的用户配置路径."""
+    import yaml as _yaml
+    from jiuwenbox.server.policy_engine import read_policy_text
+    data = _yaml.safe_load(read_policy_text(policy_path)) or {}
+    win_fs = ((data.get("windows") or {}).get("filesystem") or {})
+    keys = ("allow_read", "deny_read", "allow_write", "deny_write")
+    paths: list[str] = []
+    for k in keys:
+        for p in win_fs.get(k) or []:
+            if isinstance(p, str) and p:
+                paths.append(p)
+    # 去重保序.
+    seen: set[str] = set()
+    out: list[str] = []
+    for p in paths:
+        ep = os.path.expandvars(p)
+        if ep and ep not in seen:
+            seen.add(ep)
+            out.append(ep)
+    return out
+
+
+def _quote_arg(arg: str) -> str:
+    """参数含空格/制表符时用双引号包裹 (Windows 命令行规则)."""
+    if " " in arg or "\t" in arg:
+        return f'"{arg}"'
+    return arg
+
+
+_PYTHON_EXE_NAMES = frozenset({"python.exe", "pythonw.exe", "python3.exe"})
+
+
+def _looks_like_python_exe(path: str) -> bool:
+    """True if basename is a CPython interpreter (UAC 将显示为 Python)."""
+    return os.path.basename(path).lower() in _PYTHON_EXE_NAMES
+
+
+def _prefer_pythonw(path: str) -> str:
+    """python.exe 会弹控制台; 同目录有 pythonw.exe 时改用它 (UAC 仍显示 Python)."""
+    name = os.path.basename(path).lower()
+    if name in {"python.exe", "python3.exe"}:
+        sibling = os.path.join(os.path.dirname(path), "pythonw.exe")
+        if os.path.isfile(sibling):
+            return sibling
+    return path
+
+
+def _iter_bundled_python_candidates() -> list[str]:
+    """随包 pythonw.exe/python.exe 候选路径 (JIUWENBOX_BUNDLED_PYTHON 等)."""
+    candidates: list[str] = []
+    for env_key in ("JIUWENBOX_BUNDLED_PYTHON", "JIUWENBOX_RUNNER_PYTHON"):
+        raw = (os.environ.get(env_key) or "").strip()
+        if raw:
+            candidates.append(raw)
+            candidates.append(os.path.join(raw, "pythonw.exe"))
+            candidates.append(os.path.join(raw, "python.exe"))
+    return candidates
+
+
+def _resolve_uac_python() -> str | None:
+    """找随包 python.exe 作为 UAC 展示名 (冻包 payload 是 jiuwenbox.exe)."""
+    seen: set[str] = set()
+    for cand in _iter_bundled_python_candidates():
+        try:
+            resolved = str(Path(cand).expanduser().resolve())
+        except (OSError, RuntimeError):
+            continue
+        key = os.path.normcase(resolved)
+        if key in seen or not os.path.isfile(resolved):
+            continue
+        seen.add(key)
+        if _looks_like_python_exe(resolved):
+            return _prefer_pythonw(resolved)
+    return None
+
+
+def _write_uac_python_launcher(payload_exe: str, payload_args: list[str]) -> str:
+    """临时脚本: 提权后的 python.exe 再拉起冻包 exe 跑 win_setup."""
+    import tempfile
+
+    argv = [payload_exe, *payload_args]
+    setup_env = {k: v for k, v in os.environ.items() if k.startswith("JIUWENBOX_") or k in {
+        "PYTHONPATH",
+    }}
+    body = (
+        "import os, subprocess, sys\n"
+        f"_argv = {argv!r}\n"
+        f"os.environ.update({setup_env!r})\n"
+        "if sys.platform == 'win32':\n"
+        "    try:\n"
+        "        import ctypes\n"
+        "        ctypes.windll.kernel32.FreeConsole()\n"
+        "    except Exception:\n"
+        "        pass\n"
+        "_kw = {'stdin': subprocess.DEVNULL}\n"
+        "if sys.platform == 'win32':\n"
+        "    _kw['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)\n"
+        "try:\n"
+        "    raise SystemExit(int(subprocess.call(_argv, **_kw)))\n"
+        "finally:\n"
+        "    try:\n"
+        "        os.remove(__file__)\n"
+        "    except OSError:\n"
+        "        pass\n"
+    )
+    fd, path = tempfile.mkstemp(prefix="jbx-uac-", suffix=".py")
+    try:
+        os.write(fd, body.encode("utf-8"))
+    finally:
+        os.close(fd)
+    return path
+
+
+def _uac_shell_execute_target(payload_exe: str, payload_args: list[str]) -> tuple[str, str]:
+    """ShellExecuteW 的 (file, params); 能找到 python.exe 时用它做 UAC 展示名."""
+    uac_py = _resolve_uac_python()
+    if not uac_py:
+        logger.warning(
+            "未找到随包 python.exe, UAC 将显示 %s; 请确认桌面 runtime/python-win 已解压",
+            payload_exe,
+        )
+        uac_py = payload_exe
+    # ShellExecute does not accept an environment block. Always carry the
+    # source/runtime bootstrap environment through the elevated launcher.
+    launcher = _write_uac_python_launcher(payload_exe, payload_args)
+    logger.info(
+        "UAC 展示 python=%s, 实际 install payload=%s, launcher=%s",
+        uac_py, payload_exe, launcher,
+    )
+    return uac_py, _quote_arg(launcher)
+
+
+def _elevate_and_run_install(
+    force: bool = False,
+    preinstall_paths: list[str] | None = None,
+    proxy_port_start: int = const.DEFAULT_PROXY_PORT_RANGE_START,
+    proxy_port_end: int = const.DEFAULT_PROXY_PORT_RANGE_END,
+    policy_path: str | None = None,
+    recreate_user: bool = False,
+    host_user_sid: str | None = None,
+    acl_paths: list[str] | None = None,
+    authorize_only: bool = False,
+) -> int:
+    """Elevate only setup and require a successful process exit."""
+    import base64
+
+    py = sys.executable
+    parts = (["--win-setup"] if getattr(sys, "frozen", False)
+             else ["-m", "jiuwenbox.supervisor.win_setup"])
+    parts.append(const.INSTALL_SUBCOMMAND)
+    if force:
+        parts.append("--force")
+    if recreate_user:
+        parts.append("--recreate-user")
+    if authorize_only:
+        parts.append("--authorize-only")
+    parts += ["--proxy-port-start", str(proxy_port_start),
+              "--proxy-port-end", str(proxy_port_end),
+              "--install-log-path", _install_log_path()]
+    for flag, paths in (("--preinstall-paths", preinstall_paths), ("--acl-paths", acl_paths)):
+        if paths is not None:
+            parts += [flag, base64.b64encode(json.dumps(paths).encode("utf-8")).decode("ascii")]
+    host_user_sid = host_user_sid or _lookup_current_user_sid()
+    if not host_user_sid:
+        raise RuntimeError("无法确定需要沙箱授权的宿主用户 SID")
+    parts += ["--host-user-sid", host_user_sid]
+    if policy_path:
+        parts += ["--policy-path", policy_path]
+    if getattr(sys, "frozen", False):
+        uac_file, params = py, " ".join(_quote_arg(p) for p in parts)
+    else:
+        uac_file, params = _uac_shell_execute_target(py, parts)
+
+    info = ShellExecuteInfo()
+    info.cbSize = ctypes.sizeof(info)
+    info.fMask = 0x40 | 0x100  # SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC
+    info.lpVerb = "runas"
+    info.lpFile = uac_file
+    info.lpParameters = params
+    info.nShow = SW_HIDE  # Hides the setup console, not Windows' UAC security prompt.
+    logger.info("正在请求管理员授权以安装、修复或补授权 Windows 沙箱")
+    if not _get_shell32().ShellExecuteExW(ctypes.byref(info)):
+        err = ctypes.get_last_error()
+        if err == 1223:
+            raise RuntimeError("沙箱初始化已取消: 未批准管理员授权 (WinError 1223)")
+        raise RuntimeError(f"无法请求沙箱管理员权限 (WinError {err}): {ctypes.FormatError(err)}")
+    if not info.hProcess:
+        raise RuntimeError("沙箱提权未返回安装进程句柄, 无法确认初始化成功")
+    kernel32 = get_kernel32()
+    try:
+        wait_result = kernel32.WaitForSingleObject(info.hProcess, 90_000)
+        if wait_result == 0x102:
+            raise RuntimeError("沙箱初始化超时: 安装尚未完成, 本地服务未就绪")
+        if wait_result != 0:
+            err = ctypes.get_last_error()
+            raise RuntimeError(f"等待沙箱安装失败 (WinError {err}, result={wait_result:#x})")
+        code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(info.hProcess, ctypes.byref(code)):
+            err = ctypes.get_last_error()
+            raise RuntimeError(f"无法读取沙箱安装退出码 (WinError {err})")
+        if code.value:
+            raise RuntimeError(f"沙箱安装、修复或补授权失败 (退出码 {code.value}); 详见 {_install_log_path()}")
+        logger.info("沙箱 setup 进程成功退出, 开始验证普通权限下的可用性")
+        return 0
+    finally:
+        kernel32.CloseHandle(info.hProcess)
+
+
+# ---------------------------------------------------------------------------
+# 读 ACL 预装 (异步后台线程).
+# ---------------------------------------------------------------------------
+def _preinstall_read_acl(
+    paths: list[str], sid: str, skip_paths: "set[str] | None" = None,
+) -> None:
+    """对指定路径列表递归施加 Allow Read ACE (合成/沙箱用户 SID).
+
+    Args:
+        paths: 待预装读 ACL 的路径列表.
+        sid: 沙箱用户 SID 字符串.
+        skip_paths: 主线程已合并授权的路径集 (normcase 规范化), 这些路径
+            的 GENERIC_READ ACE 已由 grant_aces 合并写入, 直接跳过省一遍递归.
+            跳过时仍记入断点续传 done, 保证重装时幂等.
+    """
+    from jiuwenbox.supervisor import win_acl
+    skip_norm = {os.path.normcase(p) for p in (skip_paths or [])}
+    # 读已完成进度, 跳过已完成路径.
+    done: set[str] = set()
+    raw_progress = reg_get_str(const.REG_VALUE_READ_ACL_PROGRESS)
+    if raw_progress:
+        try:
+            done = set(json.loads(raw_progress))
+        except (ValueError, TypeError):
+            done = set()
+    try:
+        for path in paths:
+            expanded = os.path.expandvars(path)
+            if expanded in done:
+                logger.debug("预装读 ACL: 已完成, 跳过 %s", expanded)
+                continue
+            if not os.path.exists(expanded):
+                logger.debug("预装读 ACL: 路径不存在 %s", expanded)
+                continue
+            if os.path.normcase(expanded) in skip_norm:
+                # 主线程 grant_aces 已合并写入该路径的 GENERIC_READ ACE,
+                # 直接记入 done (断点续传幂等), 不再重复递归施加.
+                done.add(expanded)
+                _reg_set_str(
+                    const.REG_VALUE_READ_ACL_PROGRESS,
+                    json.dumps(sorted(done)),
+                )
+                logger.debug("预装读 ACL: 已由主线程合并授权, 跳过 %s", expanded)
+                continue
+            # Allow Read+Execute ACE 给沙箱用户 SID (python.exe / DLL 需要 Execute).
+            win_acl.grant_ace(
+                expanded, sid,
+                rights=const.ALLOW_READ_EXECUTE_RIGHTS,
+                mode="ALLOW",
+                recursive=True,
+            )
+            done.add(expanded)
+            # 每完成一个路径写一次进度, 支持断点续传.
+            _reg_set_str(
+                const.REG_VALUE_READ_ACL_PROGRESS,
+                json.dumps(sorted(done)),
+            )
+            logger.debug("预装读 ACL 完成: %s", expanded)
+    except Exception:
+        logger.error("预装读 ACL 失败", exc_info=True)
+        raise
+
+
+def _preinstall_read_acl_async(
+    paths: list[str], sid: str, skip_paths: "set[str] | None" = None,
+) -> threading.Thread:
+    """后台线程预装读 ACL.
+
+    返回线程对象供调用方 join. install() 作为提权子进程必须等预装完成再
+    退出, 否则 daemon 线程被强杀, 预装只做一半.
+    """
+    thread = threading.Thread(
+        target=_preinstall_read_acl,
+        args=(paths, sid, skip_paths),
+        name="jbx-read-acl-preinstall",
+        daemon=True,
+    )
+    thread.start()
+    logger.info(
+        "读 ACL 预装已在后台线程启动 (%d 路径, %d 已合并跳过)",
+        len(paths), len(skip_paths or []),
+    )
+    return thread
+
+
+# 预装读 ACL 的等待上限 (秒). 深度遍历大目录可能耗时, 但 install 作为
+# 提权子进程不应无限挂起; 超时后写 installed 标记, 剩余路径由后续 ensure
+# 补做 (grant_ace 幂等).
+PREINSTALL_JOIN_TIMEOUT_SECONDS = 120.0  # noqa: N816 - Win32 常量
+
+
+# ---------------------------------------------------------------------------
+# 公开 API.
+# ---------------------------------------------------------------------------
+def install(
+    force: bool = False,
+    preinstall_paths: list[str] | None = None,
+    proxy_port_start: int = const.DEFAULT_PROXY_PORT_RANGE_START,
+    proxy_port_end: int = const.DEFAULT_PROXY_PORT_RANGE_END,
+    policy_path: str | None = None,
+    recreate_user: bool = False,
+    host_user_sid: str | None = None,
+    acl_paths: list[str] | None = None,
+    authorize_only: bool = False,
+) -> None:
+    """执行一次性安装 (需管理员权限).
+
+    Args:
+        force: 忽略幂等标记强制重装.
+        preinstall_paths: 读 ACL 预装路径 (来自根 policy 的
+            ``windows.filesystem.read_acl_preinstall``). 为 None 时用
+            默认 4 个系统目录.
+        proxy_port_start/end: WFP Permit filter 放行的 loopback 端口范围
+            (来自根 policy 的 ``windows.proxy.port_range_*``). 必须与
+            win_proxy 实际监听端口一致, 否则代理路径被 Block 拦截
+            (review MAJOR #7: 旧版硬编码默认端口, 忽略 policy).
+        policy_path: windows-policy.yaml 路径; install 时读其 read_acl_preinstall
+            + tool_paths 合并进预装路径. 用户改 tool_paths 后 --force 重装用.
+        recreate_user: True 时无论机器上是否已有沙箱, 都先删 jbx-sandbox
+            用户/组/profile 再重建. 桌面安装器每次重装 exe 传入; 运行时
+            --force 补预装不传, 以免误删正在使用的账户.
+    """
+    _require_windows()
+    # 若给了 policy_path, 读其 read_acl_preinstall + tool_paths 合并进预装路径.
+    # 用户改 tool_paths 后 --force --policy-path <yaml> 重装即可预装新工具目录
+    # (运行时普通用户无权改这些目录 DACL, 必须管理员预装).
+    if policy_path and preinstall_paths is None:
+        try:
+            _pp = _load_policy_preinstall_paths(policy_path)
+            if _pp:
+                preinstall_paths = (preinstall_paths or []) + _pp
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("install 读 policy 预装路径失败: %s", exc)
+    if not _is_admin():
+        _elevate_and_run_install(
+            force=force,
+            preinstall_paths=preinstall_paths,
+            proxy_port_start=proxy_port_start,
+            proxy_port_end=proxy_port_end,
+            policy_path=policy_path,
+            recreate_user=recreate_user,
+            host_user_sid=host_user_sid,
+            acl_paths=acl_paths,
+            authorize_only=authorize_only,
+        )
+        return
+
+    if authorize_only:
+        _verify_or_reset_sandbox_user_password()
+        from jiuwenbox.supervisor import win_acl
+        caller_sid = host_user_sid or _lookup_current_user_sid()
+        if not caller_sid:
+            raise RuntimeError("无法确定补授权的宿主用户 SID")
+        for path in acl_paths or []:
+            if os.path.exists(path):
+                win_acl.grant_ace(path, caller_sid, rights=const.WRITE_DAC | const.READ_CONTROL,
+                                  mode="ALLOW", recursive=True)
+        sandbox_sid = get_sandbox_user_sid()
+        if not sandbox_sid:
+            raise RuntimeError("无法读取沙箱账户 SID")
+        _preinstall_read_acl(preinstall_paths or [], sandbox_sid)
+        recorded = get_preinstalled_read_paths() | {
+            os.path.expandvars(p).rstrip("\\/").lower() for p in (preinstall_paths or []) if os.path.exists(p)
+        }
+        _reg_set_str(const.REG_VALUE_PREINSTALLED_PATHS, json.dumps(sorted(recorded)))
+        _record_acl_policy_paths(set(acl_paths or []))
+        logger.info("Windows 沙箱目录补授权完成")
+        return
+
+    # exe 重装必须跳过幂等: 已 installed=1 也要删用户重建.
+    if recreate_user:
+        force = True
+
+    # 幂等检查.
+    if not force and reg_get_str(const.REG_VALUE_INSTALLED) == "1":
+        logger.info("Windows 沙箱已安装, 跳过 (force=True 可重装)")
+        # 域控机可能缺「允许本地登录」; 已装也补授一次, 免强制 recreate-user.
+        try:
+            sid = get_sandbox_user_sid()
+            if not sid:
+                sid = _lookup_user_sid(const.SANDBOX_USER_NAME)
+            _ensure_interactive_logon_right(sid, fatal=False)
+        except Exception:  # noqa: BLE001
+            logger.warning("已安装路径补授允许本地登录失败 (非致命)", exc_info=True)
+        return
+
+    logger.info("开始 Windows 沙箱安装...")
+
+    # install 主体 try/except, 致命步骤失败时调 _install_rollback 局部回滚并 raise,
+    # 不写 installed=1 (旧版 best-effort 假成功).
+    # 致命: 用户+组创建、SeInteractiveLogonRight、网络隔离至少一条路成功 (WFP 或降级).
+    # 隐藏登录界面用户等外观步骤失败可继续; 凭据和必要授权必须通过验证.
+    # review #4: 失败回滚只清本次已成功步骤新增的资源 (用户/组/WFP filter), 不调
+    # uninstall() 全量清理 (会删 jbx-sandbox 用户/profile, 影响并发运行的其他沙箱).
+    steps_done: set[str] = set()
+    try:
+        # 1. 创建用户 + 组 (致命).
+        if recreate_user:
+            steps_done.add("recreate_user")
+            logger.info(
+                "exe 重装: 无论是否已有沙箱, 先删除 jbx-sandbox 用户/组/profile 再重建",
+            )
+            if _sandbox_user_exists():
+                try:
+                    logger.info("重装前卸载 WFP/防火墙…")
+                    from jiuwenbox.supervisor import win_wfp
+                    win_wfp.uninstall_wfp_filters()
+                    win_wfp.uninstall_firewall_rule_fallback()
+                    logger.info("重装前 WFP/防火墙已卸载")
+                except Exception:  # noqa: BLE001
+                    logger.warning("重装前卸载 WFP/防火墙失败", exc_info=True)
+                logger.info("开始删除已有 jbx-sandbox 用户/profile")
+                _remove_sandbox_user_and_profile()
+                logger.info("已有 jbx-sandbox 删除流程结束")
+            else:
+                logger.info("jbx-sandbox 已不存在, 跳过删除/卸 WFP, 直接新建")
+                _reg_set_str(const.REG_VALUE_INSTALLED, "")
+                _reg_set_str(const.REG_VALUE_SANDBOX_USER_PW, "")
+                _reg_set_str(const.REG_VALUE_SANDBOX_USER_SID, "")
+        new_password = _generate_password()
+        created = _create_sandbox_user(
+            new_password, retries=5 if recreate_user else 1,
+        )
+        if recreate_user and not created:
+            # 用户仍被占用时 NetUserDel 可能没删掉, 再删一次后重建.
+            logger.warning("删除后沙箱用户仍存在, 再次尝试删除并重建")
+            _remove_sandbox_user_and_profile()
+            created = _create_sandbox_user(new_password, retries=5)
+        if created:
+            # 新建用户: 用本次随机密码存 DPAPI.
+            password = new_password
+            steps_done.add("user_created")  # 本次新建, 失败回滚删用户安全
+        elif recreate_user:
+            # 删不掉 (进程占用等): 重设密码并对齐本次 DPAPI, 避免新用户解不开旧密文.
+            # 若账户其实已删 (pending-delete 后 GetInfo/SetInfo 变 2221), 改为再创建.
+            password = new_password
+            try:
+                _set_user_password(const.SANDBOX_USER_NAME, password)
+                logger.warning(
+                    "无法删除已有 jbx-sandbox 用户, 已重设密码并对齐 DPAPI",
+                )
+                steps_done.add("user_existed")
+            except Exception as exc:  # noqa: BLE001
+                if f"ret={NERR_USER_NOT_FOUND}" not in str(exc):
+                    raise
+                logger.warning(
+                    "删除后 NetUserSetInfo 用户不存在 (2221), 改为新建",
+                )
+                created = _create_sandbox_user(new_password, retries=5)
+                if not created:
+                    raise RuntimeError(
+                        "无法重建 jbx-sandbox 用户: 删除后账户仍不存在或 "
+                        "处于 pending-delete. " + _SANDBOX_USER_REPAIR
+                    ) from exc
+                password = new_password
+                steps_done.add("user_created")
+        else:
+            # 用户已存在: 不能用本次新密码 (与实际不一致 → 1326). 读 DPAPI 旧密码保持一致;
+            # 读不到 (旧版 "000000" 升级/DPAPI 损坏) 则用新随机密码 NetUserSetInfo 重设对齐.
+            password = get_sandbox_user_password()
+            if not password or not _logon_sandbox_user(password):
+                password = new_password
+                _set_user_password(const.SANDBOX_USER_NAME, password)
+                logger.info("jbx-sandbox DPAPI 无旧密码, 已重设为新随机密码")
+            # 用户已存在 (force 重装): 失败回滚不删用户 (避免误删既有账户影响并发沙箱).
+            steps_done.add("user_existed")
+        _add_user_to_group()
+        # 从登录界面隐藏 jbx-sandbox 用户 (非致命).
+        try:
+            _reg_set_dword_under(
+                r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+                r"\SpecialAccounts\UserList",
+                const.SANDBOX_USER_NAME,
+                0,
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("隐藏登录界面用户失败, 不影响功能", exc_info=True)
+
+        # 2. 查 SID 并存注册表; 授允许本地登录 (致命: 域控机缺此权利第一跳 1385).
+        sid = _lookup_user_sid(const.SANDBOX_USER_NAME)
+        _reg_set_str(const.REG_VALUE_SANDBOX_USER_SID, sid)
+        _save_sandbox_user_password(password)
+        _grant_interactive_logon_right(sid)
+
+        # 合成 SID 缓存.
+        from jiuwenbox.supervisor import win_acl
+        synth_sid = win_acl.get_synthetic_write_sid()
+        _reg_set_str(const.REG_VALUE_SYNTHETIC_WRITE_SID, synth_sid)
+
+        # 3. 安装 WFP filter set (网络隔离). 失败则降级到防火墙规则 (致命:
+        # WFP 主路径 + 降级路径都失败 = 网络隔离不可用, raise 触发回滚)。
+        network_isolation_ok = False
+        wfp_exc = None
+        try:
+            from jiuwenbox.supervisor import win_wfp
+            win_wfp.install_wfp_filters(sid, proxy_port_start, proxy_port_end)
+            network_isolation_ok = True
+        except Exception as exc:  # noqa: BLE001
+            wfp_exc = exc
+            logger.warning(
+                "WFP filter 安装失败, 降级到 PowerShell 防火墙规则", exc_info=True,
+            )
+            try:
+                from jiuwenbox.supervisor import win_wfp
+                fallback_ok = win_wfp.install_firewall_rule_fallback(
+                    const.SANDBOX_USER_NAME, proxy_port_start, proxy_port_end,
+                    sandbox_user_sid=sid,
+                )
+            except Exception as fallback_exc:  # noqa: BLE001
+                logger.error(
+                    "防火墙规则降级也失败, 网络隔离不可用", exc_info=True,
+                )
+                raise RuntimeError(
+                    "网络隔离不可用: WFP 主路径与 PowerShell 降级均失败"
+                ) from (exc, fallback_exc)
+            if not fallback_ok:
+                raise RuntimeError(
+                    "网络隔离不可用: WFP 主路径失败, PowerShell 降级部分失败"
+                ) from exc
+            network_isolation_ok = True
+        if not network_isolation_ok:
+            # 不应到达此处 (上面任一路径失败已 raise), 防御性兜底。
+            raise RuntimeError("网络隔离不可用 (未知原因)") from wfp_exc
+        steps_done.add("wfp")  # 网络隔离已装 (WFP 或降级), 失败回滚需卸载
+
+        # Only prepare explicitly requested tool paths; errors prevent setup success.
+        if preinstall_paths:
+            paths_to_preinstall = [
+                os.path.expandvars(p) for p in preinstall_paths if p
+            ]
+        else:
+            paths_to_preinstall = []
+        # 每次安装: 收敛宿主主目录默认 ACL (去掉残留列出, 恢复隔离态).
+        try:
+            from jiuwenbox.supervisor import win_acl as _wa, win_constants as _wc
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("导入 win_acl 失败 (非致命): %s", exc)
+            _wa = None
+            _wc = None
+        if _wa is not None:
+            try:
+                _wa.reconcile_install_acl(sid)
+                logger.info("已收敛宿主主目录默认 ACL")
+            except Exception:  # noqa: BLE001
+                logger.warning("收敛宿主默认 ACL 失败 (非致命)", exc_info=True)
+
+        # bundled-python 目录 (tools/python, tools/node 等) owner 可能是 Administrators,
+        # 运行时 box-server 进程 (普通用户) 没有 WRITE_DAC, apply_sandbox_acl
+        # 实施 Allow Read ACE 时 WinError 5. install 阶段给当前用户加上 DACL 最小
+        # 权限 (READ_CONTROL 读 SD + WRITE_DAC 写 DACL), 运行时能改这些目录的 DACL.
+        _current_user_sid = host_user_sid or _lookup_current_user_sid()
+        # 主线程合并授权的读 ACL 路径集: 打包目录同时 grant WRITE_DAC (当前用户)
+        # 和 GENERIC_READ (沙箱用户), 后台预装线程对这些路径直接跳过, 省一遍重复递归.
+        _merged_read_paths: set[str] = set()
+        if _current_user_sid and _wa is not None and _wc is not None:
+            _bundled_dirs: list[str] = []
+            _env_bundled = (os.environ.get("JIUWENBOX_BUNDLED_PYTHON") or "").strip()
+            if _env_bundled:
+                _bundled_dirs.append(_env_bundled)
+            try:
+                _exe_dir = str(Path(sys.executable).resolve().parent)
+            except Exception:  # noqa: BLE001
+                _exe_dir = ""
+            if _exe_dir and _exe_dir not in _bundled_dirs:
+                _bundled_dirs.append(_exe_dir)
+            # 打包目录集与预装读 ACL 路径集的交集
+            _preinstall_norm: set[str] = {
+                os.path.normcase(os.path.expandvars(p)) for p in paths_to_preinstall if p
+            }
+            for _p in list(_bundled_dirs):
+                if not os.path.isdir(_p):
+                    logger.debug("打包工具目录不存在, 跳过预授权: %s", _p)
+                    continue
+                _p_norm = os.path.normcase(_p)
+                _is_preinstall_target = _p_norm in _preinstall_norm
+                try:
+                    if _is_preinstall_target:
+                        # 合并: WRITE_DAC 给当前用户 + GENERIC_READ 给沙箱用户, 一次 Get/Set.
+                        _wa.grant_aces(
+                            _p,
+                            [
+                                (_current_user_sid, _wc.WRITE_DAC | _wc.READ_CONTROL, "ALLOW"),
+                                (sid, _wc.ALLOW_READ_EXECUTE_RIGHTS, "ALLOW"),
+                            ],
+                            recursive=True,
+                        )
+                        _merged_read_paths.add(_p_norm)
+                        logger.info(
+                            "grant WRITE_DAC|READ_CONTROL + GENERIC_READ (合并) 给当前用户+沙箱 (打包目录): %s",
+                            _p,
+                        )
+                    else:
+                        _wa.grant_ace(
+                            _p, _current_user_sid,
+                            rights=_wc.WRITE_DAC | _wc.READ_CONTROL,
+                            mode="ALLOW", recursive=True,
+                        )
+                        logger.info("grant WRITE_DAC|READ_CONTROL 给当前用户 (打包目录): %s", _p)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("grant 失败 (打包目录, 非致命): %s=%s", _p, exc)
+
+        # 用户 policy 的 deny/allow 路径 (allow_read/deny_read/allow_write/deny_write)
+        _acl_paths: list[str] = []
+        if _current_user_sid and (policy_path or acl_paths) and _wa is not None and _wc is not None:
+            try:
+                _acl_paths = acl_paths if acl_paths is not None else _load_policy_acl_paths(policy_path)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("install 读 policy deny/allow 路径失败 (非致命): %s", exc)
+            _granted_acl = 0
+            for _p in _acl_paths:
+                if not os.path.exists(_p):
+                    logger.debug("policy deny/allow 路径不存在, 跳过预授权: %s", _p)
+                    continue
+                try:
+                    _wa.grant_ace(
+                        _p, _current_user_sid,
+                        rights=_wc.WRITE_DAC | _wc.READ_CONTROL,
+                        mode="ALLOW", recursive=True,
+                    )
+                    _granted_acl += 1
+                    logger.info(
+                        "grant WRITE_DAC|READ_CONTROL 给当前用户 (policy deny/allow): %s",
+                        _p,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    raise RuntimeError(f"沙箱目录补授权失败: {_p}: {exc}") from exc
+            if _acl_paths:
+                logger.info(
+                    "policy deny/allow 路径预授权完成: 总 %d 条, 成功 %d 条",
+                    len(_acl_paths), _granted_acl,
+                )
+        _preinstall_read_acl(paths_to_preinstall, sid, skip_paths=_merged_read_paths)
+
+        # 5. 全部致命步骤通过, 写完成标记; 清进度标记 (断点续传已无用)。
+        # 写 installed=1 前必须能用本次密码登录, 避免 installed=1 + 用户不存在/密码不对 → 运行时 1326.
+        if not _logon_sandbox_user(password):
+            raise RuntimeError(
+                "jbx-sandbox 创建后 LogonUserW 失败, 不写 installed=1. "
+                + _SANDBOX_USER_REPAIR
+            )
+        _reg_set_str(const.REG_VALUE_INSTALLED, "1")
+        _reg_set_str(const.REG_VALUE_READ_ACL_PROGRESS, "")
+        # 记录本次预装的路径集, 供 ensure_windows_setup 增量检测: 用户改了
+        # tool_paths 后首次起 sandbox 时对比出新增路径, 提示需 --force 重装
+        # (运行时普通用户无 WRITE_DAC 权限改外部目录 ACL, 只能管理员补预装).
+        _reg_set_str(
+            const.REG_VALUE_PREINSTALLED_PATHS,
+            json.dumps(sorted({os.path.expandvars(p) for p in paths_to_preinstall})),
+        )
+        # 记录本次已预授 WRITE_DAC 的 deny/allow 路径集, 供 ensure_windows_setup
+        # 增量检测: 用户改 policy 新增 deny_read/deny_write 路径时自动弹 UAC 补授权.
+        if _current_user_sid and _acl_paths:
+            _record_acl_policy_paths(
+                {_normalize_acl_path(p) for p in _acl_paths if p},
+            )
+        logger.info("Windows 沙箱安装完成")
+    except Exception:
+        # review #4: 失败回滚只清本次已成功步骤新增的资源 (用户/组/WFP filter),
+        # 不调 uninstall() 全量清理 (会物理删 jbx-sandbox 用户 + profile,
+        # 影响并发运行的其他沙箱 runner — 其 token 仍有效但下次
+        # CreateProcessWithLogonW WinError 1326/1788, NTUSER.DAT 写失败).
+        # profile 不在局部回滚清理 (由显式 uninstall() / install --force 调).
+        logger.error("install 失败, 执行局部回滚", exc_info=True)
+        try:
+            _install_rollback(steps_done)
+        except Exception:  # noqa: BLE001 - 回滚 best-effort, 不掩盖原异常
+            logger.error("install 失败后局部回滚也失败", exc_info=True)
+        raise
+
+
+def collect_preinstall_paths(policy) -> list[str]:
+    """收集 install 该预装读 ACL 的完整路径集.
+
+    = policy.windows.filesystem.read_acl_preinstall (系统目录, 静态)
+    + policy.windows.filesystem.tool_paths 展开的目录 (Git/Node/Python 安装路径,
+    每台机不同; 含 git_dir 的 usr/bin + bin 子目录, bash_path 的父目录).
+
+    lifespan (app.py) 调 ensure_windows_setup 时用本函数算 preinstall_paths,
+    保证 lifespan install 记录进 REG_VALUE_PREINSTALLED_PATHS 的集合和后续
+    创建沙箱时 (WindowsRuntime.create) 比对的集合一致 → 不会因 tool_paths
+    "新增" 而每次创建沙箱都弹 UAC (实测问题).
+
+    tool_paths 是 owner=Administrators 的外部目录, 运行时普通用户无 WRITE_DAC
+    权限改不了它们的 ACL, 必须 install 提权预装. read_acl_preinstall 同理 (系统
+    目录). 故本集合只含这两类"需提权预装"的路径, 不含 workspace/venv (那些
+    owner=当前用户, 会话时 apply_sandbox_acl 普通权限即可授权).
+    """
+    fs = policy.windows.filesystem
+    paths: list[str] = list(fs.read_acl_preinstall or [])
+    tp = fs.tool_paths
+    # git_dir / node_dir / python_dir
+    for i, attr in enumerate(("git_dir", "node_dir", "python_dir")):
+        d = (getattr(tp, attr, "") or "").strip()
+        if not d:
+            continue
+        if d not in paths:
+            paths.append(d)
+        # git 安装根含 usr/bin/bash.exe + bin, 子目录也纳入 (PATH + 读 ACL).
+        if attr == "git_dir":
+            for sub in (os.path.join(d, "usr", "bin"), os.path.join(d, "bin")):
+                if sub not in paths:
+                    paths.append(sub)
+    # bash_path 的父目录 (git_dir 未覆盖时用)
+    bash_p = (getattr(tp, "bash_path", "") or "").strip()
+    if bash_p:
+        parent = os.path.dirname(bash_p)
+        if parent and parent not in paths:
+            paths.append(parent)
+    return paths
+
+
+def _record_acl_policy_paths(paths: set[str]) -> None:
+    """把已处理 (预授或当前用户可自授权) 的 deny/allow 路径记入缓存, 避免重复 UAC."""
+    if not paths:
+        return
+    normalized = {_normalize_acl_path(p) for p in paths if p}
+    normalized = {p for p in normalized if p}
+    if not normalized:
+        return
+    merged = _get_acl_policy_paths_recorded() | normalized
+    if merged == _get_acl_policy_paths_recorded():
+        return
+    # 用户目录缓存: 普通进程可写, 避免 HKLM 写入失败导致每次重启都弹 UAC.
+    _save_user_acl_policy_paths(merged)
+    try:
+        _reg_set_str(
+            const.REG_VALUE_ACL_POLICY_PATHS,
+            json.dumps(sorted(merged)),
+        )
+    except Exception as exc:  # noqa: BLE001 - 非管理员无 HKLM 写权限时回落用户缓存
+        logger.debug("HKLM acl_policy_paths 写入跳过 (无管理员权限): %s", exc)
+
+
+def ensure_acl_policy_paths_authorized(
+    acl_paths: list[str],
+    proxy_port_start: int = const.DEFAULT_PROXY_PORT_RANGE_START,
+    proxy_port_end: int = const.DEFAULT_PROXY_PORT_RANGE_END,
+    policy_path: str | None = None,
+    *,
+    allow_elevation: bool = True,
+) -> None:
+    """确保 deny/allow 路径已预授 WRITE_DAC.
+
+    box-server 内只验证权限, 提权由启动前的 setup 检查负责.
+    """
+    _require_windows()
+    if reg_get_str(const.REG_VALUE_INSTALLED) != "1":
+        raise RuntimeError("Windows 沙箱尚未安装")
+    new_acl_paths = {
+        _normalize_acl_path(p) for p in acl_paths if p
+    }
+    new_acl_paths = {p for p in new_acl_paths if p}
+    if not new_acl_paths:
+        return
+    # 未展开的占位 / 当前用户已是 owner 的路径不弹 UAC:
+    # per-sandbox workspace 每次都是新路径, 否则每个沙箱都要等 120s UAC.
+    need_elevate: set[str] = set()
+    skipped: list[str] = []
+    for p in new_acl_paths:
+        if "{{" in p or (p.startswith("%") and "%" in p[1:] and not os.path.exists(p)):
+            skipped.append(p)
+            continue
+        if not os.path.exists(p) or _can_write_dac(p):
+            skipped.append(p)
+            continue
+        need_elevate.add(p)
+    if skipped:
+        logger.info(
+            "新增 deny/allow 路径无需 UAC (占位或当前用户所有): %s",
+            skipped,
+        )
+        _record_acl_policy_paths(set(skipped))
+    if not need_elevate:
+        return
+    if not _is_admin():
+        if not allow_elevation:
+            raise RuntimeError(f"沙箱目录需要管理员补授权: {sorted(need_elevate)}; 请重新启动以请求 UAC")
+        install(force=True, policy_path=policy_path, acl_paths=sorted(need_elevate))
+        if any(not _can_write_dac(p) for p in need_elevate if os.path.exists(p)):
+            raise RuntimeError("沙箱目录补授权未完成")
+        return
+    _grant_write_dac_to_current_user(need_elevate)
+
+
+def _grant_write_dac_to_current_user(paths: set[str]) -> None:
+    """给当前用户对 paths 预授 WRITE_DAC|READ_CONTROL, 不调 install()."""
+    sid = _lookup_current_user_sid()
+    if not sid:
+        raise RuntimeError("无法解析宿主用户 SID, 不能完成目录补授权")
+    from jiuwenbox.supervisor import win_acl as _wa, win_constants as _wc
+    granted: set[str] = set()
+    for p in sorted(paths):
+        if not os.path.exists(p):
+            logger.debug("WRITE_DAC 路径不存在, 跳过: %s", p)
+            continue
+        try:
+            _wa.grant_ace(
+                p, sid,
+                rights=_wc.WRITE_DAC | _wc.READ_CONTROL,
+                mode="ALLOW", recursive=True,
+            )
+            granted.add(p)
+            logger.info("grant WRITE_DAC|READ_CONTROL 给当前用户: %s", p)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"沙箱目录补授权失败: {p}: {exc}") from exc
+    if granted:
+        _record_acl_policy_paths(granted)
+
+
+def _grant_owned_preinstall_paths(paths: set[str], recorded: set[str]) -> set[str]:
+    """Grant the sandbox user read/execute on tool dirs the current user owns.
+
+    uv-managed and per-user Python installs live under the user's profile, so the
+    runtime can authorize them without elevation; returns the paths granted.
+    """
+    sid = get_sandbox_user_sid()
+    if not sid:
+        return set()
+    from jiuwenbox.supervisor import win_acl as _wa
+    granted: set[str] = set()
+    for p in sorted(paths):
+        if not os.path.isdir(p) or not _path_owned_by_current_user(p):
+            continue
+        try:
+            _wa.grant_ace(p, sid, rights=const.ALLOW_READ_EXECUTE_RIGHTS, mode="ALLOW", recursive=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("grant 沙箱用户读执行失败 (非致命): %s=%s", p, exc)
+            continue
+        granted.add(p)
+        logger.info("当前用户所有的工具目录已授权沙箱用户读执行 (无需 UAC): %s", p)
+    if granted:
+        cache = Path(_resolve_install_log_dir()) / "preinstalled_paths.json"
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps(sorted(recorded | granted)), encoding="utf-8")
+    return granted
+
+
+def ensure_windows_setup(
+    force: bool = False,
+    preinstall_paths: list[str] | None = None,
+    proxy_port_start: int = const.DEFAULT_PROXY_PORT_RANGE_START,
+    proxy_port_end: int = const.DEFAULT_PROXY_PORT_RANGE_END,
+    policy_path: str | None = None,
+    *,
+    allow_elevation: bool = True,
+    acl_paths: list[str] | None = None,
+) -> None:
+    """Prepare before spawning box-server; its lifespan only validates."""
+    _require_windows()
+    with _INSTALL_LOCK:
+        needs_install = force or reg_get_str(const.REG_VALUE_INSTALLED) != "1"
+        if not needs_install:
+            try:
+                _verify_or_reset_sandbox_user_password()
+            except RuntimeError:
+                needs_install = True
+        recorded = get_preinstalled_read_paths()
+        requested = {os.path.expandvars(p) for p in (preinstall_paths or []) if p}
+        new_paths = {p for p in requested if p.rstrip("\\/").lower() not in recorded}
+        if not needs_install and new_paths:
+            new_paths -= _grant_owned_preinstall_paths(new_paths, recorded)
+        policy_acl = acl_paths if acl_paths is not None else (
+            _load_policy_acl_paths(policy_path) if policy_path else []
+        )
+        required_acl = {_normalize_acl_path(p) for p in policy_acl if p and os.path.exists(p)}
+        missing_acl = {p for p in required_acl if not _can_write_dac(p)}
+        if needs_install or new_paths or missing_acl:
+            if not allow_elevation and not _is_admin():
+                raise RuntimeError("Windows 沙箱尚未准备完成, 需要管理员安装、修复或补授权; 请重新启动以请求 UAC")
+            install(
+                force=needs_install or bool(new_paths or missing_acl),
+                preinstall_paths=sorted(requested | recorded) if needs_install else sorted(new_paths),
+                proxy_port_start=proxy_port_start,
+                proxy_port_end=proxy_port_end,
+                policy_path=policy_path,
+                acl_paths=sorted(required_acl),
+                authorize_only=not needs_install,
+            )
+        if reg_get_str(const.REG_VALUE_INSTALLED) != "1":
+            raise RuntimeError("沙箱初始化失败: 安装进程未写入完成标记")
+        if any(p.rstrip("\\/").lower() not in get_preinstalled_read_paths() for p in requested if os.path.exists(p)):
+            raise RuntimeError("沙箱初始化失败: 必需工具目录的读执行授权未完成")
+        _verify_or_reset_sandbox_user_password()
+        still_missing = [p for p in required_acl if not _can_write_dac(p)]
+        if still_missing:
+            raise RuntimeError(f"沙箱目录补授权未完成: {still_missing}")
+
+
+def _can_write_dac(path: str) -> bool:
+    """Check the caller's actual access, including group ACEs and DENY rules."""
+    kernel32 = get_kernel32()
+    kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+        wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+    ]
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    handle = kernel32.CreateFileW(
+        path, const.WRITE_DAC | const.READ_CONTROL, 7, None, 3, 0x02000000, None,
+    )
+    if handle in (None, ctypes.c_void_p(-1).value):
+        return False
+    kernel32.CloseHandle(handle)
+    return True
+
+
+def ensure_sandbox_user_can_logon() -> None:
+    """Runtime validation must not silently repair or elevate inside the box Job."""
+    _verify_or_reset_sandbox_user_password()
+
+
+def _verify_or_reset_sandbox_user_password() -> None:
+    """Validate only; the startup preflight owns any privileged repair."""
+    if not _sandbox_user_exists():
+        raise RuntimeError("沙箱账户 jbx-sandbox 不存在, 需要管理员修复")
+    password = get_sandbox_user_password()
+    if not password:
+        raise RuntimeError("无法读取沙箱账户凭据, 需要管理员修复")
+    if not _logon_sandbox_user(password, interactive=True):
+        err = ctypes.get_last_error()
+        raise RuntimeError(f"沙箱账户无法登录 (WinError {err}), 需要管理员修复")
+
+
+def get_sandbox_user_sid() -> str | None:
+    """从注册表读 jbx-sandbox 用户 SID."""
+    _require_windows()
+    return reg_get_str(const.REG_VALUE_SANDBOX_USER_SID)
+
+
+def get_sandbox_user_password() -> str | None:
+    """从注册表读 jbx-sandbox 用户密码 (DPAPI 解密). 解失败返回 None."""
+    _require_windows()
+    enc_hex = reg_get_str(const.REG_VALUE_SANDBOX_USER_PW)
+    if not enc_hex:
+        return None
+    try:
+        import win32crypt  # type: ignore[import-not-found]
+        enc = bytes.fromhex(enc_hex)
+        _, plain = win32crypt.CryptUnprotectData(enc, None, None, None, 0)
+        return plain.decode("utf-8")
+    except ImportError:  # pragma: no cover
+        logger.warning("pywin32 缺失, 无法解密沙箱用户密码")
+        return None
+    except Exception:  # noqa: BLE001
+        logger.warning("沙箱用户密码解密失败", exc_info=True)
+        return None
+
+
+def get_synthetic_write_sid() -> str | None:
+    """从注册表读合成写 SID."""
+    _require_windows()
+    return reg_get_str(const.REG_VALUE_SYNTHETIC_WRITE_SID)
+
+
+def _install_rollback(steps_done: "set[str]") -> None:
+    """install 失败局部回滚: 只清本次已成功步骤新增的资源 (review #4).
+
+    与 uninstall() 区别:
+      - 不删 profile (DeleteProfileW / _purge_stale_profile_dirs): profile 删除
+        是重操作, install 失败时其他并发沙箱的 runner 可能正用 NTUSER.DAT,
+        删 profile 会让其写失败. profile 由显式 uninstall() / install --force 调.
+      - 不清 REG_VALUE_SANDBOX_USER_PW / REG_VALUE_SANDBOX_USER_SID / SYNTHETIC_WRITE_SID:
+        合成 SID 全局唯一保留 (reinstall 不变); DPAPI 密码 + SID 缓存留着,
+        下次 install 已存在用户分支读旧密码对齐 (避免 1326).
+
+    Args:
+        steps_done: install 主体记录的已成功步骤集合, 含
+            ``user_created`` / ``user_existed`` / ``recreate_user`` / ``wfp``.
+    """
+    _require_windows()
+    if not _is_admin():
+        # 局部回滚在 install 提权子进程内执行 (已是管理员); 非管理员路径不该到达.
+        logger.warning("_install_rollback 非管理员, 跳过 (steps_done=%s)", steps_done)
+        return
+    # 回滚 WFP filter + 降级防火墙规则 (枚举法, 不依赖端口范围).
+    if "wfp" in steps_done:
+        try:
+            from jiuwenbox.supervisor import win_wfp
+            win_wfp.uninstall_wfp_filters()
+            win_wfp.uninstall_firewall_rule_fallback()
+        except Exception:  # noqa: BLE001
+            logger.warning("局部回滚卸载 WFP/防火墙失败", exc_info=True)
+    # 仅本次新建且非 recreate_user 才删用户. recreate 已删旧账户, 再删会留下
+    # installed=1 但 SAM 无账户.
+    if "user_created" in steps_done and "recreate_user" in steps_done:
+        logger.info(
+            "局部回滚: exe 重装已删旧账户, 保留本次新建的 %s, 避免机器无沙箱用户",
+            const.SANDBOX_USER_NAME,
+        )
+    elif "user_created" in steps_done:
+        sid_str = get_sandbox_user_sid()
+        if sid_str:
+            _revoke_interactive_logon_right(sid_str)
+        netapi32 = _get_netapi32()
+        ret = netapi32.NetUserDel(None, const.SANDBOX_USER_NAME)
+        if ret not in (0, 2221):  # 2221 = NERR_UserNotFound (幂等)
+            logger.warning("局部回滚 NetUserDel 返回 %d (继续)", ret)
+        else:
+            logger.info("局部回滚删除沙箱用户 %s", const.SANDBOX_USER_NAME)
+        ret = netapi32.NetLocalGroupDel(None, const.SANDBOX_USER_GROUP)
+        if ret not in (0, 2220):  # 2220 = NERR_GroupNotFound (幂等)
+            logger.warning("局部回滚 NetLocalGroupDel 返回 %d (继续)", ret)
+        else:
+            logger.info("局部回滚删除沙箱组 %s", const.SANDBOX_USER_GROUP)
+    elif "user_existed" in steps_done:
+        logger.info("局部回滚: 用户已存在 (force 重装), 保留用户不删")
+    # 清 installed 标记 (失败时本就没写 1, 兜底清空).
+    _reg_set_str(const.REG_VALUE_INSTALLED, "")
+    logger.info("install 局部回滚完成 (steps_done=%s)", steps_done)
+
+
+def _data_root_paths() -> list[str]:
+    """沙箱数据根路径 (apply 会 grant traverse, 不进差集清理)."""
+    try:
+        from jiuwenbox.server.workspace import JIUWENBOX_HOME
+        return [str(p) for p in (JIUWENBOX_HOME,) if p]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _applied_acl_paths_file() -> Path:
+    """施加路径历史清单的文件存储位置 (用户目录, 普通用户可写)."""
+    try:
+        from jiuwenbox.server.workspace import JIUWENBOX_HOME
+        home = Path(JIUWENBOX_HOME)
+    except Exception:  # noqa: BLE001
+        home = Path(os.path.expanduser("~")) / ".jiuwenbox"
+    home.mkdir(parents=True, exist_ok=True)
+    return home / "applied_acl_paths.json"
+
+
+def _load_applied_acl_paths() -> list[str]:
+    """读历史施加路径清单 (文件优先, 兼容旧注册表数据)."""
+    f = _applied_acl_paths_file()
+    if f.exists():
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                return [p for p in data if isinstance(p, str) and p]
+        except (ValueError, OSError):
+            pass
+    #
+    raw = reg_get_str(const.REG_VALUE_APPLIED_ACL_PATHS)
+    if raw:
+        try:
+            return [p for p in json.loads(raw) if isinstance(p, str) and p]
+        except (ValueError, TypeError):
+            pass
+    return []
+
+
+def _save_applied_acl_paths(paths: list[str]) -> None:
+    """写历史施加路径清单到文件 (用户目录, 普通用户可写)."""
+    f = _applied_acl_paths_file()
+    try:
+        f.write_text(json.dumps(paths, ensure_ascii=False), encoding="utf-8")
+    except OSError as exc:
+        logger.warning("写施加路径历史文件失败 path=%s: %s", f, exc)
+
+
+def record_applied_acl_paths(paths: list[str], workspace: str) -> None:
+    """把 apply 施加过的非 workspace 路径追加进注册表历史清单 (去重)."""
+    _require_windows()
+    # 只记非 workspace 路径 (按 posix 归一比较).
+    ws_norm = workspace.replace("\\", "/").rstrip("/").lower() if workspace else ""
+    new_paths: list[str] = []
+    new_seen: set[str] = set()  # 小写键, 大小写不敏感去重 (Windows FS 大小写不敏感)
+    for p in paths:
+        norm = p.replace("\\", "/").rstrip("/")
+        if ws_norm and (norm.lower() == ws_norm or norm.lower().startswith(ws_norm + "/")):
+            continue
+        if norm.lower() not in new_seen:
+            new_seen.add(norm.lower())
+            new_paths.append(norm)
+
+    if not new_paths:
+        return
+
+    existing = _load_applied_acl_paths()
+    # 合并去重保序: seen 用小写键判断存在性, merged 保留首次出现的原始大小写.
+    merged: list[str] = []
+    seen: set[str] = set()
+    for p in existing + new_paths:
+        key = p.lower()
+        if key in seen:
+            continue  # 已有同一路径 (任意大小写), 跳过重复添加
+        seen.add(key)
+        merged.append(p)
+    _save_applied_acl_paths(merged)
+
+
+def revoke_stale_acl(
+    current_policy_paths: list[str],
+    workspace: str = "",
+    sandbox_user_sid: str | None = None,
+) -> list[str]:
+    """启动时差集清理: 历史施加路径 − 当前 policy 路径 − 数据根 → 对差集 revoke."""
+    _require_windows()
+    from jiuwenbox.supervisor import win_acl
+
+    historical = _load_applied_acl_paths()
+    if not historical:
+        return []
+
+    # current: 当前 policy 路径 + workspace + 数据根.
+    current: set[str] = set()
+    ws_norm = workspace.replace("\\", "/").rstrip("/").lower() if workspace else ""
+    if ws_norm:
+        current.add(ws_norm)
+    for p in current_policy_paths:
+        if p:
+            current.add(p.replace("\\", "/").rstrip("/").lower())
+    for p in _data_root_paths():
+        current.add(p.replace("\\", "/").rstrip("/").lower())
+
+    # 差集: 历史里有、current 里没有的.
+    stale = [p for p in historical if p.replace("\\", "/").rstrip("/").lower() not in current]
+    if not stale:
+        return []
+
+    try:
+        win_acl.revoke_sandbox_acl(stale, sandbox_user_sid=sandbox_user_sid)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("revoke_stale_acl 清理失败 (差集=%s): %s", stale, exc)
+        return []
+
+    # 清理成功: 从历史清单移除已清的差集路径, 只留仍有效的.
+    stale_set = {p.replace("\\", "/").rstrip("/").lower() for p in stale}
+    remaining = [p for p in historical if p.replace("\\", "/").rstrip("/").lower() not in stale_set]
+    remaining = _gc_applied_acl_paths(remaining, current)
+    _save_applied_acl_paths(remaining)
+
+    logger.info("启动差集清理: 清除 %d 个残留路径的 ACE: %s", len(stale), stale)
+    return stale
+
+
+# 历史施加路径清单软上限. 超过则 GC: 路径不存在 + 不在当前 policy 的条目裁掉.
+# 防止用户频繁改 policy 后清单只增不减 (差集清理只清"移除"的, 不清"替换"的).
+_APPLIED_ACL_PATHS_SOFT_LIMIT = 256
+
+
+def _gc_applied_acl_paths(paths: list[str], current_norm: "set[str]") -> list[str]:
+    """超软上限时裁剪历史施加路径清单.
+
+    保留两类: (1) 路径仍存在的 (载体在, ACE 可能在, 需保留以供下次差集清理);
+    (2) 仍在当前 policy/workspace/数据根内的 (current_norm). 其余裁掉——
+    这些是路径已删且不在当前配置的陈旧条目, ACE 随载体消失, 清单记录已无意义.
+    未超上限原样返回 (GC 只在超限时触发, 避免每次启动都做存在性 stat).
+    """
+    if len(paths) <= _APPLIED_ACL_PATHS_SOFT_LIMIT:
+        return paths
+    kept: list[str] = []
+    pruned = 0
+    for p in paths:
+        norm = p.replace("\\", "/").rstrip("/").lower()
+        if norm in current_norm or os.path.exists(p):
+            kept.append(p)
+        else:
+            pruned += 1
+    if pruned:
+        logger.info(
+            "历史施加路径清单 GC: %d 条超限, 裁掉 %d 条陈旧路径, 保留 %d 条",
+            len(paths), pruned, len(kept),
+        )
+    return kept
+
+
+def _remove_sandbox_user_and_profile() -> None:
+    """删 jbx-sandbox 用户/组/profile 及注册表密码 SID (幂等, 需管理员). 不卸 WFP."""
+    sid_str = get_sandbox_user_sid()
+    if not sid_str:
+        try:
+            sid_str = _lookup_user_sid(const.SANDBOX_USER_NAME)
+        except Exception:  # noqa: BLE001
+            sid_str = None
+    if sid_str:
+        logger.info("DeleteProfileW sid=%s", sid_str)
+        _revoke_interactive_logon_right(sid_str)
+        try:
+            _delete_profile_by_sid(sid_str)
+        except Exception:  # noqa: BLE001
+            logger.warning("DeleteProfileW 失败, 继续删 SAM 账户", exc_info=True)
+    logger.info("清理残留 profile 目录")
+    try:
+        _purge_stale_profile_dirs()
+    except Exception:  # noqa: BLE001
+        logger.warning("清理残留 profile 失败, 继续删 SAM 账户", exc_info=True)
+    netapi32 = _get_netapi32()
+    ret = netapi32.NetUserDel(None, const.SANDBOX_USER_NAME)
+    # 0 = 成功; 2221 = NERR_UserNotFound (已不存在, 幂等). 旧版误用 2201
+    # (实为 NERR_BadPassword), 导致幂等卸载时落进 warning 分支 (实跑日志
+    # "NetUserDel 返回 2221" 即被错判). 已据 lmerr.h 改回 2221.
+    if ret not in (0, 2221):
+        logger.warning("NetUserDel 返回 %d (继续)", ret)
+    else:
+        logger.info("删除沙箱用户 %s", const.SANDBOX_USER_NAME)
+    ret = netapi32.NetLocalGroupDel(None, const.SANDBOX_USER_GROUP)
+    # 0 = 成功; 2220 = NERR_GroupNotFound (已不存在, 幂等). 旧版误用 2201.
+    if ret not in (0, 2220):
+        logger.warning("NetLocalGroupDel 返回 %d (继续)", ret)
+    else:
+        logger.info("删除沙箱组 %s", const.SANDBOX_USER_GROUP)
+    # 清注册表标记 + 密码/SID 缓存 (P1-9: 改随机密码后旧 DPAPI blob 必须清,
+    # 否则 reinstall 覆盖不彻底会重现 1326; SYNTHETIC_WRITE_SID 合成 SID 固定
+    # 可保留, reinstall 不变).
+    _reg_set_str(const.REG_VALUE_INSTALLED, "")
+    _reg_set_str(const.REG_VALUE_SANDBOX_USER_PW, "")
+    _reg_set_str(const.REG_VALUE_SANDBOX_USER_SID, "")
+
+
+def uninstall() -> None:
+    """卸载: 删除 WFP filter + profile + 用户 + 注册表标记 (管理员)."""
+    _require_windows()
+    if not _is_admin():
+        _elevate_uninstall()
+        return
+    try:
+        from jiuwenbox.supervisor import win_wfp
+        win_wfp.uninstall_wfp_filters()
+        # 降级路径 (PowerShell New-NetFirewallRule) 装的防火墙规则也卸载:
+        # WFP 主路径失败走降级时这两条规则残留会永久 Block 沙箱用户出站. 旧版漏卸载降级规则 (review B2).
+        win_wfp.uninstall_firewall_rule_fallback()
+    except Exception:  # noqa: BLE001
+        logger.warning("WFP/防火墙卸载失败", exc_info=True)
+    _remove_sandbox_user_and_profile()
+    logger.info("Windows 沙箱卸载完成")
+
+
+def _elevate_uninstall() -> None:
+    shell32 = _get_shell32()
+    py = (os.environ.get("JIUWENBOX_RUNNER_PYTHON") or "").strip() or sys.executable
+    parts = ["-m", "jiuwenbox.supervisor.win_setup", const.UNINSTALL_SUBCOMMAND]
+    uac_file, params = _uac_shell_execute_target(py, parts)
+    # SW_HIDE: 与 install 一致, 卸载提权子进程也静默, 不弹 CMD.
+    result = shell32.ShellExecuteW(
+        None, "runas", uac_file, params, None, SW_HIDE,
+    )
+    if result <= 32:
+        raise RuntimeError(f"UAC 提权卸载失败 (返回 {result})")
+
+
+def _make_install_done_notifier(event_name: str | None):
+    """返回一个闭包: 调它则 SetEvent 通知主进程 install 已结束.
+
+    install 子进程用: install() 跑完 (成功或失败) 后调本闭包, 主进程的
+    WaitForSingleObject(INFINITE) 解除阻塞. event_name 为空 (手动 CLI 跑
+    install, 无主进程等待) 时返回空操作闭包.
+
+    OpenEvent 失败 (event 名传错 / 主进程已 CloseHandle) 时静默 warning, 不抛
+    错: install 子进程的核心职责是装沙箱, 通知主进程是次要的, 不能因通知
+    失败而把 install 拖崩.
+    """
+    def _notify() -> None:
+        if not event_name:
+            return
+        try:
+            kernel32 = get_kernel32()
+            # SYNCHRONIZE(0x00100000) 给 WaitForSingleObject; event_modify_state
+            # (0x0002) 给 SetEvent. 主进程创建的 Global 事件默认 ACL 允许同会话/
+            # 提权子进程用这两个权限打开.
+            synchronize = 0x00100000  # noqa: N806 - Win32 常量
+            event_modify_state = 0x0002  # noqa: N806 - Win32 常量
+            h = kernel32.OpenEventW(
+                synchronize | event_modify_state, False, event_name,
+            )
+            if not h:
+                logger.warning(
+                    "install 子进程 OpenEventW(%s) 失败 (WinError %d); "
+                    "主进程可能仍在阻塞等待, 将靠超时/installed标记自行判断",
+                    event_name, ctypes.get_last_error(),
+                )
+                return
+            try:
+                kernel32.SetEvent(wintypes.HANDLE(h))
+            finally:
+                kernel32.CloseHandle(wintypes.HANDLE(h))
+        except Exception:  # noqa: BLE001
+            logger.warning("install 完成通知失败", exc_info=True)
+
+    return _notify
+
+
+def _main(argv: list[str]) -> int:
+    """CLI 入口: 接收 --install / --uninstall 及 install 的参数.
+
+    install 支持的可选参数 (review MAJOR #9: 旧版不接, 导致 force/端口/
+    preinstall 从命令行无法传入):
+      --force                  强制重装
+      --recreate-user          先删已有 jbx-sandbox 再重建
+      --proxy-port-start N     WFP Permit 放行的 loopback 端口范围起点
+      --proxy-port-end   N     范围终点
+      --preinstall-paths JSON  读 ACL 预装路径列表 (JSON 编码字符串)
+    """
+    if not any(arg in ("--ensure", "ensure") for arg in argv):
+        try:
+            # install_force.log 优先用命令行 --install-log-path 指定的路径,
+            # 否则 fallback 到用户数据目录 (~/.jiuwenbox)
+            _install_log_path_arg: str | None = None
+            _strip_indices: list[int] = []
+            for _i, _a in enumerate(argv):
+                if _a == "--install-log-path" and _i + 1 < len(argv):
+                    _install_log_path_arg = argv[_i + 1]
+                    _strip_indices = [_i, _i + 1]
+                    break
+                if _a.startswith("--install-log-path="):
+                    _install_log_path_arg = _a[len("--install-log-path="):]
+                    _strip_indices = [_i]
+                    break
+            if _strip_indices:
+                for _idx in sorted(_strip_indices, reverse=True):
+                    del argv[_idx]
+            if _install_log_path_arg:
+                log_path = os.path.normpath(os.path.abspath(_install_log_path_arg))
+            else:
+                log_path = _install_log_path()
+            try:
+                os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            except OSError:
+                pass
+            _fh = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+            _fh.setLevel(logging.DEBUG)
+            _fh.setFormatter(logging.Formatter(
+                "[%(asctime)s] %(levelname)s %(name)s: %(message)s",
+            ))
+            logging.getLogger().addHandler(_fh)
+            logging.getLogger().setLevel(logging.DEBUG)
+            # print(f"[win_setup] install 日志落盘: {_install_log_path}", flush=True)
+        except Exception:  # noqa: BLE001
+            pass
+    # argparse 子命令不能带 "--" 前缀; 调用方 (UAC 提权) 用的是
+    # "--install"/"--uninstall", 这里规整为 "install"/"uninstall".
+    normalized = [a.lstrip("-") if a.startswith("--") and a.lstrip("-") in (
+        const.INSTALL_SUBCOMMAND.lstrip("-"),
+        const.UNINSTALL_SUBCOMMAND.lstrip("-"), "ensure",
+    ) else a for a in argv]
+    parser = argparse.ArgumentParser(
+        prog="jiuwenbox.supervisor.win_setup",
+        description="Windows 沙箱一次性环境准备 (管理员)",
+    )
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    p_install = sub.add_parser(
+        const.INSTALL_SUBCOMMAND.lstrip("-"), help="执行安装",
+    )
+    p_ensure = sub.add_parser("ensure", help="检查环境, 必要时请求 UAC")
+    p_ensure.add_argument("--policy-path", default=None)
+    p_install.add_argument("--host-user-sid", default=None)
+    p_install.add_argument("--acl-paths", default=None)
+    p_install.add_argument("--authorize-only", action="store_true")
+    p_install.add_argument("--force", action="store_true", help="强制重装")
+    p_install.add_argument(
+        "--recreate-user", action="store_true",
+        help="先删已有 jbx-sandbox 再重建 (安装器重装用; 运行时补预装不要加)",
+    )
+    p_install.add_argument(
+        "--proxy-port-start", type=int,
+        default=const.DEFAULT_PROXY_PORT_RANGE_START,
+    )
+    p_install.add_argument(
+        "--proxy-port-end", type=int,
+        default=const.DEFAULT_PROXY_PORT_RANGE_END,
+    )
+    p_install.add_argument(
+        "--preinstall-paths", default=None,
+        help="读 ACL 预装路径列表 (base64 编码的 JSON 字符串; base64 避开"
+        "Windows 命令行引号/空格转义问题)",
+    )
+    p_install.add_argument(
+        "--policy-path", default=None,
+        help="windows-policy.yaml 路径; install 时读其 read_acl_preinstall + "
+        "tool_paths 合并进预装路径 (用户改 tool_paths 后 --force 重装用)",
+    )
+    p_install.add_argument(
+        "--install-done-event", default=None,
+        help="命名 Event 名 (主进程预创建), install 跑完后 SetEvent 通知主进程"
+        "解除阻塞; 不传则不通知 (手动 CLI 跑 install 时用)",
+    )
+    sub.add_parser(
+        const.UNINSTALL_SUBCOMMAND.lstrip("-"), help="执行卸载",
+    )
+    args = parser.parse_args(normalized)
+
+    if args.cmd == "ensure":
+        from jiuwenbox.server.policy_reader import PolicyReader
+        reader = PolicyReader(policy_path=Path(args.policy_path)) if args.policy_path else PolicyReader()
+        policy = reader.load_policy()
+        fs = policy.windows.filesystem
+        acl_paths = [*fs.allow_read, *fs.deny_read, *fs.allow_write, *fs.deny_write]
+        ensure_windows_setup(
+            preinstall_paths=collect_preinstall_paths(policy),
+            proxy_port_start=policy.windows.proxy.port_range_start,
+            proxy_port_end=policy.windows.proxy.port_range_end,
+            policy_path=str(reader.policy_path),
+            acl_paths=[os.path.expandvars(p) for p in acl_paths],
+        )
+        return 0
+    if args.cmd == const.INSTALL_SUBCOMMAND.lstrip("-"):
+        import base64
+        preinstall_paths = None
+        if args.preinstall_paths:
+            try:
+                # base64(JSON) 解码: 见 _elevate_and_run_install 的编码注释
+                # (避开 Windows 命令行引号/空格转义).
+                import base64
+                decoded = base64.b64decode(args.preinstall_paths).decode("utf-8")
+                preinstall_paths = json.loads(decoded)
+            except Exception:
+                return 2
+        # install 跑完 (成功或失败) 都要 SetEvent 通知主进程解除阻塞, 否则主进程
+        # WaitForSingleObject(INFINITE) 会死等. 用 finally 保证: install 内部致命
+        # 失败会 raise (走 except 回滚), 这里捕获后仍 SetEvent 再 re-raise.
+        _notify = _make_install_done_notifier(args.install_done_event)
+        try:
+            # --policy-path: install 内部会读 policy 合并预装路径, 这里只透传路径.
+            install(
+                force=args.force,
+                preinstall_paths=preinstall_paths,
+                proxy_port_start=args.proxy_port_start,
+                proxy_port_end=args.proxy_port_end,
+                policy_path=args.policy_path,
+                recreate_user=args.recreate_user,
+                host_user_sid=args.host_user_sid,
+                authorize_only=args.authorize_only,
+                acl_paths=json.loads(base64.b64decode(args.acl_paths).decode("utf-8")) if args.acl_paths else None,
+            )
+        except BaseException:
+            _notify()
+            raise
+        else:
+            _notify()
+        return 0
+    if args.cmd == const.UNINSTALL_SUBCOMMAND.lstrip("-"):
+        uninstall()
+        return 0
+    return 2
+
+
+if __name__ == "__main__":  # pragma: no cover - 模块入口
+    raise SystemExit(_main(sys.argv[1:]))
