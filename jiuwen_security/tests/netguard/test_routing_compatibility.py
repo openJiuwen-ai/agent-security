@@ -73,8 +73,36 @@ def test_two_argument_component_reaches_every_supported_action_once(tool, action
     assert component.results == [result]
 
 
+@pytest.mark.parametrize("tool", (*_FETCH_TOOLS, "network_connect"))
+@pytest.mark.parametrize("padding", (" ", "\t\n"))
+def test_tool_name_whitespace_cannot_skip_the_component(tool, padding):
+    engine, component = _mount(_config("deny"), baseline=L.ALLOW)
+    supplied_name = padding + tool + padding
+    args = {"url": "https://example.com"}
+    if tool == "network_connect":
+        args.update(resolved_addresses=["8.8.8.8"], connect_address="8.8.8.8")
+    result = _check(engine, supplied_name, args)
+    assert result.permission is L.DENY
+    assert result.matched_rule == "net_guard:url:example.com"
+    # The engine and its router remain unchanged; W3 normalizes locally.
+    assert component.calls == [(supplied_name, args)]
+    assert getattr(component, "interests", None) is None
+
+
 @pytest.mark.parametrize(
-    "tool", ("fetch", "mcp_free_search", "mcp_paid_search", "bash", "read_file", "custom_tool")
+    "tool",
+    (
+        "fetch",
+        "mcp_free_search",
+        "mcp_paid_search",
+        "bash",
+        "read_file",
+        "custom_tool",
+        "MCP_FETCH_WEBPAGE",
+        "NETWORK_CONNECT",
+        "/fetch_webpage",
+        "prefix.fetch_webpage",
+    ),
 )
 def test_routing_category_never_expands_w3_tool_applicability(tool):
     engine, component = _mount(_config(default="deny"))
