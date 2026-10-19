@@ -17,6 +17,9 @@ dev = [
     "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",
     "ruff>=0.6",
+    # Optional shell parser backend; without it the conservative fallback scanner is used.
+    "tree-sitter>=0.25.0,<0.26.0",
+    "tree-sitter-bash>=0.25.0,<0.26.0",
 ]
 
 [tool.setuptools.packages.find]

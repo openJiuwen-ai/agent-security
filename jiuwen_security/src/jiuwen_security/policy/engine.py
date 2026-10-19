@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+import copy
 import inspect
 from typing import Any
 
 from .component import PermissionComponent
 from .models import PermissionLevel, PermissionResult
 from .routing import RouteContext, resolve_route, route_matches
+from .toolguard.command_allowlist import CommandAllowlistComponent
+from .toolguard.destructive_warning import DestructiveWarningComponent
+from .toolguard.injection import InjectionComponent
+from .toolguard.tiered import TieredPolicyComponent
 
 
 class PermissionEngine:
@@ -28,9 +33,9 @@ class PermissionEngine:
     ) -> None:
         self.workspace_root = workspace_root
         self._trusted_dirs = tuple(trusted_dirs or ())
-        self._components = self._build_components()
+        self._components: tuple[PermissionComponent, ...] = ()
         self._config: dict[str, Any] = {}
-        self._configure_components(config or {})
+        self._install(config or {})
 
     def _build_components(self) -> tuple[PermissionComponent, ...]:
         """Create the engine-owned components.
@@ -39,14 +44,27 @@ class PermissionEngine:
         components are intentionally added by their own later requirements.
         """
 
-        return ()
+        return (
+            InjectionComponent(),
+            CommandAllowlistComponent(),
+            DestructiveWarningComponent(),
+            TieredPolicyComponent(),
+        )
 
-    def _configure_components(self, config: Mapping[str, Any]) -> None:
-        """Configure every component before making the config current."""
+    def _install(self, config: Mapping[str, Any]) -> None:
+        """Build and configure a fresh component set, then swap it in.
 
-        for component in self._components:
-            component.configure(config)
-        self._config = dict(config)
+        Nothing current is touched until every new component is configured, so
+        a failure leaves the old components and config fully in force.  Calls
+        already running keep the component tuple they started with.
+        """
+
+        snapshot = copy.deepcopy(dict(config))
+        components = self._build_components()
+        for component in components:
+            component.configure(snapshot)
+        self._components = components
+        self._config = snapshot
 
     async def check_permission(
         self,
@@ -61,8 +79,9 @@ class PermissionEngine:
             raise TypeError("tool_args must be a mapping")
 
         route = resolve_route(tool_name, tool_args)
+        components = self._components
         results: list[PermissionResult] = []
-        for component in self._components:
+        for component in components:
             if not route_matches(route, getattr(component, "interests", None)):
                 continue
             result = await self._evaluate_component(component, tool_name, tool_args, route)
@@ -91,11 +110,11 @@ class PermissionEngine:
         return await evaluate(tool_name, tool_args)
 
     def update_config(self, config: Mapping[str, Any]) -> None:
-        """Reconfigure all components using one complete configuration."""
+        """Replace the configuration; on any error the old one stays active."""
 
         if not isinstance(config, Mapping):
             raise TypeError("config must be a mapping")
-        self._configure_components(config)
+        self._install(config)
 
     def update_trusted_dirs(self, dirs: Iterable[str]) -> None:
         """Update the engine-owned trusted directory state."""
@@ -156,8 +175,8 @@ class PermissionEngine:
 
         ranks = {
             PermissionLevel.ALLOW: 0,
-            PermissionLevel.ASK: 1,
-            PermissionLevel.UNDETERMINED: 2,
+            PermissionLevel.UNDETERMINED: 1,
+            PermissionLevel.ASK: 2,
             PermissionLevel.DENY: 3,
         }
         return ranks[permission] if permission is not None else -1
