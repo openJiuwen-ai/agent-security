@@ -7,6 +7,7 @@ import pytest
 
 from jiuwen_security import PermissionEngine, PermissionLevel, PermissionResult
 from jiuwen_security.policy.component import PermissionComponent
+from jiuwen_security.policy.toolguard.injection import InjectionComponent
 from jiuwen_security.policy.routing import (
     CommandDialect,
     RouteContext,
@@ -63,6 +64,62 @@ def test_engine_exports_and_safe_empty_default() -> None:
     result = asyncio_run(engine.check_permission("bash", {}))
 
     assert result.permission is PermissionLevel.ASK
+
+
+@pytest.mark.parametrize(
+    ("tool", "command", "rule"),
+    [
+        ("bash", "printf '%s' `whoami`", "backtick-command-substitution"),
+        ("bash", "printf '%s' $(whoami)", "dollar-command-substitution"),
+        ("bash", "cat <(printf secret)", "process-substitution"),
+        ("powershell", "Invoke-Expression $cmd", "invoke-expression"),
+        ("powershell", "pwsh -EncodedCommand ZQBjAGgAbwA=", "encoded-command"),
+        ("powershell", "& ($command)", "dynamic-call-operator"),
+        ("powershell", "[ScriptBlock]::Create($code)", "scriptblock-create"),
+    ],
+)
+def test_r02_injection_is_denied(tool: str, command: str, rule: str) -> None:
+    result = asyncio_run(PermissionEngine().check_permission(tool, {"command": command}))
+
+    assert result.permission is PermissionLevel.DENY
+    assert result.matched_rule == rule
+
+
+@pytest.mark.parametrize(
+    ("tool", "command"),
+    [("bash", "echo hello"), ("powershell", "echo hello")],
+)
+def test_r02_safe_commands_are_allowed(tool: str, command: str) -> None:
+    result = asyncio_run(
+        InjectionComponent().evaluate(
+            tool, {"command": command}, route=resolve_route(tool, {})
+        )
+    )
+
+    assert result.permission is PermissionLevel.ALLOW
+
+
+def test_r02_does_not_apply_to_file_routes() -> None:
+    result = asyncio_run(
+        PermissionEngine().check_permission("read_file", {"path": "$(whoami)"})
+    )
+
+    assert result.permission is PermissionLevel.ASK
+
+
+def test_r02_component_accepts_complete_config_without_changing_rules() -> None:
+    component = InjectionComponent()
+    component.configure({"injection": {"enabled": False}})
+
+    result = asyncio_run(
+        component.evaluate(
+            "bash",
+            {"command": "echo $(whoami)"},
+            route=resolve_route("bash", {}),
+        )
+    )
+
+    assert result.permission is PermissionLevel.DENY
 
 
 def asyncio_run(awaitable):
