@@ -6,10 +6,13 @@ from collections.abc import Mapping
 from typing import Protocol
 
 from .models import PermissionResult
+from .routing import RouteContext, RouteInterest
 
 
 class PermissionComponent(Protocol):
     """A security capability owned and configured by the permission engine."""
+
+    interests: tuple[RouteInterest, ...] | None
 
     def configure(self, config: Mapping[str, object]) -> None:
         """Prepare component state from the complete engine configuration."""
@@ -18,5 +21,7 @@ class PermissionComponent(Protocol):
         self,
         tool_name: str,
         tool_args: Mapping[str, object],
+        *,
+        route: RouteContext | None = None,
     ) -> PermissionResult | None:
         """Evaluate one tool call using state prepared by ``configure``."""

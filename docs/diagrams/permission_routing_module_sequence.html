@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PermissionEngine 共享路由图</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f5f7;color:#1c2b36;font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif}.page{max-width:1400px;margin:auto;padding:30px 28px 54px}header{border-bottom:2px solid #243642;padding-bottom:14px;margin-bottom:22px}h1{font-size:26px;margin:0}h2{font-size:17px;margin:26px 0 12px}.sub{color:#61727e;font-size:13px;margin:7px 0 0}.card{background:#fff;border:1px solid #cbd5df;border-radius:12px;overflow:auto;box-shadow:0 5px 18px #23384b0b}.card svg{display:block;width:100%;min-width:960px;height:auto}.note{margin-top:10px;padding:13px 17px;background:#e7f3ef;border-left:4px solid #378575;font-size:13px;line-height:1.8}.note b{color:#205e54}.legend{color:#647580;font-size:12px;margin-top:7px}.contract{display:grid;grid-template-columns:1.3fr 1fr;gap:22px;background:#fff;border:1px solid #cbd5df;border-radius:12px;padding:20px}.contract pre{margin:0;overflow:auto;font:12px/1.8 Consolas,"Microsoft YaHei",monospace}.contract p{color:#5f707c;font-size:13px;line-height:1.6}@media(max-width:700px){.contract{grid-template-columns:1fr}.page{padding:20px 12px}}
+svg text{font-family:"Microsoft YaHei",Arial,sans-serif;fill:#243642}svg .title{font-size:15px;font-weight:700}svg .small{font-size:12px;fill:#60727e}svg .life{stroke:#b8c5ce;stroke-dasharray:5 5}svg .msg{stroke:#526a7a;stroke-width:1.6;fill:none}svg .ret{stroke-dasharray:6 4}svg .label{font-size:12px;paint-order:stroke;stroke:#fff;stroke-width:7px;stroke-linejoin:round}svg .box{fill:#edf3f8;stroke:#9eb3c0;stroke-width:1.3}svg .green{fill:#e8f5f1;stroke:#70aa9e}svg .yellow{fill:#fff4dd;stroke:#d4b36c}
+</style>
+</head>
+<body><main class="page">
+<header><h1>PermissionEngine · 共享路由</h1><p class="sub">按当前代码 db6f680 绘制：模块关系、构造注册、路由发现与调用</p></header>
+
+<h2>01 · 模块图：两层路由维度如何组合</h2>
+<section class="card"><svg viewBox="0 0 1240 410" role="img" aria-label="共享路由模块图">
+<defs><marker id="ma" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#526a7a"/></marker></defs>
+<rect class="box" x="35" y="145" width="235" height="105" rx="9"/><text class="title" x="152" y="177" text-anchor="middle">PermissionEngine</text><text class="small" x="152" y="201" text-anchor="middle">check_permission()</text><text class="small" x="152" y="223" text-anchor="middle">持有组件、匹配、聚合</text>
+<rect class="green" x="350" y="36" width="330" height="118" rx="9"/><text class="title" x="515" y="68" text-anchor="middle">resolve_route()</text><text class="small" x="515" y="94" text-anchor="middle">第一维：SecurityTarget</text><text class="small" x="515" y="116" text-anchor="middle">COMMAND / FILE / NETWORK / OTHER</text><text class="small" x="515" y="138" text-anchor="middle">命令类再识别 CommandDialect</text>
+<rect class="green" x="350" y="198" width="330" height="75" rx="9"/><text class="title" x="515" y="230" text-anchor="middle">RouteContext</text><text class="small" x="515" y="253" text-anchor="middle">target + command_dialect</text>
+<rect class="box" x="770" y="36" width="420" height="118" rx="9"/><text class="title" x="980" y="68" text-anchor="middle">组件实例（由引擎持有）</text><text class="small" x="980" y="94" text-anchor="middle">interests = (RouteInterest(...), ...)</text><text class="small" x="980" y="116" text-anchor="middle">configure() / evaluate(..., route=...)</text><text class="small" x="980" y="138" text-anchor="middle">Injection / FileGuard / NetGuard 等</text>
+<rect class="yellow" x="770" y="198" width="420" height="93" rx="9"/><text class="title" x="980" y="230" text-anchor="middle">route_matches()</text><text class="small" x="980" y="253" text-anchor="middle">单个关注点：target AND dialect</text><text class="small" x="980" y="275" text-anchor="middle">多个关注点：OR；dialect=None 表示不限方言</text>
+<rect class="box" x="350" y="325" width="840" height="56" rx="9"/><text class="title" x="770" y="350" text-anchor="middle">当前唯一装配/注册点：PermissionEngine._build_components()</text><text class="small" x="770" y="370" text-anchor="middle">返回 tuple[PermissionComponent, ...] → 保存到 self._components；当前默认返回空元组</text>
+<line class="msg" marker-end="url(#ma)" x1="270" y1="180" x2="350" y2="105"/><text class="label" x="312" y="137">解析</text>
+<line class="msg" marker-end="url(#ma)" x1="515" y1="154" x2="515" y2="198"/>
+<line class="msg" marker-end="url(#ma)" x1="680" y1="235" x2="770" y2="235"/><text class="label" x="725" y="221">匹配</text>
+<line class="msg" marker-end="url(#ma)" x1="980" y1="154" x2="980" y2="198"/><text class="label" x="1015" y="181">声明关注点</text>
+<line class="msg" marker-end="url(#ma)" x1="270" y1="225" x2="350" y2="350"/><text class="label" x="298" y="293">持有</text>
+</svg></section>
+<div class="note"><b>关键结论：</b>这里不是“两级分发”，也不是平铺工具名。第一层是安全对象类别，第二层只在 COMMAND 下补充命令方言；二者组合为一个 <code>RouteContext</code>，然后一次性匹配组件关注点。</div>
+
+<h2>02 · 构造与注册时序：注册点到底在哪里</h2>
+<section class="card"><svg viewBox="0 0 1240 465" role="img" aria-label="组件构造与注册时序图">
+<defs><marker id="ra" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#526a7a"/></marker></defs>
+<text class="title" x="150" y="30" text-anchor="middle">调用方</text><text class="title" x="450" y="30" text-anchor="middle">PermissionEngine</text><text class="title" x="760" y="30" text-anchor="middle">_build_components()</text><text class="title" x="1090" y="30" text-anchor="middle">组件实例</text>
+<text class="small" x="150" y="50" text-anchor="middle">创建引擎</text><text class="small" x="450" y="50" text-anchor="middle">保存元组到 self._components</text><text class="small" x="760" y="50" text-anchor="middle">默认为空；下图示意接入组件后</text><text class="small" x="1090" y="50" text-anchor="middle">自带 interests</text>
+<line class="life" x1="150" y1="62" x2="150" y2="420"/><line class="life" x1="450" y1="62" x2="450" y2="420"/><line class="life" x1="760" y1="62" x2="760" y2="330"/><line class="life" x1="1090" y1="62" x2="1090" y2="420"/>
+<line class="msg" marker-end="url(#ra)" x1="150" y1="100" x2="450" y2="100"/><text class="label" x="300" y="90" text-anchor="middle">PermissionEngine(config)</text>
+<line class="msg" marker-end="url(#ra)" x1="450" y1="155" x2="760" y2="155"/><text class="label" x="605" y="145" text-anchor="middle">调用 _build_components()</text>
+<line class="msg" marker-end="url(#ra)" x1="760" y1="210" x2="1090" y2="210"/><text class="label" x="925" y="200" text-anchor="middle">创建 / 组装组件实例</text>
+<line class="msg ret" marker-end="url(#ra)" x1="1090" y1="265" x2="760" y2="265"/><text class="label" x="925" y="255" text-anchor="middle">组件对象 + interests</text>
+<line class="msg ret" marker-end="url(#ra)" x1="760" y1="320" x2="450" y2="320"/><text class="label" x="605" y="310" text-anchor="middle">tuple[PermissionComponent, ...]</text>
+<line class="msg" marker-end="url(#ra)" x1="450" y1="375" x2="1090" y2="375"/><text class="label" x="770" y="365" text-anchor="middle">configure(config)</text>
+<rect class="yellow" x="45" y="405" width="1150" height="38" rx="7"/><text class="small" x="620" y="429" text-anchor="middle">当前实现：没有 register() 公共 API、没有自动扫描、没有独立 ComponentRegistry；测试通过覆盖 _build_components() 装配组件</text>
+</svg></section>
+<div class="note"><b>注册点一句话：</b><code>PermissionEngine._build_components()</code> 返回组件集合；组件的 <code>interests</code> 是订阅声明，不是另一个注册中心。</div>
+
+<h2>03 · 路由发现 + 匹配 + 调用时序</h2>
+<section class="card"><svg viewBox="0 0 1240 590" role="img" aria-label="路由发现匹配调用时序图">
+<defs><marker id="ia" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#526a7a"/></marker></defs>
+<text class="title" x="120" y="30" text-anchor="middle">调用方</text><text class="title" x="375" y="30" text-anchor="middle">PermissionEngine</text><text class="title" x="650" y="30" text-anchor="middle">resolve_route()</text><text class="title" x="925" y="30" text-anchor="middle">route_matches()</text><text class="title" x="1160" y="30" text-anchor="middle">组件实例</text>
+<line class="life" x1="120" y1="62" x2="120" y2="550"/><line class="life" x1="375" y1="62" x2="375" y2="550"/><line class="life" x1="650" y1="62" x2="650" y2="550"/><line class="life" x1="925" y1="62" x2="925" y2="550"/><line class="life" x1="1160" y1="62" x2="1160" y2="550"/>
+<line class="msg" marker-end="url(#ia)" x1="120" y1="100" x2="375" y2="100"/><text class="label" x="247" y="90" text-anchor="middle">check_permission(tool_name, tool_args)</text>
+<line class="msg" marker-end="url(#ia)" x1="375" y1="155" x2="650" y2="155"/><text class="label" x="512" y="145" text-anchor="middle">resolve_route(...)</text>
+<line class="msg ret" marker-end="url(#ia)" x1="650" y1="210" x2="375" y2="210"/><text class="label" x="512" y="200" text-anchor="middle">RouteContext(target, dialect)</text>
+<line class="msg" marker-end="url(#ia)" x1="375" y1="265" x2="925" y2="265"/><text class="label" x="650" y="255" text-anchor="middle">逐个组件：route_matches(route, component.interests)</text>
+<line class="msg ret" marker-end="url(#ia)" x1="925" y1="320" x2="375" y2="320"/><text class="label" x="650" y="310" text-anchor="middle">bool：False → 跳过；True → 调用当前组件</text>
+<line class="msg" marker-end="url(#ia)" x1="375" y1="385" x2="1160" y2="385"/><text class="label" x="767" y="375" text-anchor="middle">evaluate(tool_name, tool_args, route=route)</text>
+<line class="msg ret" marker-end="url(#ia)" x1="1160" y1="440" x2="375" y2="440"/><text class="label" x="767" y="430" text-anchor="middle">PermissionResult</text>
+<line class="msg ret" marker-end="url(#ia)" x1="375" y1="495" x2="120" y2="495"/><text class="label" x="247" y="485" text-anchor="middle">_merge_results() → 统一结果</text>
+<rect class="yellow" x="45" y="525" width="1150" height="38" rx="7"/><text class="small" x="620" y="549" text-anchor="middle">当前是按 tuple 顺序逐个匹配、逐个 await；未匹配组件跳过；多个匹配结果按严格程度聚合</text>
+</svg></section>
+<div class="note"><b>01 当前接口行为：</b>组件关注点未声明或为 <code>None</code> 时匹配所有路由；声明了关注点后按 RouteContext 筛选。组件不接收 <code>route</code> 时，使用两参数 <code>evaluate(tool_name, tool_args)</code>。这是当前代码允许的两种接口形式，不代表 01 存在历史组件或迁移过程。</div>
+
+<h2>04 · 组件接入契约</h2>
+<section class="contract"><pre>class ExampleComponent:
+    interests = (
+        RouteInterest(SecurityTarget.COMMAND,
+                      CommandDialect.POSIX_SHELL),
+        RouteInterest(SecurityTarget.COMMAND,
+                      CommandDialect.POWERSHELL),
+    )
+
+    def configure(self, config): ...
+
+    async def evaluate(self, tool_name, tool_args, route=None):
+     ...</pre><div><p><b>① 装配：</b>实例加入 <code>_build_components()</code> 返回元组。</p><p><b>② 订阅：</b><code>COMMAND</code> 表示所有命令方言；加具体方言表示精确匹配。</p><p><b>③ 执行：</b>匹配后接收同一个不可变 <code>RouteContext</code>，组件自行执行安全判断。</p></div></section>
+<h2>05 · 两级路由注册矩阵：可注册项穷举</h2>
+<style>
+.matrix-wrap{background:#fff;border:1px solid #cbd5df;border-radius:12px;padding:18px}.matrix-intro{padding:12px 14px;background:#e8f3f0;border-left:4px solid #378575;font-size:13px}.route-matrix{width:100%;border-collapse:collapse;margin-top:14px;font-size:13px}.route-matrix th,.route-matrix td{border:1px solid #d4dde4;padding:11px 13px;text-align:left;vertical-align:top;line-height:1.55}.route-matrix th{background:#eaf0f6}.route-matrix .wild{background:#fff7e6}.muted{color:#6a7b86;font-size:12px}.matrix-foot,.matrix-note{margin-top:13px;padding:12px 14px;font-size:12px;line-height:1.7}.matrix-foot{background:#fff7e6;border-left:4px solid #c69d4e}.matrix-note{background:#f0f3f6;border-left:4px solid #91a5b3}
+</style>
+<section class="matrix-wrap">
+<div class="matrix-intro"><b>注册格式：</b><code>一级 SecurityTarget / 二级 CommandDialect</code>。一级必须明确；二级可以是具体值，也可以用 <code>None</code> 表示通配。</div>
+<table class="route-matrix"><thead><tr><th>一级路由（必选）</th><th>二级注册值</th><th>可注册形式</th><th>含义</th></tr></thead><tbody>
+<tr><td rowspan="5"><strong>COMMAND</strong><br><span class="muted">命令类</span></td><td>POSIX_SHELL</td><td><code>COMMAND / POSIX_SHELL</code></td><td>只接收 POSIX Shell</td></tr>
+<tr><td>POWERSHELL</td><td><code>COMMAND / POWERSHELL</code></td><td>只接收 PowerShell</td></tr>
+<tr><td>CMD</td><td><code>COMMAND / CMD</code></td><td>只接收 Windows CMD</td></tr>
+<tr><td>UNKNOWN</td><td><code>COMMAND / UNKNOWN</code></td><td>只接收已确定为命令、但方言未知的调用</td></tr>
+<tr class="wild"><td>None（通配）</td><td><code>COMMAND / *</code></td><td>接收所有命令方言，包括 UNKNOWN</td></tr>
+<tr><td><strong>FILE</strong><br><span class="muted">文件类</span></td><td>None（通配）</td><td><code>FILE / *</code></td><td>接收所有文件路由；文件没有命令方言</td></tr>
+<tr><td><strong>NETWORK</strong><br><span class="muted">网络类</span></td><td>None（通配）</td><td><code>NETWORK / *</code></td><td>接收所有网络路由；网络没有命令方言</td></tr>
+<tr><td><strong>OTHER</strong><br><span class="muted">当前代码的兜底类</span></td><td>None（通配）</td><td><code>OTHER / *</code></td><td>接收无法归类的调用；当前代码允许，但不属于三类业务主路由</td></tr>
+<tr class="wild"><td><strong>ALL</strong><br><span class="muted">仅订阅使用</span></td><td>None（通配）</td><td><code>ALL / *</code></td><td>接收全部类别与方言，包含 OTHER；不允许 ALL / 具体方言</td></tr>
+</tbody></table>
+<div class="matrix-foot"><b>上表穷举全部有意义的显式订阅：</b>一级可以是具体类别，也可以显式写 <code>ALL</code>；二级的 <code>*</code> 只是图示，代码实际传 <code>None</code>，不传字符串 <code>"*"</code>。非 COMMAND 类指定命令方言会在注册构造时被拒绝。多个关注点取 OR，单个组件只调用一次。</div>
+<div class="matrix-note"><b>三类业务主路由 + 一类兜底：</b><code>OTHER</code> 目前存在于 <code>SecurityTarget</code> 并可订阅；本次不调整它。<br><b>显式一级通配：</b><code>RouteInterest(SecurityTarget.ALL)</code> = ALL/*，匹配 COMMAND、FILE、NETWORK、OTHER 的所有解析结果。<code>ALL</code> 只用于组件订阅，<code>resolve_route()</code> 永远不会返回 ALL。<br><b>当前兼容行为：</b><code>interests=None</code> 仍然匹配全部路由；它是未声明订阅的兼容模式，不是正式的一级注册值。空元组 <code>interests=()</code> 不接收任何路由。<br><b>示例：</b><code>RouteInterest(SecurityTarget.COMMAND)</code> = COMMAND/*；<code>RouteInterest(SecurityTarget.ALL)</code> = ALL/*；<code>RouteInterest(SecurityTarget.COMMAND, CommandDialect.UNKNOWN)</code> 只匹配 UNKNOWN。</div>
+</section>
+</main></body></html>
