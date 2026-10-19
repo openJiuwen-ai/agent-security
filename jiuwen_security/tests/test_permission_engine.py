@@ -2,17 +2,23 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
-from typing import Any
 
 import pytest
 
 from jiuwen_security import PermissionEngine, PermissionLevel, PermissionResult
 from jiuwen_security.policy.component import PermissionComponent
-from jiuwen_security.policy.routing import CommandDialect, RouteInterest, SecurityTarget
+from jiuwen_security.policy.routing import (
+    CommandDialect,
+    RouteContext,
+    RouteInterest,
+    SecurityTarget,
+    resolve_route,
+)
 
 
 class ResultComponent:
-    interests = None
+    interests: tuple[RouteInterest, ...] | None = (RouteInterest(SecurityTarget.ALL),)
+
     def __init__(self, result: PermissionResult) -> None:
         self.result = result
         self.configured: list[dict[str, object]] = []
@@ -24,6 +30,8 @@ class ResultComponent:
         self,
         tool_name: str,
         tool_args: Mapping[str, object],
+        *,
+        route: RouteContext | None = None,
     ) -> PermissionResult:
         return self.result
 
@@ -35,7 +43,7 @@ class RouteComponent(ResultComponent):
         super().__init__(result)
         self.routes = []
 
-    async def evaluate(self, tool_name, tool_args, route=None):
+    async def evaluate(self, tool_name, tool_args, *, route=None):
         self.routes.append(route)
         return self.result
 
@@ -119,3 +127,42 @@ def test_route_interest_skips_non_matching_component() -> None:
 
     assert result.permission is PermissionLevel.ASK
     assert component.routes == []
+
+
+def test_all_route_interest_matches_every_resolved_route() -> None:
+    component = RouteComponent(PermissionResult(permission=PermissionLevel.DENY))
+    component.interests = (RouteInterest(SecurityTarget.ALL),)
+    engine = ComponentEngine(component)
+
+    result = asyncio_run(engine.check_permission("read_file", {"path": "a.txt"}))
+
+    assert result.permission is PermissionLevel.DENY
+    assert component.routes[0].target is SecurityTarget.FILE
+
+
+@pytest.mark.parametrize("tool", ["bash", "powershell", "cmd", "mcp_exec_command", "read_file", "fetch", "unknown"])
+def test_all_subscription_matches_each_category(tool: str) -> None:
+    route = resolve_route(tool, {})
+    assert route.target is not SecurityTarget.ALL
+    assert RouteInterest(SecurityTarget.ALL).matches(route)
+
+
+@pytest.mark.parametrize("target", [SecurityTarget.FILE, SecurityTarget.NETWORK, SecurityTarget.OTHER, SecurityTarget.ALL])
+def test_non_command_dialect_subscription_is_rejected(target: SecurityTarget) -> None:
+    with pytest.raises(ValueError):
+        RouteInterest(target, CommandDialect.POSIX_SHELL)
+
+
+def test_unrecognized_subscription_values_are_rejected() -> None:
+    with pytest.raises(TypeError):
+        RouteInterest("missing")  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        RouteInterest(SecurityTarget.COMMAND, "missing")  # type: ignore[arg-type]
+
+
+def test_unknown_dialect_is_not_a_wildcard() -> None:
+    posix = resolve_route("bash", {})
+    unknown = resolve_route("mcp_exec_command", {})
+    assert RouteInterest(SecurityTarget.COMMAND).matches(posix)
+    assert not RouteInterest(SecurityTarget.COMMAND, CommandDialect.UNKNOWN).matches(posix)
+    assert RouteInterest(SecurityTarget.COMMAND, CommandDialect.UNKNOWN).matches(unknown)

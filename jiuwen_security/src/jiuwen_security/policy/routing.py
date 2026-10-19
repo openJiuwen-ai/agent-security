@@ -15,8 +15,9 @@ from typing import Any, cast
 
 
 class SecurityTarget(StrEnum):
-    """Primary security object exposed by a tool call."""
+    """Security object category; ALL is a subscription-only wildcard."""
 
+    ALL = "all"
     COMMAND = "command"
     FILE = "file"
     NETWORK = "network"
@@ -45,14 +46,26 @@ class RouteInterest:
     """A component's routing subscription.
 
     ``command_dialect=None`` means any dialect for the given target.
+    ``target=SecurityTarget.ALL`` matches every category and requires no dialect.
     """
 
     target: SecurityTarget
     command_dialect: CommandDialect | None = None
 
+    def __post_init__(self) -> None:
+        """Reject subscriptions that the router cannot meaningfully produce."""
+
+        if not isinstance(self.target, SecurityTarget):
+            raise TypeError("target must be a SecurityTarget")
+        if self.command_dialect is not None:
+            if not isinstance(self.command_dialect, CommandDialect):
+                raise TypeError("command_dialect must be a CommandDialect or None")
+            if self.target is not SecurityTarget.COMMAND:
+                raise ValueError("only COMMAND subscriptions may specify a dialect")
+
     def matches(self, route: RouteContext) -> bool:
         return (
-            self.target is route.target
+            (self.target is SecurityTarget.ALL or self.target is route.target)
             and (
                 self.command_dialect is None
                 or self.command_dialect is route.command_dialect
