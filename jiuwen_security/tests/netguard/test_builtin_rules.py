@@ -5,6 +5,7 @@ import asyncio
 import pytest
 
 from jiuwen_security import PermissionEngine, PermissionLevel
+from jiuwen_security.policy.netguard import NetGuardComponent
 from jiuwen_security.policy.netguard.builtin_rules import package_net_urls
 
 
@@ -55,4 +56,26 @@ def test_disabling_package_rules_does_not_disable_connection_address_checks():
     assert (
         asyncio.run(engine.check_permission("network_connect", args)).permission
         is PermissionLevel.DENY
+    )
+
+
+@pytest.mark.parametrize("value", (False, " false ", "0", "NO", "off", None, True))
+def test_component_owns_package_switch_parsing(value):
+    config = {
+        "package_builtin_rules": value,
+        "tools": {"mcp_fetch_webpage": "allow"},
+        "net_guard": {"enabled": True},
+    }
+    component = NetGuardComponent()
+    component.configure(config)
+    args = {"url": "https://localhost/"}
+    result = asyncio.run(component.evaluate("mcp_fetch_webpage", args))
+    expected = PermissionLevel.DENY if value is None or value is True else PermissionLevel.ALLOW
+    assert result.permission is expected
+    engine_result = asyncio.run(
+        PermissionEngine(config).check_permission("mcp_fetch_webpage", args)
+    )
+    assert (engine_result.permission, engine_result.matched_rule) == (
+        result.permission,
+        result.matched_rule,
     )

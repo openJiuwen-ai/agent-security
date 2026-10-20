@@ -14,7 +14,7 @@ from .routing import RouteContext, resolve_route, route_matches
 from .toolguard.command_allowlist import CommandAllowlistComponent
 from .toolguard.destructive_warning import DestructiveWarningComponent
 from .toolguard.injection import InjectionComponent
-from .toolguard.tiered import TieredPolicyComponent, _package_rules_enabled
+from .toolguard.tiered import TieredPolicyComponent
 
 
 class PermissionEngine:
@@ -31,11 +31,7 @@ class PermissionEngine:
         self._install(config or {})
 
     def _build_components(self) -> tuple[PermissionComponent, ...]:
-        """Create the engine-owned components.
-
-        Keep command policy intact. NetGuard owns network tool baselines, URL
-        policy and connection checks behind one NETWORK subscription.
-        """
+        """Create the engine-owned components."""
 
         return (
             InjectionComponent(),
@@ -56,20 +52,10 @@ class PermissionEngine:
         snapshot = copy.deepcopy(dict(config))
         enabled = snapshot.get("enabled", True)
         if not isinstance(enabled, bool):
-            raise ValueError("config 'enabled' must be a boolean")
+            raise ValueError("config 'enabled' must be a boolean")  # noqa: TRY004
         components = self._build_components()
         for component in components:
-            component_config = snapshot
-            if isinstance(component, NetGuardComponent):
-                # This switch is shared with W1a. Normalize through its existing
-                # parser before passing W3 its strict boolean component config.
-                component_config = {
-                    **snapshot,
-                    "package_builtin_rules": _package_rules_enabled(
-                        snapshot.get("package_builtin_rules")
-                    ),
-                }
-            component.configure(component_config)
+            component.configure(snapshot)
         self._components = components
         self._config = snapshot
         self._enabled = enabled
@@ -87,30 +73,21 @@ class PermissionEngine:
                 permission=PermissionLevel.ALLOW,
                 reason="Permission system is disabled",
             )
-        results = await self._evaluate_components(tool_name, tool_args)
-        return self._merge_results(results)
+        return await self._evaluate(tool_name, tool_args)
 
     async def evaluate_global_policy_directly(
         self,
         tool_name: str,
         tool_args: Mapping[str, Any],
-        *,
-        include_external_directory: bool = True,
     ) -> tuple[PermissionLevel | None, str | None]:
-        """Query A/C policy without the execution switch or an ASK fallback.
+        """Return the raw ``(permission, matched_rule)`` of one tool call.
 
-        Unlike the former synchronous API, this uses the current async
-        component pipeline. ``include_external_directory`` is retained for
-        FileGuard integration; no Pipeline B component is registered yet.
-        Injection, command allowlisting and display warnings are execution
-        checks, not part of this raw policy query.
+        Runs the same checks as :meth:`check_permission` but is not
+        short-circuited by the ``enabled`` switch.
         """
 
         self._validate_call(tool_name, tool_args)
-        if not isinstance(include_external_directory, bool):
-            raise TypeError("include_external_directory must be boolean")
-        results = await self._evaluate_components(tool_name, tool_args, raw_query=True)
-        result = self._merge_results(results, default_permission=None)
+        result = await self._evaluate(tool_name, tool_args)
         return result.permission, result.matched_rule
 
     @staticmethod
@@ -120,47 +97,24 @@ class PermissionEngine:
         if not isinstance(tool_args, Mapping):
             raise TypeError("tool_args must be a mapping")
 
-    async def _evaluate_components(
+    async def _evaluate(
         self,
         tool_name: str,
         tool_args: Mapping[str, Any],
-        *,
-        raw_query: bool = False,
-    ) -> list[PermissionResult]:
-        """Run matching components. Raw queries keep policy, not execution checks."""
+    ) -> PermissionResult:
+        """Run every matching component and merge the results."""
 
         route = resolve_route(tool_name, tool_args)
         components = self._components
         results: list[PermissionResult] = []
         for component in components:
-            # This host-only action checks an already-authorized connection,
-            # not the original tool again. Its name alone does not make args trusted.
-            if tool_name.strip() == "network_connect" and not isinstance(
-                component, NetGuardComponent
-            ):
-                continue
             if not route_matches(route, getattr(component, "interests", None)):
                 continue
-            if raw_query:
-                if isinstance(component, NetGuardComponent):
-                    result = await component.evaluate_global_policy(
-                        tool_name, tool_args, route=route
-                    )
-                elif isinstance(component, TieredPolicyComponent):
-                    result = await self._evaluate_component(component, tool_name, tool_args, route)
-                    if (
-                        result is not None
-                        and result.matched_rule == "tiered_policy:fallback(no_config)"
-                    ):
-                        result = None
-                else:
-                    continue
-            else:
-                result = await self._evaluate_component(component, tool_name, tool_args, route)
+            result = await self._evaluate_component(component, tool_name, tool_args, route)
             if result is not None:
                 results.append(result)
 
-        return results
+        return self._merge_results(results)
 
     @staticmethod
     async def _evaluate_component(
@@ -194,16 +148,12 @@ class PermissionEngine:
         return self._config
 
     @staticmethod
-    def _merge_results(
-        results: list[PermissionResult],
-        *,
-        default_permission: PermissionLevel | None = PermissionLevel.ASK,
-    ) -> PermissionResult:
+    def _merge_results(results: list[PermissionResult]) -> PermissionResult:
         """Merge component results without allowing a missing result to allow."""
 
         if not results:
             return PermissionResult(
-                permission=default_permission,
+                permission=PermissionLevel.ASK,
                 reason="No permission component is configured",
             )
 
@@ -221,7 +171,7 @@ class PermissionEngine:
             permission=(
                 strongest.permission
                 if strongest is not None and strongest.permission is not None
-                else default_permission
+                else PermissionLevel.ASK
             ),
             matched_rule=strongest.matched_rule if strongest is not None else None,
             reason=strongest.reason if strongest is not None else None,

@@ -19,30 +19,28 @@ def _both(engine: PermissionEngine, tool: str, args: dict):
     return checked, direct
 
 
-@pytest.mark.parametrize("command", ["ls -la", "shutdown now"])
-def test_raw_query_keeps_tiered_policy_decisions(command: str) -> None:
+@pytest.mark.parametrize(
+    "command",
+    ["echo hi", "ls -la", "shutdown now", "echo `id`", "git reset --hard"],
+)
+def test_returns_the_same_decision_as_check_permission(command: str) -> None:
     checked, direct = _both(PermissionEngine(_CONFIG), "bash", {"command": command})
 
     assert direct == (checked.permission, checked.matched_rule)
 
 
-@pytest.mark.parametrize("command", ["echo hi", "git reset --hard"])
-def test_raw_query_reports_the_tiered_rule_when_execution_check_has_none(command: str) -> None:
-    checked, direct = _both(PermissionEngine(_CONFIG), "bash", {"command": command})
-
-    assert checked.permission is PermissionLevel.ALLOW
-    assert checked.matched_rule is None
-    assert direct == (PermissionLevel.ALLOW, "tools.bash")
-
-
-def test_raw_query_skips_injection_execution_check() -> None:
-    checked, direct = _both(PermissionEngine(_CONFIG), "bash", {"command": "echo `id`"})
-
-    assert checked.permission is PermissionLevel.DENY
-    assert checked.matched_rule == "backtick-command-substitution"
-    assert direct[0] is PermissionLevel.ASK
-    assert direct[1] is not None
-    assert "backtick-command-substitution" not in direct[1]
+@pytest.mark.parametrize("enabled", (True, False))
+def test_raw_query_keeps_allowlist_denial_even_with_allow_tool_baseline(enabled: bool) -> None:
+    engine = PermissionEngine(
+        {
+            "enabled": enabled,
+            "tools": {"bash": "allow"},
+            "shell_allowlist": ["echo"],
+        }
+    )
+    assert asyncio.run(
+        engine.evaluate_global_policy_directly("bash", {"command": "git status"})
+    ) == (PermissionLevel.DENY, "shell_allowlist:not_allowed")
 
 
 def test_returns_a_level_and_rule_tuple() -> None:

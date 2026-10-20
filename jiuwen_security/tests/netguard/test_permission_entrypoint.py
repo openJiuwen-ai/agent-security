@@ -106,8 +106,7 @@ def test_other_network_tools_get_a_baseline_without_inventing_url_support(tool):
 def test_c_allow_does_not_replace_an_absent_a_policy_with_allow():
     engine = PermissionEngine(config(baseline=None))
     assert check(engine).permission is L.ASK
-    # A real explicit URL match is still visible to callers asking only for policy.
-    assert query(engine) == (L.ALLOW, "net_guard:url:example.com")
+    assert query(engine) == (L.ASK, "tiered_policy:fallback(no_config)")
 
 
 @pytest.mark.parametrize("level", ("ask", "deny", "undetermined"))
@@ -133,20 +132,26 @@ def test_connection_action_never_invokes_network_a_policy(monkeypatch):
 
 
 @pytest.mark.parametrize("enabled", (False, True))
-def test_raw_query_preserves_none_for_no_network_constraint(enabled):
+def test_raw_query_keeps_the_execution_fallback_for_no_network_constraint(enabled):
     engine = PermissionEngine({"net_guard": {"enabled": enabled}})
-    assert query(engine) == (None, None)
+    assert query(engine) == (L.ASK, "tiered_policy:fallback(no_config)")
     assert check(engine).permission is L.ASK
 
 
 @pytest.mark.parametrize("action", ("allow", "ask", "deny"))
-def test_raw_query_retains_real_url_hits_even_when_equal_to_defaults(action):
-    cfg = config(baseline=None, action=action)
+def test_raw_query_matches_execution_for_explicit_and_default_url_policy(action):
+    cfg = config(action=action)
     cfg["net_guard"]["defaults"] = action
     engine = PermissionEngine(cfg)
-    assert query(engine) == (L(action), "net_guard:url:example.com")
-    neutral = query(engine, args={"url": "https://unmatched.example/"})
-    assert neutral == ((None, None) if action == "allow" else (L(action), "net_guard:defaults"))
+    expected_rule = "tools.mcp_fetch_webpage" if action == "allow" else "net_guard:url:example.com"
+    assert query(engine) == (L(action), expected_rule)
+    checked = check(engine)
+    assert query(engine) == (checked.permission, checked.matched_rule)
+    unmatched = {"url": "https://unmatched.example/"}
+    expected_default = "tools.mcp_fetch_webpage" if action == "allow" else "net_guard:defaults"
+    assert query(engine, args=unmatched) == (L(action), expected_default)
+    checked = check(engine, args=unmatched)
+    assert query(engine, args=unmatched) == (checked.permission, checked.matched_rule)
 
 
 @pytest.mark.parametrize("baseline", ("allow", "undetermined", "ask", "deny"))
@@ -156,33 +161,39 @@ def test_raw_network_query_keeps_a_policy_when_c_is_neutral(baseline):
     assert query(PermissionEngine(cfg)) == (L(baseline), "tools.mcp_fetch_webpage")
 
 
-@pytest.mark.parametrize("include_paths", (False, True))
-def test_raw_query_bypasses_only_global_execution_switch(include_paths):
+def test_raw_query_bypasses_only_global_execution_switch():
     cfg = config(baseline=None, action="deny")
     cfg["enabled"] = False
     engine = PermissionEngine(cfg)
     assert check(engine).permission is L.ALLOW
-    assert query(engine, include_external_directory=include_paths) == (
+    assert query(engine) == (
         L.DENY,
         "net_guard:url:example.com",
     )
     cfg["net_guard"]["enabled"] = False
     engine.update_config(cfg)
-    assert query(engine) == (None, None)
+    assert query(engine) == (L.ASK, "tiered_policy:fallback(no_config)")
 
 
-def test_raw_command_query_reuses_tiered_policy_without_execution_only_checks():
+def test_raw_command_query_keeps_execution_checks_and_fallback():
     engine = PermissionEngine()
-    assert query(engine, "bash", {"command": "echo hello"}) == (None, None)
+    assert query(engine, "bash", {"command": "echo hello"}) == (
+        L.ASK,
+        "tiered_policy:fallback(no_config)",
+    )
     assert check(engine, "bash", {"command": "echo hello"}).permission is L.ASK
     assert query(engine, "bash", {"command": "shutdown now"})[0] is L.DENY
-    assert query(engine, "custom_tool", {}) == (None, None)
+    assert query(engine, "bash", {"command": "echo `id`"}) == (
+        L.DENY,
+        "backtick-command-substitution",
+    )
+    assert query(engine, "custom_tool", {}) == (L.ASK, None)
 
 
 @pytest.mark.parametrize("level", ("allow", "undetermined", "ask", "deny"))
 def test_raw_command_query_keeps_explicit_four_level_policy(level):
     engine = PermissionEngine({"enabled": False, "tools": {"bash": level}})
-    assert query(engine, "bash", {"command": "echo hello"}) == (L(level), "tools.bash")
+    assert query(engine, "bash", {"command": "echo hello"})[0] is L(level)
 
 
 @pytest.mark.parametrize("tool", ("fetch_webpage", "mcp_free_search", "mcp_paid_search"))
@@ -198,14 +209,13 @@ def test_netguard_does_not_claim_non_network_tools(tool):
     component = NetGuardComponent()
     component.configure({"tools": {tool: "deny"}, "defaults": {"*": "deny"}})
     assert asyncio.run(component.evaluate(tool, {})) is None
-    assert asyncio.run(component.evaluate_global_policy(tool, {})) is None
 
 
 @pytest.mark.parametrize("tool", ("read_file", "custom_tool"))
 def test_engine_does_not_install_a_general_non_command_baseline(tool):
     engine = PermissionEngine({"tools": {tool: "allow"}, "defaults": {"*": "allow"}})
     assert check(engine, tool, {}).permission is L.ASK
-    assert query(engine, tool, {}) == (None, None)
+    assert query(engine, tool, {}) == (L.ASK, None)
 
 
 def test_engine_registers_exactly_one_network_component():
@@ -238,7 +248,7 @@ def test_connection_safety_is_stricter_than_an_explicit_url_allow(addresses):
 def test_disabled_c_never_invents_a_connection_allow():
     engine = PermissionEngine(config(enabled=False))
     assert check(engine, "network_connect", CONNECTION).permission is L.ASK
-    assert query(engine, "network_connect", CONNECTION) == (None, None)
+    assert query(engine, "network_connect", CONNECTION) == (L.ASK, None)
 
 
 def test_public_query_validates_arguments():
@@ -247,8 +257,6 @@ def test_public_query_validates_arguments():
         query(engine, " ", {})
     with pytest.raises(TypeError):
         query(engine, args=[])
-    with pytest.raises(TypeError):
-        query(engine, include_external_directory="false")
 
 
 def test_failed_w3_update_rolls_back_real_command_and_network_policy_together():

@@ -200,7 +200,6 @@ def test_query_secrets_are_redacted_soft_warnings(key):
         [],
         {"net_guard": None},
         {"net_guard": {"enabled": "true"}},
-        {"package_builtin_rules": 1},
         {"net_guard": {"defaults": "undetermined"}},
         {"net_guard": {"urls": []}},
         {"net_guard": {"urls": {"example.com": "bad"}}},

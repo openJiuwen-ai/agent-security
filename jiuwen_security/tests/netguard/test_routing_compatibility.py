@@ -70,10 +70,8 @@ def test_raw_query_keeps_two_argument_component_adapters_compatible():
         L.DENY,
         "net_guard:url:example.com",
     )
-    # The inherited raw query uses the shared internal pipeline, without
-    # requiring a route keyword on this adapter's two-argument evaluate.
     assert _check(engine, "fetch_webpage", args).permission is L.DENY
-    assert component.calls == [("fetch_webpage", args)]
+    assert component.calls == [("fetch_webpage", args), ("fetch_webpage", args)]
 
 
 @pytest.mark.parametrize("tool", (*_FETCH_TOOLS, "network_connect"))
@@ -202,9 +200,8 @@ def test_connection_policy_cannot_be_disabled_by_fetch_or_approval_fields():
 
 
 @pytest.mark.parametrize("action", ("allow", "ask", "deny"))
-def test_defaults_and_real_matches_stay_distinct_for_w6_query_adapter(action):
+def test_query_preserves_default_and_matched_rule_labels(action):
     cfg = _config(action, default=action)
-    cfg["tools"] = {}
     engine, _ = _mount(cfg)
     matched = asyncio.run(
         engine.evaluate_global_policy_directly("fetch_webpage", {"url": "https://example.com"})
@@ -214,8 +211,11 @@ def test_defaults_and_real_matches_stay_distinct_for_w6_query_adapter(action):
             "fetch_webpage", {"url": "https://unmatched.invalid"}
         )
     )
-    assert matched == (L(action), "net_guard:url:example.com")
-    assert defaulted == ((None, None) if action == "allow" else (L(action), "net_guard:defaults"))
+    if action == "allow":
+        assert matched == defaulted == (L.ALLOW, "tools.fetch_webpage")
+    else:
+        assert matched == (L(action), "net_guard:url:example.com")
+        assert defaulted == (L(action), "net_guard:defaults")
 
 
 def test_failed_w3_update_preserves_its_rules_and_connection_policy():

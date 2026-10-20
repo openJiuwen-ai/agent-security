@@ -1,6 +1,5 @@
 """Network component: tool baseline, URL policy and connection address checks."""
 
-# All invalid configuration/action inputs follow W3's ValueError contract.
 # ruff: noqa: TRY004
 
 from __future__ import annotations
@@ -13,6 +12,7 @@ from types import MappingProxyType
 from ..models import PermissionLevel, PermissionResult
 from ..routing import RouteContext, RouteInterest, SecurityTarget, resolve_route
 from .address_policy import ConnectionPolicy, build_connection_policy, connection_rejection_reason
+from .builtin_rules import package_rules_enabled
 from .net_urls import NetUrlRule, build_net_urls, parse_action
 from .tool_policy import NetworkToolPolicy, build_tool_policy
 from .url_safety import MAX_URL_CHARS, UrlTarget, has_secret_query, parse_url, rule_label
@@ -49,7 +49,7 @@ def extract_fetch_url(args: Mapping[str, object]) -> str | None:
 
 
 def _check_rules(target: UrlTarget, state: _State) -> tuple[PermissionLevel, str]:
-    """Keep real matches distinct from defaults for raw policy queries."""
+    """Return the strictest matching rule, with a separate defaults marker."""
     strongest = None
     hits = []
     # Every glob has a necessary literal prefix/suffix. Index the longer one;
@@ -93,9 +93,9 @@ class NetGuardComponent:
         if not isinstance(section, Mapping):
             raise ValueError("net_guard must be a mapping")
         enabled = section.get("enabled", False)
-        include_package = config.get("package_builtin_rules", True)
-        if type(enabled) is not bool or type(include_package) is not bool:
-            raise ValueError("Network policy switches must be boolean")
+        include_package = package_rules_enabled(config.get("package_builtin_rules"))
+        if type(enabled) is not bool:
+            raise ValueError("net_guard.enabled must be a boolean")
         default = parse_action(section.get("defaults", "allow"))
         connection = build_connection_policy(section.get("connection", {}))
         tool_policy = build_tool_policy(config)
@@ -130,50 +130,21 @@ class NetGuardComponent:
         route: RouteContext | None = None,
     ) -> PermissionResult | None:
         """Judge a network tool; host connection actions skip its tool baseline."""
-        return self._evaluate_policy(tool_name, tool_args, route=route, raw_query=False)
-
-    async def evaluate_global_policy(
-        self,
-        tool_name: str,
-        tool_args: Mapping[str, object],
-        *,
-        route: RouteContext | None = None,
-    ) -> PermissionResult | None:
-        """Use the same policy without an execution fallback or neutral C ALLOW."""
-        return self._evaluate_policy(tool_name, tool_args, route=route, raw_query=True)
-
-    def _evaluate_policy(
-        self,
-        tool_name: str,
-        tool_args: Mapping[str, object],
-        *,
-        route: RouteContext | None,
-        raw_query: bool,
-    ) -> PermissionResult | None:
         state = self._configured_state()
         name = tool_name.strip() if isinstance(tool_name, str) else ""
         route = route or resolve_route(name, {})
         if route.target is not SecurityTarget.NETWORK:
             return None
         url_result = self._evaluate_url_policy(name, tool_args, route=route)
-        if (
-            raw_query
-            and url_result is not None
-            and url_result.permission is PermissionLevel.ALLOW
-            and url_result.matched_rule == "net_guard:defaults"
-        ):
-            url_result = None
         if name == "network_connect":
             return url_result
         baseline = state.tool_policy.evaluate(name)
-        if baseline is None and not raw_query:
+        if baseline is None:
             baseline = PermissionResult(
                 PermissionLevel.ASK,
                 "tiered_policy:fallback(no_config)",
                 "No network tool policy; requires approval",
             )
-        if baseline is None:
-            return url_result
         if url_result is None:
             return baseline
         winner = max((baseline, url_result), key=lambda result: _RANK[result.permission])

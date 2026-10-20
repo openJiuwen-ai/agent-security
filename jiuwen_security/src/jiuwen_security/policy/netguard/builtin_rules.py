@@ -15,3 +15,10 @@ _BUILTIN_NET_URLS = (
 def package_net_urls() -> dict[str, str]:
     """Return a fresh collection so config composition cannot mutate defaults."""
     return dict(_BUILTIN_NET_URLS)
+
+
+def package_rules_enabled(value: object) -> bool:
+    """Parse the package switch, enabling defaults unless explicitly disabled."""
+    if isinstance(value, bool):
+        return value
+    return not (isinstance(value, str) and value.strip().lower() in {"false", "0", "no", "off"})

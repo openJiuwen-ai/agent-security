@@ -10,7 +10,6 @@ from ..models import PermissionLevel, PermissionResult
 
 
 def _level(value: object) -> PermissionLevel | None:
-    # Keep the tools/defaults value semantics established by W1a.
     if not isinstance(value, str):
         return None
     try:
