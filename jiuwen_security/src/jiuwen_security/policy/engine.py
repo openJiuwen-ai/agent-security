@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 import copy
 import inspect
 from typing import Any
@@ -24,15 +24,7 @@ class PermissionEngine:
     component is not an additional public API contract.
     """
 
-    def __init__(
-        self,
-        config: Mapping[str, Any] | None = None,
-        *,
-        workspace_root: str | None = None,
-        trusted_dirs: Iterable[str] | None = None,
-    ) -> None:
-        self.workspace_root = workspace_root
-        self._trusted_dirs = tuple(trusted_dirs or ())
+    def __init__(self, config: Mapping[str, Any] | None = None) -> None:
         self._components: tuple[PermissionComponent, ...] = ()
         self._config: dict[str, Any] = {}
         self._install(config or {})
@@ -115,17 +107,6 @@ class PermissionEngine:
         if not isinstance(config, Mapping):
             raise TypeError("config must be a mapping")
         self._install(config)
-
-    def update_trusted_dirs(self, dirs: Iterable[str]) -> None:
-        """Update the engine-owned trusted directory state."""
-
-        self._trusted_dirs = tuple(dirs)
-
-    @property
-    def trusted_dirs(self) -> tuple[str, ...]:
-        """Return the currently configured trusted directories."""
-
-        return self._trusted_dirs
 
     @property
     def config(self) -> Mapping[str, Any]:
