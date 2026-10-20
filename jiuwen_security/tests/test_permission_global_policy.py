@@ -29,6 +29,20 @@ def test_returns_the_same_decision_as_check_permission(command: str) -> None:
     assert direct == (checked.permission, checked.matched_rule)
 
 
+@pytest.mark.parametrize("enabled", (True, False))
+def test_raw_query_keeps_allowlist_denial_even_with_allow_tool_baseline(enabled: bool) -> None:
+    engine = PermissionEngine(
+        {
+            "enabled": enabled,
+            "tools": {"bash": "allow"},
+            "shell_allowlist": ["echo"],
+        }
+    )
+    assert asyncio.run(
+        engine.evaluate_global_policy_directly("bash", {"command": "git status"})
+    ) == (PermissionLevel.DENY, "shell_allowlist:not_allowed")
+
+
 def test_returns_a_level_and_rule_tuple() -> None:
     level, rule = asyncio.run(
         PermissionEngine(_CONFIG).evaluate_global_policy_directly("bash", {"command": "ls"})

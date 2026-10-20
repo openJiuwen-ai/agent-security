@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import copy
 import inspect
+from collections.abc import Mapping
 from typing import Any
 
 from .component import PermissionComponent
 from .models import PermissionLevel, PermissionResult
+from .netguard import NetGuardComponent
 from .routing import RouteContext, resolve_route, route_matches
 from .toolguard.command_allowlist import CommandAllowlistComponent
 from .toolguard.destructive_warning import DestructiveWarningComponent
@@ -19,9 +20,8 @@ from .toolguard.tiered import TieredPolicyComponent
 class PermissionEngine:
     """Own component lifecycle and aggregate security decisions.
 
-    Concrete security components are added by later requirements.  The engine
-    deliberately keeps component construction private so registering a
-    component is not an additional public API contract.
+    Component construction stays private. Applications use this facade for
+    execution decisions, raw policy queries and atomic configuration updates.
     """
 
     def __init__(self, config: Mapping[str, Any] | None = None) -> None:
@@ -31,17 +31,14 @@ class PermissionEngine:
         self._install(config or {})
 
     def _build_components(self) -> tuple[PermissionComponent, ...]:
-        """Create the engine-owned components.
-
-        The first requirement establishes the registration point.  Concrete
-        components are intentionally added by their own later requirements.
-        """
+        """Create the engine-owned components."""
 
         return (
             InjectionComponent(),
             CommandAllowlistComponent(),
             DestructiveWarningComponent(),
             TieredPolicyComponent(),
+            NetGuardComponent(),
         )
 
     def _install(self, config: Mapping[str, Any]) -> None:
@@ -55,7 +52,7 @@ class PermissionEngine:
         snapshot = copy.deepcopy(dict(config))
         enabled = snapshot.get("enabled", True)
         if not isinstance(enabled, bool):
-            raise ValueError("config 'enabled' must be a boolean")
+            raise ValueError("config 'enabled' must be a boolean")  # noqa: TRY004
         components = self._build_components()
         for component in components:
             component.configure(snapshot)
@@ -131,8 +128,7 @@ class PermissionEngine:
         evaluate = component.evaluate
         parameters = inspect.signature(evaluate).parameters
         accepts_route = "route" in parameters or any(
-            parameter.kind is inspect.Parameter.VAR_KEYWORD
-            for parameter in parameters.values()
+            parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
         )
         if accepts_route:
             return await evaluate(tool_name, tool_args, route=route)
@@ -161,9 +157,7 @@ class PermissionEngine:
                 reason="No permission component is configured",
             )
 
-        permission_results = [
-            result for result in results if result.permission is not None
-        ]
+        permission_results = [result for result in results if result.permission is not None]
         strongest = max(
             permission_results,
             key=lambda result: PermissionEngine._permission_rank(result.permission),
@@ -171,9 +165,7 @@ class PermissionEngine:
         )
 
         warnings = [warning for result in results for warning in result.warnings]
-        external_paths = [
-            path for result in results for path in result.external_paths
-        ]
+        external_paths = [path for result in results for path in result.external_paths]
 
         return PermissionResult(
             permission=(

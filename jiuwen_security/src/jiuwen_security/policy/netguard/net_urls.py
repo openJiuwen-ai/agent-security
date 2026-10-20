@@ -11,15 +11,10 @@ from dataclasses import dataclass
 from fnmatch import translate
 
 from ..models import PermissionLevel
+from .builtin_rules import package_net_urls
 from .url_safety import MAX_URL_CHARS, UrlTarget, normalize_host, parse_url
 
 MAX_URL_RULES = 10_000
-_PACKAGE_NET_URLS = (
-    ("169.254.169.254", "deny"),
-    ("metadata.google.internal", "deny"),
-    ("localhost", "deny"),
-    ("127.0.0.1", "deny"),
-)
 
 
 def parse_action(value: object) -> PermissionLevel:
@@ -84,7 +79,7 @@ def build_net_urls(urls: object, *, include_package: bool) -> tuple[NetUrlRule, 
         raise ValueError("net_guard.urls must be a mapping")
     if len(urls) > MAX_URL_RULES:
         raise ValueError("Too many network URL rules")
-    merged = dict(_PACKAGE_NET_URLS) if include_package else {}
+    merged = package_net_urls() if include_package else {}
     supplied = set()
     for raw_pattern, value in urls.items():
         if not isinstance(raw_pattern, str):

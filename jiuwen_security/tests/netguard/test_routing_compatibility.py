@@ -1,7 +1,7 @@
-"""W3 contracts through the current engine, without changing W6 routing.
+"""Compatibility of older two-argument W3 component adapters.
 
-Only the test engine supplies _build_components(). Production registration,
-network_connect A/B isolation and cross-component transactions remain W6 work.
+This fixture deliberately has no subscriptions. Production registration is
+covered separately without overriding the real engine's component set.
 """
 
 import asyncio
@@ -10,12 +10,15 @@ import pytest
 
 from jiuwen_security import PermissionEngine, PermissionResult
 from jiuwen_security import PermissionLevel as L
-from jiuwen_security.policy.netguard.net_guard import NetGuardChecker
+from jiuwen_security.policy.netguard.component import NetGuardComponent
+from jiuwen_security.policy.routing import SecurityTarget, resolve_route
 
 _FETCH_TOOLS = ("mcp_fetch_webpage", "fetch_webpage", "web_fetch_webpage")
 
 
-class _ObservedNetGuard(NetGuardChecker):
+class _ObservedNetGuard(NetGuardComponent):
+    interests = None
+
     def __init__(self):
         super().__init__()
         self.calls = []
@@ -40,7 +43,10 @@ class _Baseline:
 
 
 def _config(action="deny", *, enabled=True, default="allow"):
-    return {"net_guard": {"enabled": enabled, "defaults": default, "urls": {"example.com": action}}}
+    return {
+        "tools": {name: "allow" for name in _FETCH_TOOLS},
+        "net_guard": {"enabled": enabled, "defaults": default, "urls": {"example.com": action}},
+    }
 
 
 def _mount(config, *, baseline=None):
@@ -57,18 +63,34 @@ def _check(engine, tool, args):
     return asyncio.run(engine.check_permission(tool, args))
 
 
+def test_raw_query_keeps_two_argument_component_adapters_compatible():
+    engine, component = _mount(_config("deny"))
+    args = {"url": "https://example.com/page"}
+    assert asyncio.run(engine.evaluate_global_policy_directly("fetch_webpage", args)) == (
+        L.DENY,
+        "net_guard:url:example.com",
+    )
+    assert _check(engine, "fetch_webpage", args).permission is L.DENY
+    assert component.calls == [("fetch_webpage", args), ("fetch_webpage", args)]
+
+
 @pytest.mark.parametrize("tool", (*_FETCH_TOOLS, "network_connect"))
 @pytest.mark.parametrize("action", ("allow", "ask", "deny"))
 def test_two_argument_component_reaches_every_supported_action_once(tool, action):
     engine, component = _mount(_config(action))
-    # Leave subscriptions unset until W6 classifies every supported action.
+    # Exercise the legacy adapter without subscriptions.
     assert getattr(component, "interests", None) is None
     args = {"url": "https://example.com/page"}
     if tool == "network_connect":
         args.update(resolved_addresses=["8.8.8.8"], connect_address="8.8.8.8")
     result = _check(engine, tool, args)
     assert result.permission is L(action)
-    assert result.matched_rule == "net_guard:url:example.com"
+    expected_label = (
+        "tools." + tool
+        if action == "allow" and tool != "network_connect"
+        else "net_guard:url:example.com"
+    )
+    assert result.matched_rule == expected_label
     assert component.calls == [(tool, args)]
     assert component.results == [result]
 
@@ -104,15 +126,19 @@ def test_tool_name_whitespace_cannot_skip_the_component(tool, padding):
         "prefix.fetch_webpage",
     ),
 )
-def test_routing_category_never_expands_w3_tool_applicability(tool):
+def test_routing_category_never_expands_url_inspection(tool):
     engine, component = _mount(_config(default="deny"))
-    # Unsupported actions are skipped even when their arguments resemble a
-    # connection or contain an invalid URL. W3 must not return its ALLOW/default.
+    # NETWORK tools may get a baseline, but their arguments do not acquire
+    # fetch URL inspection merely by sharing the routing category.
     args = {"url": "file:///private", "resolved_addresses": [], "connect_address": "bad"}
     result = _check(engine, tool, args)
-    assert component.results == [None]
+    if resolve_route(tool, {}).target is SecurityTarget.NETWORK:
+        assert component.results[0].permission is L.ASK
+        assert component.results[0].matched_rule == "tiered_policy:fallback(no_config)"
+    else:
+        assert component.results == [None]
     assert result.permission is L.ASK
-    assert result.matched_rule is None
+    assert result.matched_rule in (None, "tiered_policy:fallback(no_config)")
 
 
 @pytest.mark.parametrize("tool", _FETCH_TOOLS)
@@ -126,11 +152,15 @@ def test_c_allow_keeps_the_original_tool_baseline(tool, baseline):
 
 
 @pytest.mark.parametrize("tool", (*_FETCH_TOOLS, "network_connect"))
-def test_explicitly_disabled_w3_is_neutral_through_engine(tool):
+def test_disabled_url_guard_keeps_the_network_tool_baseline(tool):
     engine, component = _mount(_config(enabled=False))
     result = _check(engine, tool, {})
-    assert component.results == [None]
-    assert result.permission is L.ASK
+    if tool == "network_connect":
+        assert component.results == [None]
+        assert result.permission is L.ASK
+    else:
+        assert component.results[0].permission is L.ALLOW
+        assert result.permission is L.ALLOW
 
 
 @pytest.mark.parametrize(
@@ -170,14 +200,22 @@ def test_connection_policy_cannot_be_disabled_by_fetch_or_approval_fields():
 
 
 @pytest.mark.parametrize("action", ("allow", "ask", "deny"))
-def test_defaults_and_real_matches_stay_distinct_for_w6_query_adapter(action):
-    engine, component = _mount(_config(action, default=action))
-    matched = _check(engine, "fetch_webpage", {"url": "https://example.com"})
-    defaulted = _check(engine, "fetch_webpage", {"url": "https://unmatched.invalid"})
-    assert matched.permission is defaulted.permission is L(action)
-    assert matched.matched_rule == "net_guard:url:example.com"
-    assert defaulted.matched_rule == "net_guard:defaults"
-    assert len(component.calls) == 2
+def test_query_preserves_default_and_matched_rule_labels(action):
+    cfg = _config(action, default=action)
+    engine, _ = _mount(cfg)
+    matched = asyncio.run(
+        engine.evaluate_global_policy_directly("fetch_webpage", {"url": "https://example.com"})
+    )
+    defaulted = asyncio.run(
+        engine.evaluate_global_policy_directly(
+            "fetch_webpage", {"url": "https://unmatched.invalid"}
+        )
+    )
+    if action == "allow":
+        assert matched == defaulted == (L.ALLOW, "tools.fetch_webpage")
+    else:
+        assert matched == (L(action), "net_guard:url:example.com")
+        assert defaulted == (L(action), "net_guard:defaults")
 
 
 def test_failed_w3_update_preserves_its_rules_and_connection_policy():

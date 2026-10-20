@@ -12,7 +12,7 @@ No reference checkout or network service is needed to execute these tests.
 import pytest
 
 from jiuwen_security import PermissionLevel as L
-from jiuwen_security.policy.netguard.net_guard import NetGuardChecker
+from jiuwen_security.policy.netguard.component import NetGuardComponent
 
 from .test_address_policy import connect
 from .test_net_guard import checker, evaluate
@@ -50,7 +50,7 @@ def test_metadata_and_transition_addresses_stay_blocked(address):
 
 @pytest.mark.parametrize("enforce_host_exit", [False, True])
 def test_host_exit_settings_do_not_disable_url_policy(enforce_host_exit):
-    component = NetGuardChecker()
+    component = NetGuardComponent()
     component.configure(
         {
             "enabled": True,
@@ -92,7 +92,7 @@ def test_search_uses_exit_policy_without_pretending_query_is_a_fetch_url():
 
 
 def test_effective_rules_are_not_recomposed_from_source_metadata():
-    component = NetGuardChecker()
+    component = NetGuardComponent()
     component.configure(
         {
             "net_guard": {
