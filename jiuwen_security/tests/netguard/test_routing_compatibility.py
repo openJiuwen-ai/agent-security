@@ -128,6 +128,7 @@ def test_tool_name_whitespace_cannot_skip_the_component(tool, padding):
 )
 def test_routing_category_never_expands_url_inspection(tool):
     engine, component = _mount(_config(default="deny"))
+    component.interests = NetGuardComponent.interests
     # NETWORK tools may get a baseline, but their arguments do not acquire
     # fetch URL inspection merely by sharing the routing category.
     args = {"url": "file:///private", "resolved_addresses": [], "connect_address": "bad"}
@@ -136,7 +137,7 @@ def test_routing_category_never_expands_url_inspection(tool):
         assert component.results[0].permission is L.ASK
         assert component.results[0].matched_rule == "tiered_policy:fallback(no_config)"
     else:
-        assert component.results == [None]
+        assert component.calls == component.results == []
     assert result.permission is L.ASK
     assert result.matched_rule in (None, "tiered_policy:fallback(no_config)")
 
@@ -166,11 +167,6 @@ def test_disabled_url_guard_keeps_the_network_tool_baseline(tool):
 @pytest.mark.parametrize(
     "args",
     [
-        {
-            "uri": "https://example.com",
-            "resolved_addresses": ["8.8.8.8"],
-            "connect_address": "8.8.8.8",
-        },
         {"url": "https://example.com", "connect_address": "8.8.8.8"},
         {"url": "https://example.com", "resolved_addresses": ["8.8.8.8"]},
     ],

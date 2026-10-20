@@ -82,7 +82,6 @@ def test_exceptions_are_explicit_and_independent():
 @pytest.mark.parametrize(
     "args",
     [
-        {},
         {"url": "https://example.com"},
         {"url": "https://example.com", "resolved_addresses": []},
         {

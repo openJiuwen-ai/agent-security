@@ -10,7 +10,7 @@ from itertools import chain
 from types import MappingProxyType
 
 from ..models import PermissionLevel, PermissionResult
-from ..routing import RouteContext, RouteInterest, SecurityTarget, resolve_route
+from ..routing import RouteContext, RouteInterest, SecurityTarget
 from .address_policy import ConnectionPolicy, build_connection_policy, connection_rejection_reason
 from .builtin_rules import package_rules_enabled
 from .net_urls import NetUrlRule, build_net_urls, parse_action
@@ -42,7 +42,7 @@ def extract_fetch_url(args: Mapping[str, object]) -> str | None:
     for key in _URL_ARG_KEYS:
         value = args.get(key)
         if isinstance(value, str) and len(value) > MAX_URL_CHARS:
-            raise ValueError("URL exceeds 8192 characters")
+            return value  # Preserve raw length for the policy's DENY result.
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None
@@ -132,10 +132,7 @@ class NetGuardComponent:
         """Judge a network tool; host connection actions skip its tool baseline."""
         state = self._configured_state()
         name = tool_name.strip() if isinstance(tool_name, str) else ""
-        route = route or resolve_route(name, {})
-        if route.target is not SecurityTarget.NETWORK:
-            return None
-        url_result = self._evaluate_url_policy(name, tool_args, route=route)
+        url_result = self._evaluate_url_policy(name, tool_args)
         if name == "network_connect":
             return url_result
         baseline = state.tool_policy.evaluate(name)
@@ -164,32 +161,34 @@ class NetGuardComponent:
         self,
         tool_name: str,
         tool_args: Mapping[str, object],
-        *,
-        route: RouteContext | None = None,
     ) -> PermissionResult | None:
         state = self._configured_state()
         # Keep legacy whitespace normalization without broadening tool aliases.
         if isinstance(tool_name, str):
             tool_name = tool_name.strip()
-        if (
-            not state.enabled
-            or (route is not None and route.target is not SecurityTarget.NETWORK)
-            or tool_name not in _FETCH_TOOLS | {"network_connect"}
-        ):
+        if not state.enabled or tool_name not in _FETCH_TOOLS | {"network_connect"}:
             return None
         if not isinstance(tool_args, Mapping):
             raise ValueError("Network tool arguments must be a mapping")
         if tool_name == "network_connect":
             url = tool_args.get("url")
-            if not isinstance(url, str) or not url:
-                raise ValueError("network_connect requires a URL")
         else:
             url = extract_fetch_url(tool_args)
-        if url is None:
+        if isinstance(url, str) and len(url) > MAX_URL_CHARS:
+            return PermissionResult(
+                PermissionLevel.DENY, "net_guard:url_too_long", "URL exceeds 8192 characters"
+            )
+        url = url.strip() if isinstance(url, str) else None
+        if not url:
             return PermissionResult(
                 state.default, "net_guard:defaults", "Network URL absent; using defaults"
             )
-        target = parse_url(url)
+        try:
+            target = parse_url(url)
+        except ValueError:
+            return PermissionResult(
+                state.default, "net_guard:defaults", "Network URL invalid; using defaults"
+            )
         permission, matched = _check_rules(target, state)
         if tool_name == "network_connect":
             rejection = connection_rejection_reason(target, tool_args, state.connection)
