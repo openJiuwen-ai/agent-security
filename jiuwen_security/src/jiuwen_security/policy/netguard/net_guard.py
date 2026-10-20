@@ -117,6 +117,9 @@ class NetGuardChecker:
         state = self._state
         if state is None:
             raise RuntimeError("NetGuardChecker must be configured before evaluation")
+        # Keep legacy whitespace normalization without broadening tool aliases.
+        if isinstance(tool_name, str):
+            tool_name = tool_name.strip()
         if not state.enabled or tool_name not in _FETCH_TOOLS | {"network_connect"}:
             return None
         if not isinstance(tool_args, Mapping):
