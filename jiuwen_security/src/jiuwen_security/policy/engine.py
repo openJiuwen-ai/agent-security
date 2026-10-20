@@ -8,6 +8,8 @@ from collections.abc import Mapping
 from typing import Any
 
 from .component import PermissionComponent
+from .fileguard.component import FileGuardComponent, ImmutableControlPlaneComponent
+from .hostguard import HostGuardComponent
 from .models import PermissionLevel, PermissionResult
 from .netguard import NetGuardComponent
 from .routing import RouteContext, resolve_route, route_matches
@@ -38,6 +40,9 @@ class PermissionEngine:
             CommandAllowlistComponent(),
             DestructiveWarningComponent(),
             TieredPolicyComponent(),
+            HostGuardComponent(),
+            FileGuardComponent(),
+            ImmutableControlPlaneComponent(),
             NetGuardComponent(),
         )
 

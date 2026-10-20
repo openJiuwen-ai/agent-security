@@ -93,6 +93,9 @@ _FILE_TOOLS = frozenset(
         "list_files",
         "grep",
         "search_replace",
+        "send_file_to_user",
+        "save_media_to_gallery",
+        "save_file_to_file_manager",
     }
 )
 _NETWORK_TOOLS = frozenset(
