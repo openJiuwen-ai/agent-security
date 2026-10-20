@@ -82,6 +82,20 @@ class PermissionEngine:
 
         return self._merge_results(results)
 
+    async def evaluate_global_policy_directly(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, Any],
+    ) -> tuple[PermissionLevel | None, str | None]:
+        """Return the raw ``(permission, matched_rule)`` of one tool call.
+
+        Runs exactly the same checks as :meth:`check_permission`; only the
+        result shape differs, for hosts that merge it with their own decisions.
+        """
+
+        result = await self.check_permission(tool_name, tool_args)
+        return result.permission, result.matched_rule
+
     @staticmethod
     async def _evaluate_component(
         component: PermissionComponent,
