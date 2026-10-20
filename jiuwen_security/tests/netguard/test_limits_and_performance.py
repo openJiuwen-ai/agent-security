@@ -15,8 +15,9 @@ def test_url_length_boundary():
     prefix = "https://example.com/"
     url = prefix + "a" * (8192 - len(prefix))
     assert evaluate(checker(), url).permission is L.ALLOW
-    with pytest.raises(ValueError):
-        evaluate(checker(), url + "a")
+    result = evaluate(checker(), url + "a")
+    assert result.permission is L.DENY
+    assert result.matched_rule == "net_guard:url_too_long"
     with pytest.raises(ValueError):
         checker({url + "a": "deny"})
 

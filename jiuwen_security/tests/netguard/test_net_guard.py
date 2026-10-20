@@ -177,9 +177,11 @@ def test_idna_ipv6_default_ports_and_legacy_path_prefix():
         "https://\ud800.example",
     ],
 )
-def test_unsafe_or_ambiguous_url_is_an_input_error(url):
-    with pytest.raises(ValueError):
-        evaluate(checker(), url)
+@pytest.mark.parametrize("default", ("allow", "ask", "deny"))
+def test_unsafe_or_ambiguous_url_uses_defaults(url, default):
+    result = evaluate(checker(default=default), url)
+    assert result.permission is L(default)
+    assert result.matched_rule == "net_guard:defaults"
 
 
 @pytest.mark.parametrize(

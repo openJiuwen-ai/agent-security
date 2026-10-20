@@ -205,10 +205,52 @@ def test_network_baseline_preserves_raw_global_defaults(tool, level):
 
 
 @pytest.mark.parametrize("tool", ("read_file", "custom_tool", "bash"))
-def test_netguard_does_not_claim_non_network_tools(tool):
-    component = NetGuardComponent()
-    component.configure({"tools": {tool: "deny"}, "defaults": {"*": "deny"}})
-    assert asyncio.run(component.evaluate(tool, {})) is None
+def test_engine_does_not_dispatch_non_network_tools_to_netguard(tool, monkeypatch):
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("Non-network tool reached NetGuard")
+
+    monkeypatch.setattr(NetGuardComponent, "evaluate", forbidden)
+    engine = PermissionEngine({"tools": {tool: "deny"}, "defaults": {"*": "deny"}})
+    check(engine, tool, {})
+    query(engine, tool, {})
+
+
+@pytest.mark.parametrize("tool", (*FETCH_TOOLS, "network_connect"))
+@pytest.mark.parametrize("action", ("allow", "ask", "deny"))
+@pytest.mark.parametrize(
+    "args",
+    ({}, {"url": None}, {"url": ""}, {"url": " \t"}, {"url": 123}, {"url": "https://[::1"}),
+)
+def test_absent_or_invalid_url_uses_defaults_in_both_entrypoints(tool, action, args):
+    cfg = config()
+    cfg["net_guard"]["defaults"] = action
+    engine = PermissionEngine(cfg)
+    result = check(engine, tool, args)
+    expected_rule = (
+        "tools." + tool
+        if action == "allow" and tool != "network_connect"
+        else "net_guard:defaults"
+    )
+    assert (result.permission, result.matched_rule) == (L(action), expected_rule)
+    assert query(engine, tool, args) == (result.permission, result.matched_rule)
+
+
+def test_connection_url_alias_does_not_replace_missing_url():
+    cfg = config()
+    cfg["net_guard"]["defaults"] = "ask"
+    engine = PermissionEngine(cfg)
+    args = {"uri": URL, "resolved_addresses": ["8.8.8.8"], "connect_address": "8.8.8.8"}
+    assert check(engine, "network_connect", args).matched_rule == "net_guard:defaults"
+    assert query(engine, "network_connect", args) == (L.ASK, "net_guard:defaults")
+
+
+@pytest.mark.parametrize("tool", (*FETCH_TOOLS, "network_connect"))
+@pytest.mark.parametrize("url", ("https://example.com/" + "a" * 8192, " " * 8193))
+def test_overlong_url_returns_deny_in_both_entrypoints(tool, url):
+    engine = PermissionEngine(config())
+    result = check(engine, tool, {"url": url})
+    assert (result.permission, result.matched_rule) == (L.DENY, "net_guard:url_too_long")
+    assert query(engine, tool, {"url": url}) == (result.permission, result.matched_rule)
 
 
 @pytest.mark.parametrize("tool", ("read_file", "custom_tool"))

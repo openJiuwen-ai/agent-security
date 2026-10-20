@@ -27,8 +27,9 @@ from .test_net_guard import checker, evaluate
     ],
 )
 def test_ambiguous_host_cannot_authorize_a_different_client_target(host):
-    with pytest.raises(ValueError):
-        evaluate(checker(), "https://" + host + "/")
+    result = evaluate(checker(default="deny"), "https://" + host + "/")
+    assert result.permission is L.DENY
+    assert result.matched_rule == "net_guard:defaults"
     with pytest.raises(ValueError):
         checker({host: "allow"})
 
@@ -63,13 +64,14 @@ def test_stable_idna_and_explicit_ascii_punycode_remain_supported():
         "/safe/%",
     ],
 )
-def test_client_dependent_path_interpretation_is_rejected(path):
+def test_client_dependent_path_interpretation_uses_defaults(path):
     # A /safe prefix ALLOW must not authorize a client's rewritten /private path.
-    with pytest.raises(ValueError):
-        evaluate(
-            checker({"https://example.com/safe": "allow"}, default="deny"),
-            "https://example.com" + path,
-        )
+    result = evaluate(
+        checker({"https://example.com/safe": "allow"}, default="deny"),
+        "https://example.com" + path,
+    )
+    assert result.permission is L.DENY
+    assert result.matched_rule == "net_guard:defaults"
     with pytest.raises(ValueError):
         checker({"https://example.com" + path: "allow"})
 
@@ -143,10 +145,11 @@ def test_reference_metadata_host_restriction_survives_url_override_and_dns(host)
 
 
 def test_limits_apply_before_trimming_or_hashing_snapshot_strings():
-    with pytest.raises(ValueError):
-        evaluate(checker(), " " * 8192 + "https://example.com")
-    with pytest.raises(ValueError):
-        evaluate(checker(), args={"url": " " * 8193, "uri": "https://example.com"})
+    assert evaluate(checker(), " " * 8192 + "https://example.com").permission is L.DENY
+    assert (
+        evaluate(checker(), args={"url": " " * 8193, "uri": "https://example.com"}).permission
+        is L.DENY
+    )
     with pytest.raises(ValueError):
         checker({" " * 8192 + "example.com": "allow"})
     with pytest.raises(ValueError):
@@ -189,9 +192,10 @@ def test_glob_and_query_constraints_do_not_hide_independent_deny():
 @pytest.mark.parametrize(
     "url", ["https://[::1]evil.com/", "https://[::1]evil.com:443/", "https://example.com/\ud800"]
 )
-def test_invalid_authority_or_unicode_path_is_a_value_error(url):
-    with pytest.raises(ValueError):
-        evaluate(checker(), url)
+def test_invalid_authority_or_unicode_path_uses_defaults(url):
+    result = evaluate(checker(default="ask"), url)
+    assert result.permission is L.ASK
+    assert result.matched_rule == "net_guard:defaults"
 
 
 @pytest.mark.parametrize(
