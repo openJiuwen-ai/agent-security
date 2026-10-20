@@ -2,26 +2,26 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
 import copy
 import inspect
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from .component import PermissionComponent
 from .models import PermissionLevel, PermissionResult
+from .netguard import NetGuardComponent
 from .routing import RouteContext, resolve_route, route_matches
 from .toolguard.command_allowlist import CommandAllowlistComponent
 from .toolguard.destructive_warning import DestructiveWarningComponent
 from .toolguard.injection import InjectionComponent
-from .toolguard.tiered import TieredPolicyComponent
+from .toolguard.tiered import TieredPolicyComponent, _package_rules_enabled
 
 
 class PermissionEngine:
     """Own component lifecycle and aggregate security decisions.
 
-    Concrete security components are added by later requirements.  The engine
-    deliberately keeps component construction private so registering a
-    component is not an additional public API contract.
+    Component construction stays private. Applications use this facade for
+    execution decisions, raw policy queries and atomic configuration updates.
     """
 
     def __init__(
@@ -40,8 +40,8 @@ class PermissionEngine:
     def _build_components(self) -> tuple[PermissionComponent, ...]:
         """Create the engine-owned components.
 
-        The first requirement establishes the registration point.  Concrete
-        components are intentionally added by their own later requirements.
+        Keep command policy intact. NetGuard owns network tool baselines, URL
+        policy and connection checks behind one NETWORK subscription.
         """
 
         return (
@@ -49,6 +49,7 @@ class PermissionEngine:
             CommandAllowlistComponent(),
             DestructiveWarningComponent(),
             TieredPolicyComponent(),
+            NetGuardComponent(),
         )
 
     def _install(self, config: Mapping[str, Any]) -> None:
@@ -62,7 +63,17 @@ class PermissionEngine:
         snapshot = copy.deepcopy(dict(config))
         components = self._build_components()
         for component in components:
-            component.configure(snapshot)
+            component_config = snapshot
+            if isinstance(component, NetGuardComponent):
+                # This switch is shared with W1a. Normalize through its existing
+                # parser before passing W3 its strict boolean component config.
+                component_config = {
+                    **snapshot,
+                    "package_builtin_rules": _package_rules_enabled(
+                        snapshot.get("package_builtin_rules")
+                    ),
+                }
+            component.configure(component_config)
         self._components = components
         self._config = snapshot
 
@@ -78,17 +89,77 @@ class PermissionEngine:
         if not isinstance(tool_args, Mapping):
             raise TypeError("tool_args must be a mapping")
 
+        if self._config.get("enabled", True) is False:
+            return PermissionResult(PermissionLevel.ALLOW, reason="Permission system is disabled")
+
+        results = await self._evaluate_components(tool_name, tool_args)
+        return self._merge_results(results)
+
+    async def evaluate_global_policy_directly(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, Any],
+        *,
+        include_external_directory: bool = True,
+    ) -> tuple[PermissionLevel | None, str | None]:
+        """Query A/C policy without the execution switch or an ASK fallback.
+
+        Unlike the former synchronous API, this uses the current async
+        component pipeline. ``include_external_directory`` is retained for
+        FileGuard integration; no Pipeline B component is registered yet.
+        Injection, command allowlisting and display warnings are execution
+        checks, not part of this raw policy query.
+        """
+        if not isinstance(tool_name, str) or not tool_name.strip():
+            raise ValueError("tool_name must be a non-empty string")
+        if not isinstance(tool_args, Mapping):
+            raise TypeError("tool_args must be a mapping")
+        if not isinstance(include_external_directory, bool):
+            raise TypeError("include_external_directory must be boolean")
+        results = await self._evaluate_components(tool_name, tool_args, raw_query=True)
+        result = self._merge_results(results, default_permission=None)
+        return result.permission, result.matched_rule
+
+    async def _evaluate_components(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, Any],
+        *,
+        raw_query: bool = False,
+    ) -> list[PermissionResult]:
+
         route = resolve_route(tool_name, tool_args)
         components = self._components
         results: list[PermissionResult] = []
         for component in components:
+            # This host-only action checks an already-authorized connection,
+            # not the original tool again. Its name alone does not make args trusted.
+            if tool_name.strip() == "network_connect" and not isinstance(
+                component, NetGuardComponent
+            ):
+                continue
             if not route_matches(route, getattr(component, "interests", None)):
                 continue
-            result = await self._evaluate_component(component, tool_name, tool_args, route)
+            if raw_query:
+                if isinstance(component, NetGuardComponent):
+                    result = await component.evaluate_global_policy(
+                        tool_name, tool_args, route=route
+                    )
+                elif isinstance(component, TieredPolicyComponent):
+                    result = await self._evaluate_component(component, tool_name, tool_args, route)
+                    if (
+                        result is not None
+                        and result.matched_rule == "tiered_policy:fallback(no_config)"
+                    ):
+                        result = None
+                else:
+                    continue
+            else:
+                result = await self._evaluate_component(component, tool_name, tool_args, route)
             if result is not None:
                 results.append(result)
 
-        return self._merge_results(results)
+        return results
 
     @staticmethod
     async def _evaluate_component(
@@ -102,8 +173,7 @@ class PermissionEngine:
         evaluate = component.evaluate
         parameters = inspect.signature(evaluate).parameters
         accepts_route = "route" in parameters or any(
-            parameter.kind is inspect.Parameter.VAR_KEYWORD
-            for parameter in parameters.values()
+            parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
         )
         if accepts_route:
             return await evaluate(tool_name, tool_args, route=route)
@@ -134,18 +204,20 @@ class PermissionEngine:
         return self._config
 
     @staticmethod
-    def _merge_results(results: list[PermissionResult]) -> PermissionResult:
+    def _merge_results(
+        results: list[PermissionResult],
+        *,
+        default_permission: PermissionLevel | None = PermissionLevel.ASK,
+    ) -> PermissionResult:
         """Merge component results without allowing a missing result to allow."""
 
         if not results:
             return PermissionResult(
-                permission=PermissionLevel.ASK,
+                permission=default_permission,
                 reason="No permission component is configured",
             )
 
-        permission_results = [
-            result for result in results if result.permission is not None
-        ]
+        permission_results = [result for result in results if result.permission is not None]
         strongest = max(
             permission_results,
             key=lambda result: PermissionEngine._permission_rank(result.permission),
@@ -153,15 +225,13 @@ class PermissionEngine:
         )
 
         warnings = [warning for result in results for warning in result.warnings]
-        external_paths = [
-            path for result in results for path in result.external_paths
-        ]
+        external_paths = [path for result in results for path in result.external_paths]
 
         return PermissionResult(
             permission=(
                 strongest.permission
                 if strongest is not None and strongest.permission is not None
-                else PermissionLevel.ASK
+                else default_permission
             ),
             matched_rule=strongest.matched_rule if strongest is not None else None,
             reason=strongest.reason if strongest is not None else None,

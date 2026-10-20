@@ -8,7 +8,7 @@ Tests use frozen expectations and need neither those repositories nor IO.
 import pytest
 
 from jiuwen_security import PermissionLevel as L
-from jiuwen_security.policy.netguard.net_guard import NetGuardChecker
+from jiuwen_security.policy.netguard.component import NetGuardComponent
 
 from .test_address_policy import connect
 from .test_net_guard import checker, evaluate
@@ -105,7 +105,7 @@ def test_legacy_action_shapes_require_host_normalization_and_never_partially_app
 
 def test_shared_rules_are_instance_owned_and_ignore_host_global_enable_shortcuts():
     first = checker({"example.com": "deny"})
-    second = NetGuardChecker()
+    second = NetGuardComponent()
     # Global execution short-circuiting belongs to W6, including the exception
     # for raw policy queries. The W3 component owns only net_guard.enabled.
     second.configure(

@@ -13,13 +13,17 @@ import pytest
 import jiuwen_security
 from jiuwen_security import PermissionEngine, PermissionResult
 from jiuwen_security import PermissionLevel as L
-from jiuwen_security.policy.netguard.net_guard import NetGuardChecker
+from jiuwen_security.policy.netguard.component import NetGuardComponent
 
 
 def checker(urls=None, *, default="allow", include_package=True, connection=None):
-    component = NetGuardChecker()
+    component = NetGuardComponent()
     component.configure(
         {
+            "tools": {
+                name: "allow"
+                for name in ("mcp_fetch_webpage", "fetch_webpage", "web_fetch_webpage")
+            },
             "package_builtin_rules": include_package,
             "net_guard": {
                 "enabled": True,
@@ -33,7 +37,9 @@ def checker(urls=None, *, default="allow", include_package=True, connection=None
 
 
 def evaluate(component, url=None, *, tool="mcp_fetch_webpage", args=None):
-    return asyncio.run(component.evaluate(tool, args if args is not None else {"url": url}))
+    # These tests isolate URL/address rules; production component aggregation is
+    # covered through PermissionEngine in test_permission_entrypoint.py.
+    return component._evaluate_url_policy(tool, args if args is not None else {"url": url})
 
 
 @pytest.mark.parametrize("tool", ["mcp_fetch_webpage", "fetch_webpage", "web_fetch_webpage"])
@@ -68,7 +74,7 @@ def test_explicit_allow_is_distinct_from_not_applicable():
     component.configure({})
     assert evaluate(component, args=[]) is None
     with pytest.raises(RuntimeError):
-        evaluate(NetGuardChecker(), "https://example.com")
+        evaluate(NetGuardComponent(), "https://example.com")
 
 
 def test_same_object_override_and_independent_strictest_matches():
@@ -99,7 +105,7 @@ def test_all_matching_objects_participate(rules, expected):
         },
         "net_guard": {"enabled": True, "urls": rules},
     }
-    component = NetGuardChecker()
+    component = NetGuardComponent()
     component.configure(config)
     assert evaluate(component, "https://example.com").permission is expected
 
@@ -216,7 +222,7 @@ def test_bad_configuration_keeps_previous_snapshot(config):
 
 def test_config_instances_inputs_and_results_are_isolated():
     config = {"net_guard": {"enabled": True, "urls": {"example.com": "deny"}}}
-    first, second = NetGuardChecker(), checker({"example.com": "allow"})
+    first, second = NetGuardComponent(), checker({"example.com": "allow"})
     first.configure(config)
     config["net_guard"]["urls"]["example.com"] = "allow"
     result = evaluate(first, "https://example.com")
@@ -298,7 +304,7 @@ def test_component_can_be_attached_without_changing_engine_or_exports():
         ).permission
         is L.DENY
     )
-    assert "NetGuardChecker" not in jiuwen_security.__all__
+    assert "NetGuardComponent" not in jiuwen_security.__all__
 
 
 def test_redirect_targets_are_checked_again_without_an_implicit_grant():

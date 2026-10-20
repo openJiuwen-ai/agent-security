@@ -1,4 +1,4 @@
-"""Engine-owned Pipeline C component. Configuration is committed atomically."""
+"""Network component: tool baseline, URL policy and connection address checks."""
 
 # All invalid configuration/action inputs follow W3's ValueError contract.
 # ruff: noqa: TRY004
@@ -11,13 +11,20 @@ from itertools import chain
 from types import MappingProxyType
 
 from ..models import PermissionLevel, PermissionResult
+from ..routing import RouteContext, RouteInterest, SecurityTarget, resolve_route
 from .address_policy import ConnectionPolicy, build_connection_policy, connection_rejection_reason
 from .net_urls import NetUrlRule, build_net_urls, parse_action
+from .tool_policy import NetworkToolPolicy, build_tool_policy
 from .url_safety import MAX_URL_CHARS, UrlTarget, has_secret_query, parse_url, rule_label
 
 _FETCH_TOOLS = frozenset({"mcp_fetch_webpage", "fetch_webpage", "web_fetch_webpage"})
 _URL_ARG_KEYS = ("url", "uri", "href", "webpage", "page_url", "target_url")
-_RANK = {PermissionLevel.ALLOW: 0, PermissionLevel.ASK: 1, PermissionLevel.DENY: 2}
+_RANK = {
+    PermissionLevel.ALLOW: 0,
+    PermissionLevel.UNDETERMINED: 1,
+    PermissionLevel.ASK: 2,
+    PermissionLevel.DENY: 3,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +35,7 @@ class _State:
     wildcard_prefixes: Mapping[str, tuple[NetUrlRule, ...]]
     wildcard_suffixes: Mapping[str, tuple[NetUrlRule, ...]]
     connection: ConnectionPolicy
+    tool_policy: NetworkToolPolicy
 
 
 def extract_fetch_url(args: Mapping[str, object]) -> str | None:
@@ -41,7 +49,7 @@ def extract_fetch_url(args: Mapping[str, object]) -> str | None:
 
 
 def _check_rules(target: UrlTarget, state: _State) -> tuple[PermissionLevel, str]:
-    """Preserve a distinct defaults marker for the later raw-query adapter."""
+    """Keep real matches distinct from defaults for raw policy queries."""
     strongest = None
     hits = []
     # Every glob has a necessary literal prefix/suffix. Index the longer one;
@@ -64,13 +72,16 @@ def _check_rules(target: UrlTarget, state: _State) -> tuple[PermissionLevel, str
     return strongest, "|".join("net_guard:url:" + hit for hit in sorted(hits))
 
 
-class NetGuardChecker:
+class NetGuardComponent:
     """Internal component; applications keep using the PermissionEngine facade.
 
-    No route interest is declared yet: the component checks exact supported
-    tool names itself, including legacy aliases missing from the current router.
-    W6 owns final component construction and routing.
+    Network tool baselines and URL/address checks are internal steps. The router
+    selects NETWORK calls; exact tool checks keep that category from expanding
+    URL inspection to unrelated tools. Two-argument component adapters remain
+    supported.
     """
+
+    interests = (RouteInterest(SecurityTarget.NETWORK),)
 
     def __init__(self) -> None:
         self._state: _State | None = None
@@ -87,6 +98,7 @@ class NetGuardChecker:
             raise ValueError("Network policy switches must be boolean")
         default = parse_action(section.get("defaults", "allow"))
         connection = build_connection_policy(section.get("connection", {}))
+        tool_policy = build_tool_policy(config)
         rules = build_net_urls(section.get("urls", {}), include_package=include_package)
         exact: dict[str, list[NetUrlRule]] = {}
         prefixes: dict[str, list[NetUrlRule]] = {}
@@ -107,20 +119,92 @@ class NetGuardChecker:
             MappingProxyType({key: tuple(items) for key, items in prefixes.items()}),
             MappingProxyType({key: tuple(items) for key, items in suffixes.items()}),
             connection,
+            tool_policy,
         )
 
     async def evaluate(
         self,
         tool_name: str,
         tool_args: Mapping[str, object],
+        *,
+        route: RouteContext | None = None,
     ) -> PermissionResult | None:
-        state = self._state
-        if state is None:
-            raise RuntimeError("NetGuardChecker must be configured before evaluation")
+        """Judge a network tool; host connection actions skip its tool baseline."""
+        return self._evaluate_policy(tool_name, tool_args, route=route, raw_query=False)
+
+    async def evaluate_global_policy(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, object],
+        *,
+        route: RouteContext | None = None,
+    ) -> PermissionResult | None:
+        """Use the same policy without an execution fallback or neutral C ALLOW."""
+        return self._evaluate_policy(tool_name, tool_args, route=route, raw_query=True)
+
+    def _evaluate_policy(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, object],
+        *,
+        route: RouteContext | None,
+        raw_query: bool,
+    ) -> PermissionResult | None:
+        state = self._configured_state()
+        name = tool_name.strip() if isinstance(tool_name, str) else ""
+        route = route or resolve_route(name, {})
+        if route.target is not SecurityTarget.NETWORK:
+            return None
+        url_result = self._evaluate_url_policy(name, tool_args, route=route)
+        if (
+            raw_query
+            and url_result is not None
+            and url_result.permission is PermissionLevel.ALLOW
+            and url_result.matched_rule == "net_guard:defaults"
+        ):
+            url_result = None
+        if name == "network_connect":
+            return url_result
+        baseline = state.tool_policy.evaluate(name)
+        if baseline is None and not raw_query:
+            baseline = PermissionResult(
+                PermissionLevel.ASK,
+                "tiered_policy:fallback(no_config)",
+                "No network tool policy; requires approval",
+            )
+        if baseline is None:
+            return url_result
+        if url_result is None:
+            return baseline
+        winner = max((baseline, url_result), key=lambda result: _RANK[result.permission])
+        return PermissionResult(
+            winner.permission,
+            winner.matched_rule,
+            winner.reason,
+            warnings=url_result.warnings,
+        )
+
+    def _configured_state(self) -> _State:
+        if self._state is None:
+            raise RuntimeError("NetGuardComponent must be configured before evaluation")
+        return self._state
+
+    def _evaluate_url_policy(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, object],
+        *,
+        route: RouteContext | None = None,
+    ) -> PermissionResult | None:
+        state = self._configured_state()
         # Keep legacy whitespace normalization without broadening tool aliases.
         if isinstance(tool_name, str):
             tool_name = tool_name.strip()
-        if not state.enabled or tool_name not in _FETCH_TOOLS | {"network_connect"}:
+        if (
+            not state.enabled
+            or (route is not None and route.target is not SecurityTarget.NETWORK)
+            or tool_name not in _FETCH_TOOLS | {"network_connect"}
+        ):
             return None
         if not isinstance(tool_args, Mapping):
             raise ValueError("Network tool arguments must be a mapping")

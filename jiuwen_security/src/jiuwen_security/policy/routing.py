@@ -7,10 +7,10 @@ about and the engine matches them.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-import os
 from typing import Any, cast
 
 
@@ -64,29 +64,48 @@ class RouteInterest:
                 raise ValueError("only COMMAND subscriptions may specify a dialect")
 
     def matches(self, route: RouteContext) -> bool:
-        return (
-            (self.target is SecurityTarget.ALL or self.target is route.target)
-            and (
-                self.command_dialect is None
-                or self.command_dialect is route.command_dialect
-            )
+        return (self.target is SecurityTarget.ALL or self.target is route.target) and (
+            self.command_dialect is None or self.command_dialect is route.command_dialect
         )
 
 
 _POSIX_TOOLS = frozenset({"bash", "sh", "zsh", "ksh", "dash", "ash", "fish"})
 _POWERSHELL_TOOLS = frozenset({"powershell", "powershell.exe", "pwsh", "pwsh.exe"})
 _CMD_TOOLS = frozenset({"cmd", "cmd.exe"})
-_COMMAND_TOOLS = _POSIX_TOOLS | _POWERSHELL_TOOLS | _CMD_TOOLS | frozenset(
-    {"core.powershell", "mcp_exec_command", "create_terminal"}
+_COMMAND_TOOLS = (
+    _POSIX_TOOLS
+    | _POWERSHELL_TOOLS
+    | _CMD_TOOLS
+    | frozenset({"core.powershell", "mcp_exec_command", "create_terminal"})
 )
 _FILE_TOOLS = frozenset(
     {
-        "read_file", "write_file", "edit_file", "read_text_file", "write_text_file",
-        "write", "read", "glob_file_search", "glob", "list_dir", "list_files",
-        "grep", "search_replace",
+        "read_file",
+        "write_file",
+        "edit_file",
+        "read_text_file",
+        "write_text_file",
+        "write",
+        "read",
+        "glob_file_search",
+        "glob",
+        "list_dir",
+        "list_files",
+        "grep",
+        "search_replace",
     }
 )
-_NETWORK_TOOLS = frozenset({"fetch", "mcp_fetch_webpage", "mcp_free_search", "mcp_paid_search"})
+_NETWORK_TOOLS = frozenset(
+    {
+        "fetch",
+        "mcp_fetch_webpage",
+        "fetch_webpage",
+        "web_fetch_webpage",
+        "mcp_free_search",
+        "mcp_paid_search",
+        "network_connect",
+    }
+)
 
 
 def _tool_basename(value: object) -> str:
@@ -125,7 +144,9 @@ def resolve_route(tool_name: str, tool_args: Mapping[str, Any]) -> RouteContext:
     if name in _CMD_TOOLS:
         return RouteContext(SecurityTarget.COMMAND, CommandDialect.CMD)
     if name in _COMMAND_TOOLS:
-        return RouteContext(SecurityTarget.COMMAND, _dialect_from_args(tool_args) or CommandDialect.UNKNOWN)
+        return RouteContext(
+            SecurityTarget.COMMAND, _dialect_from_args(tool_args) or CommandDialect.UNKNOWN
+        )
     if name in _FILE_TOOLS:
         return RouteContext(SecurityTarget.FILE)
     if name in _NETWORK_TOOLS:
