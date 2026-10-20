@@ -27,6 +27,7 @@ class PermissionEngine:
     def __init__(self, config: Mapping[str, Any] | None = None) -> None:
         self._components: tuple[PermissionComponent, ...] = ()
         self._config: dict[str, Any] = {}
+        self._enabled = True
         self._install(config or {})
 
     def _build_components(self) -> tuple[PermissionComponent, ...]:
@@ -52,23 +53,59 @@ class PermissionEngine:
         """
 
         snapshot = copy.deepcopy(dict(config))
+        enabled = snapshot.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise ValueError("config 'enabled' must be a boolean")
         components = self._build_components()
         for component in components:
             component.configure(snapshot)
         self._components = components
         self._config = snapshot
+        self._enabled = enabled
 
     async def check_permission(
         self,
         tool_name: str,
         tool_args: Mapping[str, Any],
     ) -> PermissionResult:
-        """Evaluate one tool call through all registered components."""
+        """Evaluate one tool call; allow it without checks when disabled."""
 
+        self._validate_call(tool_name, tool_args)
+        if not self._enabled:
+            return PermissionResult(
+                permission=PermissionLevel.ALLOW,
+                reason="Permission system is disabled",
+            )
+        return await self._evaluate(tool_name, tool_args)
+
+    async def evaluate_global_policy_directly(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, Any],
+    ) -> tuple[PermissionLevel | None, str | None]:
+        """Return the raw ``(permission, matched_rule)`` of one tool call.
+
+        Runs the same checks as :meth:`check_permission` but is not
+        short-circuited by the ``enabled`` switch.
+        """
+
+        self._validate_call(tool_name, tool_args)
+        result = await self._evaluate(tool_name, tool_args)
+        return result.permission, result.matched_rule
+
+    @staticmethod
+    def _validate_call(tool_name: str, tool_args: Mapping[str, Any]) -> None:
         if not isinstance(tool_name, str) or not tool_name.strip():
             raise ValueError("tool_name must be a non-empty string")
         if not isinstance(tool_args, Mapping):
             raise TypeError("tool_args must be a mapping")
+
+    async def _evaluate(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, Any],
+    ) -> PermissionResult:
+        """Run every matching component and merge the results."""
 
         route = resolve_route(tool_name, tool_args)
         components = self._components
@@ -81,20 +118,6 @@ class PermissionEngine:
                 results.append(result)
 
         return self._merge_results(results)
-
-    async def evaluate_global_policy_directly(
-        self,
-        tool_name: str,
-        tool_args: Mapping[str, Any],
-    ) -> tuple[PermissionLevel | None, str | None]:
-        """Return the raw ``(permission, matched_rule)`` of one tool call.
-
-        Runs exactly the same checks as :meth:`check_permission`; only the
-        result shape differs, for hosts that merge it with their own decisions.
-        """
-
-        result = await self.check_permission(tool_name, tool_args)
-        return result.permission, result.matched_rule
 
     @staticmethod
     async def _evaluate_component(
