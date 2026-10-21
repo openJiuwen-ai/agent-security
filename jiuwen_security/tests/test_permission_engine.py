@@ -69,13 +69,13 @@ def test_engine_exports_and_safe_empty_default() -> None:
 @pytest.mark.parametrize(
     ("tool", "command", "rule"),
     [
-        ("bash", "printf '%s' `whoami`", "backtick-command-substitution"),
-        ("bash", "printf '%s' $(whoami)", "dollar-command-substitution"),
-        ("bash", "cat <(printf secret)", "process-substitution"),
-        ("powershell", "Invoke-Expression $cmd", "invoke-expression"),
-        ("powershell", "pwsh -EncodedCommand ZQBjAGgAbwA=", "encoded-command"),
-        ("powershell", "& ($command)", "dynamic-call-operator"),
-        ("powershell", "[ScriptBlock]::Create($code)", "scriptblock-create"),
+        ("bash", "printf '%s' `whoami`", "backtick command substitution"),
+        ("bash", "printf '%s' $(whoami)", "$() command substitution"),
+        ("bash", "cat <(printf secret)", "process substitution <() or >()"),
+        ("powershell", "Invoke-Expression $cmd", "Invoke-Expression"),
+        ("powershell", "pwsh -EncodedCommand ZQBjAGgAbwA=", "nested encoded command"),
+        ("powershell", "& ($command)", "dynamic call operator"),
+        ("powershell", "[ScriptBlock]::Create($code)", "dynamic ScriptBlock creation"),
     ],
 )
 def test_r02_injection_is_denied(tool: str, command: str, rule: str) -> None:
@@ -83,6 +83,43 @@ def test_r02_injection_is_denied(tool: str, command: str, rule: str) -> None:
 
     assert result.permission is PermissionLevel.DENY
     assert result.matched_rule == rule
+
+
+@pytest.mark.parametrize(
+    ("tool", "command", "blocked"),
+    [
+        # Patterns are the original ones: unclosed, multi-line and nested forms still block.
+        ("bash", "echo $(", True),
+        ("bash", "echo $((1+2))", True),
+        ("bash", "echo $(\nrm -rf /\n)", True),
+        ("bash", "echo `\nwhoami\n`", True),
+        ("bash", "cat <(\nls\n)", True),
+        ("bash", "echo '`ls`'", False),
+        ("powershell", "Foo-iex", True),
+        ("powershell", "pwsh -enc AAA", False),
+        ("powershell", "pwsh -e AAA", False),
+        ("powershell", "x&($y)", False),
+        ("powershell", "a & ($y)", True),
+        ("powershell", "(& $y)", True),
+        ("powershell", "[ScriptBlock] :: Create('x')", False),
+    ],
+)
+def test_injection_patterns_match_original_semantics(tool: str, command: str, blocked: bool) -> None:
+    result = asyncio_run(
+        InjectionComponent().evaluate(
+            tool, {"command": command}, route=resolve_route(tool, {"command": command})
+        )
+    )
+
+    assert (result.permission is PermissionLevel.DENY) is blocked
+
+
+def test_injection_reason_keeps_original_wording() -> None:
+    bash = asyncio_run(PermissionEngine().check_permission("bash", {"command": "echo $(id)"}))
+    ps = asyncio_run(PermissionEngine().check_permission("powershell", {"command": "iex $x"}))
+
+    assert bash.reason == "Shell injection detected: $() command substitution"
+    assert ps.reason == "PowerShell injection detected: Invoke-Expression"
 
 
 @pytest.mark.parametrize(

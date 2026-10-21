@@ -1,5 +1,5 @@
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""R03 non-blocking warnings for destructive shell commands.
+"""Non-blocking warnings for destructive shell commands.
 
 The rule tables are migrated from the Bash and PowerShell tool ``_security``
 modules in agent-core. Patterns, flags, messages and ordering are unchanged.
@@ -114,7 +114,7 @@ class DestructiveWarningComponent:
     )
 
     def configure(self, config: Mapping[str, object]) -> None:
-        """R03 uses code-owned patterns and has no configuration fields."""
+        """Patterns are code-owned; there are no configuration fields."""
         del config
 
     async def evaluate(

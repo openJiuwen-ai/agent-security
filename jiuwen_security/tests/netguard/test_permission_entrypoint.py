@@ -185,7 +185,7 @@ def test_raw_command_query_keeps_execution_checks_and_fallback():
     assert query(engine, "bash", {"command": "shutdown now"})[0] is L.DENY
     assert query(engine, "bash", {"command": "echo `id`"}) == (
         L.DENY,
-        "backtick-command-substitution",
+        "backtick command substitution",
     )
     assert query(engine, "custom_tool", {}) == (L.ASK, None)
 

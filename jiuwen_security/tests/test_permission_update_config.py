@@ -67,12 +67,17 @@ def test_update_approval_overrides_takes_effect_and_removal_restores() -> None:
     assert _level(engine, "ls") is PermissionLevel.DENY
 
 
-def test_update_guard_actions_takes_effect_and_removal_restores_ask() -> None:
+def test_update_guard_actions_takes_effect_and_removal_restores_ask(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from jiuwen_security.policy.toolguard import shell_ast
+
+    monkeypatch.setattr(shell_ast, "_get_tree_sitter_bash_parser", lambda: None)
     engine = PermissionEngine(_BASE)
     assert _level(engine, "echo hi > f.txt") is PermissionLevel.ASK
 
     engine.update_config(
-        {**_BASE, "guard_actions": {"parse_unavailable": "allow", "structure_guard": "allow"}}
+        {**_BASE, "guard_actions": {"parse_unavailable": "allow"}}
     )
     assert _level(engine, "echo hi > f.txt") is PermissionLevel.ALLOW
 
