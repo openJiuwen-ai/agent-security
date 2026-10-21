@@ -1,1 +1,12 @@
-"""W2 路径防护：按读 / 写 / 执行判定文件访问。"""
+"""W2 path protection: file_guard rules and the immutable control plane.
+
+``file_guard`` is a top-level engine key, as it was inside the old permissions
+mapping. Builtin sensitive paths arrive on ``config["builtin"]["sensitive_paths"]``.
+"""
+
+from jiuwen_security.policy.fileguard.component import (
+    FileGuardComponent,
+    ImmutableControlPlaneComponent,
+)
+
+__all__ = ["FileGuardComponent", "ImmutableControlPlaneComponent"]
