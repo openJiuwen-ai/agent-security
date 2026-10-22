@@ -71,8 +71,7 @@ def _rule_targets_tool(rule: Mapping[str, Any], tool_name: str) -> bool:
 
 
 def _command_text(args: Mapping[str, Any]) -> str:
-    value = args.get("command") or args.get("cmd") or ""
-    return value.strip() if isinstance(value, str) else ""
+    return str(args.get("command", "") or args.get("cmd", "") or "").strip()
 
 
 def _strictest(*levels: PermissionLevel) -> PermissionLevel:
@@ -131,10 +130,8 @@ def _structure_floors(
         reason = parse.reason or "conservative_fallback"
         label = f"{_PREFIX}:shell_ast:parse_unavailable:{reason}"
         floors.append((actions["parse_unavailable"], label))
-    if any((
-        flags.has_input_redirection, flags.has_output_redirection,
-        flags.has_command_substitution, flags.has_process_substitution, flags.has_heredoc,
-    )):
+    # Redirection targets are file-path concerns (file guard), not judged here.
+    if any((flags.has_command_substitution, flags.has_process_substitution, flags.has_heredoc)):
         floors.append((actions["structure_guard"], f"{_PREFIX}:shell_ast:structure_guard"))
     if parse.kind == "simple" and _has_interpreter_sink(parse):
         floors.append((actions["interpreter_sink"], f"{_PREFIX}:shell_guard:interpreter_sink"))
@@ -151,7 +148,9 @@ def _aggregate(results: list[tuple[str, PermissionLevel, str]]) -> tuple[Permiss
 
 def _compile_wildcard(pattern: str) -> re.Pattern[str] | None:
     """Prepare the original restricted wildcard matcher once at configuration."""
-    chars = r'[-a-zA-Z0-9 \._/:"\'*?]'
+    # Exclude only shell metacharacters, newlines and NUL to prevent command
+    # splicing; everything else (including non-ASCII) is allowed.
+    chars = r"[^;|&`$()<>\\\n\r\x00]"
     normalized_pattern = pattern.replace("\\", "/")
     to_escape = set(".+^${}()|[]\\")
     escaped = "".join("\\" + char if char in to_escape else char for char in normalized_pattern)
@@ -328,7 +327,8 @@ class TieredPolicyComponent:
                 level, label = self._merge(level, label, self._rules_only(tool_name, original))
         if parse is not None:
             for floor, floor_label in _structure_floors(parse, self._guard_actions):
-                if _STRICTNESS[floor] < _STRICTNESS[level]:
+                tie_with_label = floor is level and "interpreter_sink" in floor_label
+                if _STRICTNESS[floor] < _STRICTNESS[level] or tie_with_label:
                     level, label = floor, f"{floor_label}|{label}"
         return self._result(level, label)
 
@@ -349,8 +349,13 @@ class TieredPolicyComponent:
             if level is PermissionLevel.DENY:
                 break
         level, label = _aggregate(results)
-        for view in views:
-            level, label = self._merge(level, label, self._rules_only(tool_name, view))
+        whole = [hit for hit in (self._rules_only(tool_name, view) for view in views) if hit]
+        if whole:
+            whole_level = _strictest(*(hit[0] for hit in whole))
+            whole_label = next(text for hit_level, text in whole if hit_level is whole_level)
+            level = _strictest(level, whole_level)
+            if level is whole_level:
+                label = whole_label
         return level, label
 
     @staticmethod

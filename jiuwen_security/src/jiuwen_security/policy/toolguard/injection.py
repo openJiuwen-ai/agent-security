@@ -1,4 +1,9 @@
-"""R02 command-injection detection for POSIX shell and PowerShell tools."""
+"""Command-injection detection for POSIX shell and PowerShell tools.
+
+The patterns, labels and first-hit semantics are carried over unchanged from the
+original ``check_injection`` of the bash and PowerShell tools (identical on every
+branch); only the call shape is adapted to the permission component protocol.
+"""
 
 from __future__ import annotations
 
@@ -9,18 +14,25 @@ from typing import ClassVar
 from ..models import PermissionLevel, PermissionResult
 from ..routing import CommandDialect, RouteContext, RouteInterest, SecurityTarget
 
-Rule = tuple[str, re.Pattern[str], str]
+Rule = tuple[re.Pattern[str], str]
+
+_BACKTICK_RE = re.compile(r"(?<!')`[^`]+`")
+_DOLLAR_PAREN_RE = re.compile(r"\$\(")
+_PROC_SUBST_RE = re.compile(r"[<>]\(")
 
 _POSIX_RULES: tuple[Rule, ...] = (
-    ("backtick-command-substitution", re.compile(r"(?<!')`[^`\n]+`"), "Shell backtick command substitution is not allowed"),
-    ("dollar-command-substitution", re.compile(r"\$\([^\n()]+\)"), "Shell $() command substitution is not allowed"),
-    ("process-substitution", re.compile(r"(?:<|>)\([^\n()]+\)"), "Shell process substitution is not allowed"),
+    (_BACKTICK_RE, "backtick command substitution"),
+    (_DOLLAR_PAREN_RE, "$() command substitution"),
+    (_PROC_SUBST_RE, "process substitution <() or >()"),
 )
 _POWERSHELL_RULES: tuple[Rule, ...] = (
-    ("invoke-expression", re.compile(r"(?i)(?<![\w-])(?:invoke-expression|iex)(?![\w-])"), "PowerShell dynamic expression evaluation is not allowed"),
-    ("encoded-command", re.compile(r"(?i)(?<![\w-])(?:powershell|pwsh)(?:\.exe)?\b[^\n]*\s-(?:e|enc|encodedcommand)\b"), "Nested encoded PowerShell commands are not allowed"),
-    ("dynamic-call-operator", re.compile(r"&\s*(?:\(|\$)"), "PowerShell dynamic call operators are not allowed"),
-    ("scriptblock-create", re.compile(r"(?i)\[scriptblock\]\s*::\s*create\s*\("), "Dynamic PowerShell script blocks are not allowed"),
+    (re.compile(r"(?i)\b(?:invoke-expression|iex)\b"), "Invoke-Expression"),
+    (
+        re.compile(r"(?i)\b(?:powershell|powershell\.exe|pwsh|pwsh\.exe)\b[^\n]*-encodedcommand\b"),
+        "nested encoded command",
+    ),
+    (re.compile(r"(^|[\s;(])&\s*(?:\(|\$)"), "dynamic call operator"),
+    (re.compile(r"(?i)\[scriptblock\]::create\s*\("), "dynamic ScriptBlock creation"),
 )
 
 
@@ -33,25 +45,35 @@ class InjectionComponent:
     )
 
     def configure(self, config: Mapping[str, object]) -> None:
-        """Accept the complete engine config; R02 rules are code-defined."""
+        """Accept the complete engine config; the patterns are code-defined."""
         del config
 
-    async def evaluate(self, tool_name: str, tool_args: Mapping[str, object], *, route: RouteContext | None = None) -> PermissionResult:
-        """Evaluate the command using the detector selected by ``route``."""
+    async def evaluate(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, object],
+        *,
+        route: RouteContext | None = None,
+    ) -> PermissionResult:
+        """Evaluate the command with the pattern table selected by ``route``."""
         del tool_name
         if route is None or route.target is not SecurityTarget.COMMAND:
             return PermissionResult(permission=PermissionLevel.ALLOW)
-        command = tool_args.get("command")
-        if not isinstance(command, str):
-            return PermissionResult(permission=PermissionLevel.ASK, reason="Command injection detection requires a string command")
-        rules: tuple[Rule, ...] = ()
+        raw = tool_args.get("command")
+        command = raw if isinstance(raw, str) else ""
         if route.command_dialect is CommandDialect.POSIX_SHELL:
-            rules = _POSIX_RULES
+            rules, kind = _POSIX_RULES, "Shell"
         elif route.command_dialect is CommandDialect.POWERSHELL:
-            rules = _POWERSHELL_RULES
-        for rule_name, pattern, reason in rules:
+            rules, kind = _POWERSHELL_RULES, "PowerShell"
+        else:
+            return PermissionResult(permission=PermissionLevel.ALLOW)
+        for pattern, label in rules:
             if pattern.search(command):
-                return PermissionResult(permission=PermissionLevel.DENY, matched_rule=rule_name, reason=reason)
+                return PermissionResult(
+                    permission=PermissionLevel.DENY,
+                    matched_rule=label,
+                    reason=f"{kind} injection detected: {label}",
+                )
         return PermissionResult(permission=PermissionLevel.ALLOW)
 
 
