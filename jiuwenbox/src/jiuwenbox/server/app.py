@@ -8,7 +8,6 @@ import logging
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -294,7 +293,6 @@ def _chmod_uds_socket_if_any() -> None:
         logger.info("UDS socket %s chmod to %s", uds_path, mode_str)
 
 
-@asynccontextmanager
 async def _start_windows_backend(policy_reader: PolicyReader) -> None:
     """One-time Windows environment prep + egress proxy (win32 only).
 

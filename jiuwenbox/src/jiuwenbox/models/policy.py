@@ -13,8 +13,21 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 def _expand_path(value: str) -> str:
-    """Expand shell-style path markers without requiring the path to exist."""
-    return str(Path(os.path.expandvars(value)).expanduser())
+    """Expand ``~`` and environment variables without requiring the path to exist.
+
+    A POSIX absolute path such as ``/usr/lib`` must stay unchanged on Windows.
+    ``Path`` there rewrites it to ``\\usr\\lib``, which is neither a POSIX nor
+    a Windows absolute path, so the shared policy check would reject a path
+    the Linux runtime accepts.
+    """
+    expanded = os.path.expandvars(value)
+    if expanded == "~" or expanded.startswith("~/") or expanded.startswith("~\\"):
+        return str(Path(expanded).expanduser())
+    # Single leading slash is a POSIX sandbox path. ``//server/share`` is UNC
+    # and still goes through ``Path``.
+    if expanded.startswith("/") and not expanded.startswith("//"):
+        return expanded
+    return str(Path(expanded).expanduser())
 
 
 def _contains_crlf_or_null(value: str) -> bool:
