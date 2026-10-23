@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import yaml
 
@@ -65,16 +65,38 @@ class PolicyEngine:
         self.policies_dir.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
-    def _is_sandbox_internal_path(path: str, workspace_root: str) -> bool:
-        normalized = PurePosixPath(path)
-        workspace = PurePosixPath(workspace_root)
-        return normalized == workspace or normalized.is_relative_to(workspace)
+    def _pure_path(path: str) -> PurePosixPath | PureWindowsPath:
+        """Return ``path`` in the flavour that preserves its absolute form.
 
-    @staticmethod
-    def _is_jiuwenbox_path(path: str) -> bool:
-        normalized = PurePosixPath(path)
-        jiuwenbox_root = PurePosixPath(str(JIUWENBOX_HOME))
-        return normalized == jiuwenbox_root or normalized.is_relative_to(jiuwenbox_root)
+        POSIX ``/…`` stays POSIX even when this process is Windows. Drive
+        letters (``C:\\…`` / ``C:/…``) and UNC (``\\\\server\\share`` or
+        ``//server/share``) use the Windows flavour.
+        """
+        windows = PureWindowsPath(path)
+        if windows.drive:
+            return windows
+        normalized = path.replace("\\", "/")
+        if normalized.startswith("//") and not normalized.startswith("///"):
+            host = normalized.split("/", 3)[2]
+            if host:
+                return windows
+        return PurePosixPath(path)
+
+    @classmethod
+    def _is_under(cls, path: str, root: str) -> bool:
+        normalized = cls._pure_path(path)
+        base = cls._pure_path(root)
+        if type(normalized) is not type(base):
+            return False
+        return normalized == base or normalized.is_relative_to(base)
+
+    @classmethod
+    def _is_sandbox_internal_path(cls, path: str, workspace_root: str) -> bool:
+        return cls._is_under(path, workspace_root)
+
+    @classmethod
+    def _is_jiuwenbox_path(cls, path: str) -> bool:
+        return cls._is_under(path, str(JIUWENBOX_HOME))
 
     @classmethod
     def _is_reserved_workspace_path(cls, path: str, workspace_root: str) -> bool:
@@ -119,7 +141,15 @@ class PolicyEngine:
 
     @staticmethod
     def _is_absolute_sandbox_path(path: str) -> bool:
-        return PurePosixPath(path).is_absolute()
+        """True for a POSIX absolute path or a Windows absolute path.
+
+        Linux sandbox paths are ``/…``. Windows host and sandbox paths are
+        ``C:\\…``, ``C:/…``, or UNC. The same check accepts both so a policy
+        built on either runtime can pass validation.
+        """
+        if not path:
+            return False
+        return PurePosixPath(path).is_absolute() or PureWindowsPath(path).is_absolute()
 
     @staticmethod
     def _directory_path(directory: object) -> str:
