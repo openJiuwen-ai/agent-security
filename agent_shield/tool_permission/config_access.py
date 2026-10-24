@@ -71,6 +71,26 @@ def runtime_trusted_dirs(config: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(str(item) for item in raw if isinstance(item, str) and item.strip())
 
 
+def runtime_protected_pids(config: Mapping[str, Any]) -> frozenset[str] | None:
+    """Process ids supplied by the caller. Missing key keeps the local process ids."""
+
+    runtime = runtime_section(config)
+    if "protected_pids" not in runtime:
+        return None
+    raw = runtime.get("protected_pids")
+    if not isinstance(raw, (list, tuple)):
+        return frozenset()
+    pids: set[str] = set()
+    for item in raw:
+        if isinstance(item, bool):
+            continue
+        if isinstance(item, int):
+            pids.add(str(item))
+        elif isinstance(item, str) and item.strip():
+            pids.add(item.strip())
+    return frozenset(pids)
+
+
 def runtime_immutable_roots(config: Mapping[str, Any]) -> tuple[Path, ...]:
     runtime = runtime_section(config)
     raw = runtime.get("immutable_control_roots", ())
@@ -96,6 +116,7 @@ __all__ = [
     "nested_section",
     "runtime_immutable_roots",
     "runtime_path",
+    "runtime_protected_pids",
     "runtime_section",
     "runtime_trusted_dirs",
     "runtime_workspace_root",
