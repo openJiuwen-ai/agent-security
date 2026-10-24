@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Detect PowerShell syntax routed to the bash tool."""
 
 from __future__ import annotations

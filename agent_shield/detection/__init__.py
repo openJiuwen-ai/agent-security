@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """F3 内容检测：对进入模型的内容做注入等检测，输出概率性软信号。"""
 
 # Enumerations

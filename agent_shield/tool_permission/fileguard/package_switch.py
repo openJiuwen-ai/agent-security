@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Whether ``package_builtin_rules`` turns on the builtin sensitive-path floor."""
 
 from __future__ import annotations

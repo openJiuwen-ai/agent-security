@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """PermissionEngine wiring for W1b host guard and W2 file / control-plane guards.
 
 Covers component construction, whole-config replacement, and evaluate results.

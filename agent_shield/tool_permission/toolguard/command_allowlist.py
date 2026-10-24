@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """R05 command allowlist component."""
 
 from __future__ import annotations

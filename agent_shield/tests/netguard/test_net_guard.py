@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Pipeline C behavior, host boundary regressions and isolated configuration."""
 
 from __future__ import annotations

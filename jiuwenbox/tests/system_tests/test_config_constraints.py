@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Configuration parameter constraint space tests."""
 
 from __future__ import annotations

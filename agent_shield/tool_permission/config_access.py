@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Read host/file guard settings and the runtime / builtin sections.
 
 ``file_guard`` and ``host_guard`` sit at the top of the engine config, the

@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Capacity boundaries and reproducible, IO-free decision timing."""
 
 import asyncio

@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Reliability tests for sandbox service."""
 
 from __future__ import annotations

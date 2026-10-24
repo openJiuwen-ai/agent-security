@@ -10,6 +10,14 @@
 
 - **Agent SSAS**：Agent 安全态势感知系统（Security Situation Awareness System）。通过事件采集与可插拔检测模块框架，实时感知 Agent 行为并产出 OCSF 格式威胁报告，支持进程内与独立 HTTP 服务两种运行模式，可无缝接入 JiuwenSwarm 等智能体运行时。详见 [agent_ssas/README.zh.md](./agent_ssas/README.zh.md)。
 - **JiuwenBox Sandbox**：轻量 Agent 安全沙箱服务，为 Agent 工具调用与代码执行提供分层隔离。
+- **agent-shield**：进程内动作决策与内容检测。详见 [docs/zh/2.开发指南/agent-shield.md](./docs/zh/2.开发指南/agent-shield.md)。
+
+## 文档
+
+中英文文档统一放在 [docs/](./docs/)：
+
+- [docs/zh/SUMMARY.md](./docs/zh/SUMMARY.md)
+- [docs/en/SUMMARY.md](./docs/en/SUMMARY.md)
 
 ## 参与贡献
 

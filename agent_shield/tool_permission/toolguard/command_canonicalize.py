@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Permission-view shell command canonicalize (does not change execution)."""
 
 from __future__ import annotations

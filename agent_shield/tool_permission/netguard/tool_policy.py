@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Network tool baselines, used only inside NetGuardComponent."""
 
 from __future__ import annotations

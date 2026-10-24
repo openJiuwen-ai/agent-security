@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Shared routing contracts for permission components.
 
 The router describes facts about one tool call.  It deliberately does not

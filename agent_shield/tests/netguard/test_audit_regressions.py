@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Security regressions from the four-reference-branch W3 audit."""
 
 import asyncio

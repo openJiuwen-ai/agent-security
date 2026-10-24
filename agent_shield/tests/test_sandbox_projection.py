@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Sandbox policy projection from host permission rules."""
 
 from agent_shield.tool_permission.sandbox_projection import project_sandbox_policy
