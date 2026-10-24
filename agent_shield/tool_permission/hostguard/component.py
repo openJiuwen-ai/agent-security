@@ -12,6 +12,7 @@ from pathlib import Path
 from ..config_access import (
     host_guard_flag,
     host_guard_section,
+    runtime_protected_pids,
     runtime_workspace_root,
 )
 from ..models import PermissionLevel, PermissionResult
@@ -21,7 +22,7 @@ from ..routing import (
     SecurityTarget,
     resolve_route,
 )
-
+from .dev_stable import evaluate_dev_stable_host_guard
 from .safety import HostGuardOptions, compile_name_patterns, evaluate_host_guard
 from .shell_mismatch import shell_mismatch
 
@@ -40,6 +41,8 @@ class _State:
     project_root: Path | None
     options: HostGuardOptions
     shell_mismatch: bool
+    dev_stable: bool
+    protected_pids: frozenset[str] | None
 
 
 def _command_text(tool_args: Mapping[str, object]) -> str | None:
@@ -83,6 +86,11 @@ class HostGuardComponent:
     def __init__(self) -> None:
         self._state: _State | None = None
 
+    def active(self) -> bool:
+        """True when host_guard.enabled left a configured guard."""
+
+        return self._state is not None
+
     def configure(self, config: Mapping[str, object]) -> None:
         if not isinstance(config, Mapping):
             raise TypeError("Engine configuration must be a mapping")
@@ -110,6 +118,8 @@ class HostGuardComponent:
             project_root=project_root,
             options=options,
             shell_mismatch=host_guard_flag(section, "shell_mismatch", True),
+            dev_stable=host_guard_flag(section, "dev_stable", False),
+            protected_pids=runtime_protected_pids(config),
         )
 
     async def evaluate(
@@ -131,6 +141,24 @@ class HostGuardComponent:
         command = _command_text(tool_args)
         if command is None:
             return None
+        if state.dev_stable:
+            # Later-branch checks stay off: shell mismatch, segment rules,
+            # python-name kill, backend PID scan, and the strict worktree parser.
+            block = evaluate_dev_stable_host_guard(
+                command,
+                project_root=state.project_root,
+                worktree_guard=state.options.worktree_guard and name in _HOST_GUARD_SHELL_TOOLS,
+                protected_pids=(
+                    None if state.protected_pids is None else set(state.protected_pids)
+                ),
+            )
+            if block is None:
+                return None
+            return PermissionResult(
+                permission=PermissionLevel.DENY,
+                matched_rule="host_guard:dev_stable",
+                reason=block,
+            )
         if state.shell_mismatch and name == "bash":
             mismatch = shell_mismatch(name, command)
             if mismatch is not None:

@@ -70,6 +70,25 @@ class FileGuardComponent:
             agent_cwd=agent_cwd,
         )
 
+    def active(self) -> bool:
+        """True after configure built a checker. A disabled file_guard stays inactive."""
+
+        return self._checker is not None
+
+    def collect_ask_accesses(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, object],
+    ) -> list[tuple[str, str]]:
+        """ASK paths from the configured checker. Inactive file_guard returns none."""
+
+        if self._checker is None:
+            return []
+        return [
+            (path, action)
+            for path, action in self._checker.collect_ask_accesses(tool_name, tool_args)
+        ]
+
     async def evaluate(
         self,
         tool_name: str,

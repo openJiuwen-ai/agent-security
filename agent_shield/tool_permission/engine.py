@@ -20,6 +20,11 @@ from .toolguard.destructive_warning import DestructiveWarningComponent
 from .toolguard.injection import InjectionComponent
 from .toolguard.tiered import TieredPolicyComponent
 
+_COMPONENT_BY_NAME: dict[str, type[Any]] = {
+    "host_guard": HostGuardComponent,
+    "file_guard": FileGuardComponent,
+}
+
 
 class PermissionEngine:
     """Own component lifecycle and aggregate security decisions.
@@ -98,6 +103,63 @@ class PermissionEngine:
         self._validate_call(tool_name, tool_args)
         result = await self._evaluate(tool_name, tool_args)
         return result.permission, result.matched_rule
+
+    def evaluate_component(
+        self,
+        name: str,
+        tool_name: str,
+        tool_args: Mapping[str, Any],
+    ) -> PermissionResult | None:
+        """Run one configured component and ignore every other component.
+
+        ``check_permission`` still merges injection, allowlist, tiered policy,
+        host guard, file guard, and net guard. Callers that own only one of
+        those decisions use this method so the other components cannot vote.
+        """
+
+        component = self._named_component(name)
+        self._validate_call(tool_name, tool_args)
+        route = resolve_route(tool_name, tool_args)
+        if not route_matches(route, getattr(component, "interests", None)):
+            return None
+        outcome = self._evaluate_component(component, tool_name, tool_args, route)
+        try:
+            outcome.send(None)
+        except StopIteration as stop:
+            return stop.value
+        outcome.close()
+        raise RuntimeError(f"{name} evaluate suspended; use check_permission")
+
+    def component_active(self, name: str) -> bool:
+        """Whether configure left the named component with work to do."""
+
+        component = self._named_component(name)
+        active = getattr(component, "active", None)
+        if callable(active):
+            return bool(active())
+        return True
+
+    def collect_file_guard_ask_accesses(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, Any],
+    ) -> list[tuple[str, str]]:
+        """ASK paths from FileGuardComponent. Other components are not asked."""
+
+        component = self._named_component("file_guard")
+        collect = getattr(component, "collect_ask_accesses", None)
+        if not callable(collect):
+            return []
+        return [(path, action) for path, action in collect(tool_name, tool_args)]
+
+    def _named_component(self, name: str) -> PermissionComponent:
+        component_type = _COMPONENT_BY_NAME.get(name)
+        if component_type is None:
+            raise ValueError(f"unknown permission component: {name}")
+        for component in self._components:
+            if isinstance(component, component_type):
+                return component
+        raise RuntimeError(f"permission component is not installed: {name}")
 
     @staticmethod
     def _validate_call(tool_name: str, tool_args: Mapping[str, Any]) -> None:
