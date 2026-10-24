@@ -60,7 +60,7 @@ async def capabilities():
         try:
             cls = load_runtime_class(name)
             caps = cls().capabilities()
-            capabilities = {}
+            reported = {}
             for field in (
                 "local_pid",
                 "background_jobs",
@@ -73,10 +73,10 @@ async def capabilities():
                 "egress_filter",
                 "soft_delete",
             ):
-                capabilities[field] = getattr(caps, field)
+                reported[field] = getattr(caps, field)
             result["runtimes"][name] = {
                 "available": True,
-                "capabilities": capabilities,
+                "capabilities": reported,
             }
         except Exception as exc:  # noqa: BLE001
             result["runtimes"][name] = {"available": False, "error": str(exc)}

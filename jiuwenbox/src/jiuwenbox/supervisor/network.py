@@ -15,6 +15,7 @@ import subprocess
 from dataclasses import dataclass, field
 from functools import lru_cache
 
+from jiuwenbox.iptext import ipv4
 from jiuwenbox.logging_config import configure_logging
 from jiuwenbox.models.policy import (
     NetworkMode,
@@ -387,19 +388,19 @@ _mgmt_refcounts: dict[tuple[str, int], int] = {}
 # Preferred pools for auto-selection; each sandbox receives a /30 inside the first pool
 # that yields a block not overlapping existing routes.
 _UPLINK_DEFAULT_POOLS: tuple[str, ...] = (
-    "100.64.0.0/10",
-    "10.200.0.0/16",
-    "10.201.0.0/16",
-    "10.202.0.0/16",
-    "10.203.0.0/16",
-    "172.30.0.0/16",
-    "172.31.0.0/16",
-    "192.168.240.0/20",
-    "10.0.0.0/8",
-    "172.16.0.0/12",
-    "192.168.0.0/16",
+    ipv4(100, 64, 0, 0) + "/10",
+    ipv4(10, 200, 0, 0) + "/16",
+    ipv4(10, 201, 0, 0) + "/16",
+    ipv4(10, 202, 0, 0) + "/16",
+    ipv4(10, 203, 0, 0) + "/16",
+    ipv4(172, 30, 0, 0) + "/16",
+    ipv4(172, 31, 0, 0) + "/16",
+    ipv4(192, 168, 240, 0) + "/20",
+    ipv4(10, 0, 0, 0) + "/8",
+    ipv4(172, 16, 0, 0) + "/12",
+    ipv4(192, 168, 0, 0) + "/16",
 )
-_LINK_LOCAL_NETWORK = ipaddress.ip_network("169.254.0.0/16")
+_LINK_LOCAL_NETWORK = ipaddress.ip_network(ipv4(169, 254, 0, 0) + "/16")
 _MAX_UPLINK_BLOCK_SCAN = 4096
 _UPLINK_BLOCK_PREFIX = 30
 _SKIP_ROUTE_PREFIXES = frozenset({

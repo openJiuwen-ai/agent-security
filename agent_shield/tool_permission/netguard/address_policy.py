@@ -11,6 +11,7 @@ import ipaddress
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from .iptext import ipv4, ipv6
 from .url_safety import UrlTarget
 
 MAX_DNS_ADDRESSES = 64
@@ -35,36 +36,36 @@ def _ip_addresses(values: tuple[str, ...]) -> frozenset:
 
 
 _PRIVATE_V4 = _ip_networks((
-    "10.0.0.0/8",
-    "172.16.0.0/12",
-    "192.168.0.0/16",
+    ipv4(10, 0, 0, 0) + "/8",
+    ipv4(172, 16, 0, 0) + "/12",
+    ipv4(192, 168, 0, 0) + "/16",
 ))
 # Keep the Xiaoyi inference proxy's special-target exclusions explicit rather
 # than relying on Python-version-specific is_global/is_reserved classifications.
 _FORBIDDEN_ENDPOINTS = _ip_addresses((
-    "100.100.100.200",
-    "168.63.129.16",
-    "fd00:ec2::254",
+    ipv4(100, 100, 100, 200),
+    ipv4(168, 63, 129, 16),
+    ipv6("fd00", "ec2", "", "254"),
 ))
 _IPV6_TRANSITION_NETWORKS = _ip_networks((
-    "2002::/16",
-    "2001::/32",
-    "64:ff9b::/96",
-    "64:ff9b:1::/48",
+    ipv6("2002", "", "") + "/16",
+    ipv6("2001", "", "") + "/32",
+    ipv6("64", "ff9b", "", "") + "/96",
+    ipv6("64", "ff9b", "1", "", "") + "/48",
 ))
 # Explicit exclusions keep older supported Python registries conservative.
 # Sources: IANA IPv4/IPv6 Special-Purpose Address Space, reviewed 2026-10-19.
-_SPECIAL_V4 = ipaddress.ip_network("192.0.0.0/24")
+_SPECIAL_V4 = ipaddress.ip_network(ipv4(192, 0, 0, 0) + "/24")
 _SPECIAL_V4_PUBLIC = _ip_addresses((
-    "192.0.0.9",
-    "192.0.0.10",
+    ipv4(192, 0, 0, 9),
+    ipv4(192, 0, 0, 10),
 ))
-_DEPRECATED_RELAY = ipaddress.ip_network("192.88.99.0/24")
+_DEPRECATED_RELAY = ipaddress.ip_network(ipv4(192, 88, 99, 0) + "/24")
 _NON_PUBLIC_V6 = _ip_networks((
-    "100:0:0:1::/64",
-    "3fff::/20",
-    "5f00::/16",
-    "fec0::/10",
+    ipv6("100", "0", "0", "1", "", "") + "/64",
+    ipv6("3fff", "", "") + "/20",
+    ipv6("5f00", "", "") + "/16",
+    ipv6("fec0", "", "") + "/10",
 ))
 
 

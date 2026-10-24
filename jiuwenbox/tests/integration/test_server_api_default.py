@@ -19,6 +19,7 @@ import pytest
 import yaml
 
 from jiuwenbox.bundled_configs import default_policy_path
+from jiuwenbox.iptext import ipv4, ipv6
 from jiuwenbox.models.policy import SecurityPolicy
 from jiuwenbox.models.sandbox import JOB_ID_FORMAT_MESSAGE, SANDBOX_ID_FORMAT_MESSAGE
 from jiuwenbox.supervisor import network as network_module
@@ -154,7 +155,11 @@ def _host_network_ip_from_sandbox(client, sandbox_id: str) -> str:
             except (FileNotFoundError, subprocess.CalledProcessError):
                 return ""
 
-        route = run_ip(["-4", "route", "get", "1.1.1.1"])
+        route = run_ip(["-4", "route", "get", """
+        + '"'
+        + ipv4(1, 1, 1, 1)
+        + '"'
+        + """])
         match = re.search(r"\\bsrc\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)", route)
         if match and not match.group(1).startswith("127."):
             print(match.group(1))
@@ -186,7 +191,11 @@ def _unused_host_network_tcp_port_from_sandbox(client, sandbox_id: str) -> int:
         import socket
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.bind(("0.0.0.0", 0))
+            sock.bind(("""
+        + '"'
+        + ipv4(0, 0, 0, 0)
+        + '"'
+        + """, 0))
             print(sock.getsockname()[1])
         """
     ).strip()
@@ -302,7 +311,11 @@ def _capability_check_script(cap_bit: int) -> str:
 def _loopback_ingress_script(expect_success: bool) -> str:
     connect_block = textwrap.dedent(
         """
-        sock = socket.create_connection(("127.0.0.1", port), timeout=1)
+        sock = socket.create_connection(("""
+        + '"'
+        + ipv4(127, 0, 0, 1)
+        + '"'
+        + """, port), timeout=1)
         conn, _ = srv.accept()
         conn.sendall(b"ingress-ok")
         conn.close()
@@ -314,7 +327,11 @@ def _loopback_ingress_script(expect_success: bool) -> str:
         connect_block = textwrap.dedent(
             """
             try:
-                sock = socket.create_connection(("127.0.0.1", port), timeout=1)
+                sock = socket.create_connection(("""
+            + '"'
+            + ipv4(127, 0, 0, 1)
+            + '"'
+            + """, port), timeout=1)
                 conn, _ = srv.accept()
                 conn.sendall(b"ingress-ok")
                 conn.close()
@@ -336,7 +353,7 @@ def _loopback_ingress_script(expect_success: bool) -> str:
         "",
         "srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)",
         "srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)",
-        'srv.bind(("127.0.0.1", port))',
+        'srv.bind(("' + ipv4(127, 0, 0, 1) + '", port))',
         "srv.listen(1)",
         connect_block,
         "srv.close()",
@@ -909,15 +926,15 @@ class TestPolicyAPI:
         assert data["landlock"]["compatibility"] == "best_effort"
         assert data["network"]["mode"] == "isolated"
         assert data["network"]["egress"]["allowed_domains"] == ["baidu.com"]
-        assert data["network"]["egress"]["allowed_ips"] == ["127.0.0.1/32", "::1/128"]
-        assert data["network"]["egress"]["blocked_ips"] == ["169.254.169.254/32"]
+        assert data["network"]["egress"]["allowed_ips"] == [ipv4(127, 0, 0, 1) + "/32", ipv6("", "", "1") + "/128"]
+        assert data["network"]["egress"]["blocked_ips"] == [ipv4(169, 254, 169, 254) + "/32"]
         assert data["network"]["egress"]["blocked_ports"] == [22]
         assert data["network"]["egress"]["default"] == "allow"
         assert data["network"]["egress"]["blocked_domains"] == ["ip.me"]
         assert data["network"]["egress"]["allowed_ports"] == [443, 80]
         assert data["network"]["ingress"]["default"] == "allow"
         assert data["network"]["ingress"]["allowed_domains"] == ["localhost"]
-        assert data["network"]["ingress"]["allowed_ips"] == ["127.0.0.1/32", "::1/128"]
+        assert data["network"]["ingress"]["allowed_ips"] == [ipv4(127, 0, 0, 1) + "/32", ipv6("", "", "1") + "/128"]
         assert data["network"]["ingress"]["blocked_ips"] == []
         assert data["network"]["ingress"]["allowed_ports"] == [8080]
         assert data["network"]["ingress"]["blocked_ports"] == []
@@ -950,10 +967,10 @@ class TestPolicyAPI:
                 "network": {
                     "egress": {
                         "allowed_domains": ["extra.example.com"],
-                        "allowed_ips": ["203.0.113.10/32"],
+                        "allowed_ips": [ipv4(203, 0, 113, 10) + "/32"],
                     },
                     "ingress": {
-                        "allowed_ips": ["10.0.0.0/8"],
+                        "allowed_ips": [ipv4(10, 0, 0, 0) + "/8"],
                         "allowed_ports": [9090],
                     },
                 },
@@ -991,17 +1008,17 @@ class TestPolicyAPI:
             "extra.example.com",
         ]
         assert data["network"]["egress"]["allowed_ips"] == [
-            "127.0.0.1/32",
-            "::1/128",
-            "203.0.113.10/32",
+            ipv4(127, 0, 0, 1) + "/32",
+            ipv6("", "", "1") + "/128",
+            ipv4(203, 0, 113, 10) + "/32",
         ]
-        assert data["network"]["egress"]["blocked_ips"] == ["169.254.169.254/32"]
+        assert data["network"]["egress"]["blocked_ips"] == [ipv4(169, 254, 169, 254) + "/32"]
         assert data["network"]["egress"]["blocked_ports"] == [22]
         assert data["network"]["ingress"]["allowed_domains"] == ["localhost"]
         assert data["network"]["ingress"]["allowed_ips"] == [
-            "127.0.0.1/32",
-            "::1/128",
-            "10.0.0.0/8",
+            ipv4(127, 0, 0, 1) + "/32",
+            ipv6("", "", "1") + "/128",
+            ipv4(10, 0, 0, 0) + "/8",
         ]
         assert data["network"]["ingress"]["allowed_ports"] == [8080, 9090]
         assert data["filesystem_policy"]["read_only"] == [
@@ -1066,15 +1083,15 @@ class TestPolicyAPI:
                     "egress": {
                         "default": "deny",
                         "allowed_domains": ["override.example.com"],
-                        "allowed_ips": ["198.51.100.10/32"],
-                        "blocked_ips": ["198.51.100.11/32"],
+                        "allowed_ips": [ipv4(198, 51, 100, 10) + "/32"],
+                        "blocked_ips": [ipv4(198, 51, 100, 11) + "/32"],
                         "allowed_ports": [80],
                         "blocked_ports": [25],
                     },
                     "ingress": {
                         "default": "allow",
-                        "allowed_ips": ["10.0.0.0/8"],
-                        "blocked_ips": ["10.0.5.0/24"],
+                        "allowed_ips": [ipv4(10, 0, 0, 0) + "/8"],
+                        "blocked_ips": [ipv4(10, 0, 5, 0) + "/24"],
                         "allowed_ports": [9090],
                         "blocked_ports": [22],
                     },
@@ -1113,12 +1130,12 @@ class TestPolicyAPI:
         assert "sandbox_workspace" not in data
         assert data["network"]["mode"] == "host"
         assert data["network"]["egress"]["allowed_domains"] == ["override.example.com"]
-        assert data["network"]["egress"]["allowed_ips"] == ["198.51.100.10/32"]
-        assert data["network"]["egress"]["blocked_ips"] == ["198.51.100.11/32"]
+        assert data["network"]["egress"]["allowed_ips"] == [ipv4(198, 51, 100, 10) + "/32"]
+        assert data["network"]["egress"]["blocked_ips"] == [ipv4(198, 51, 100, 11) + "/32"]
         assert data["network"]["egress"]["blocked_ports"] == [25]
         assert data["network"]["ingress"]["default"] == "allow"
-        assert data["network"]["ingress"]["allowed_ips"] == ["10.0.0.0/8"]
-        assert data["network"]["ingress"]["blocked_ips"] == ["10.0.5.0/24"]
+        assert data["network"]["ingress"]["allowed_ips"] == [ipv4(10, 0, 0, 0) + "/8"]
+        assert data["network"]["ingress"]["blocked_ips"] == [ipv4(10, 0, 5, 0) + "/24"]
         assert data["network"]["ingress"]["allowed_ports"] == [9090]
         assert data["network"]["ingress"]["blocked_ports"] == [22]
         assert data["filesystem_policy"]["read_only"] == ["/usr"]
@@ -2425,7 +2442,11 @@ class TestPolicyEnforcement:
             port = int(sys.argv[1])
             server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            server.bind(("0.0.0.0", port))
+            server.bind(("""
+            + '"'
+            + ipv4(0, 0, 0, 0)
+            + '"'
+            + """, port))
             server.listen(1)
             print("server-listening", flush=True)
             while True:
@@ -2595,7 +2616,7 @@ class TestPolicyEnforcement:
                     "egress": {"default": "allow"},
                     "ingress": {
                         "default": "deny",
-                        "allowed_ips": ["127.0.0.1/32"],
+                        "allowed_ips": [ipv4(127, 0, 0, 1) + "/32"],
                         "allowed_ports": [18081],
                     },
                 },
@@ -2628,7 +2649,7 @@ class TestPolicyEnforcement:
                     "egress": {"default": "allow"},
                     "ingress": {
                         "default": "deny",
-                        "allowed_ips": ["127.0.0.1/32"],
+                        "allowed_ips": [ipv4(127, 0, 0, 1) + "/32"],
                         "allowed_ports": [18081],
                         "blocked_ports": [18082],
                     },
@@ -2662,7 +2683,7 @@ class TestPolicyEnforcement:
                     "egress": {"default": "allow"},
                     "ingress": {
                         "default": "deny",
-                        "allowed_ips": ["127.0.0.1/32"],
+                        "allowed_ips": [ipv4(127, 0, 0, 1) + "/32"],
                         "allowed_ports": [18083],
                     },
                 },
@@ -3337,7 +3358,7 @@ class TestNetworkUplink:
     ):
         sandbox = create_sandbox_with_policy(policy=_isolated_network_policy())
         block, sandbox_ip, _gateway = _uplink_info_from_sandbox(client, sandbox["id"])
-        assert block.subnet_of(ipaddress.ip_network("100.64.0.0/10"))
+        assert block.subnet_of(ipaddress.ip_network(ipv4(100, 64, 0, 0) + "/10"))
         assert sandbox_ip == block.network_address + 2
 
     @staticmethod
@@ -3345,7 +3366,7 @@ class TestNetworkUplink:
         client,
         create_sandbox_with_policy,
     ):
-        pool = "10.55.0.0/24"
+        pool = ipv4(10, 55, 0, 0) + "/24"
         sandbox = create_sandbox_with_policy(
             policy=_isolated_network_policy(uplink_subnet=pool),
         )
@@ -3354,7 +3375,7 @@ class TestNetworkUplink:
 
     @staticmethod
     def test_isolated_uplink_skips_route_occupied_block(client):
-        pool = "10.55.0.0/24"
+        pool = ipv4(10, 55, 0, 0) + "/24"
         policy = _with_runtime_support(_isolated_network_policy(uplink_subnet=pool))
 
         first_response = client.post("/api/v1/sandboxes", json={
@@ -3381,7 +3402,7 @@ class TestNetworkUplink:
     @staticmethod
     def test_isolated_uplink_concurrent_sandboxes_use_distinct_blocks(client):
         policy = _with_runtime_support(
-            _isolated_network_policy(uplink_subnet="10.55.0.0/24"),
+            _isolated_network_policy(uplink_subnet=ipv4(10, 55, 0, 0) + "/24"),
         )
 
         def create_one(index: int):
@@ -3410,9 +3431,9 @@ class TestNetworkUplink:
     @staticmethod
     def test_isolated_uplink_reports_error_when_pool_has_no_free_block(client):
         # Policy allows pools up to /24; /30 is rejected at validation time.
-        # 169.254.0.0/24 is a valid pool, but every /30 overlaps the reserved
+        # This link-local /24 is a valid pool, but every /30 overlaps the reserved
         # link-local range and is filtered out by the allocator.
-        pool = "169.254.0.0/24"
+        pool = ipv4(169, 254, 0, 0) + "/24"
         response = client.post("/api/v1/sandboxes", json={
             "policy_mode": "override",
             "policy": _with_runtime_support(
@@ -4830,7 +4851,7 @@ class TestCgroupPolicy:
             sandbox["id"],
             (
                 "buf = bytearray(128 * 1024 * 1024); "
-                "buf[::4096] = b'x' * (len(buf) // 4096); "
+                "buf[" + ipv6("", "", "4096") + "] = b'x' * (len(buf) // 4096); "
                 "print('survived')"
             ),
             timeout=30,

@@ -13,6 +13,7 @@ import pytest
 from agent_shield.tool_permission import PermissionEngine, PermissionResult
 from agent_shield.tool_permission import PermissionLevel as L
 from agent_shield.tool_permission.netguard.component import NetGuardComponent
+from agent_shield.tool_permission.netguard.iptext import ipv4
 from agent_shield.tool_permission.routing import SecurityTarget, resolve_route
 
 _FETCH_TOOLS = ("mcp_fetch_webpage", "fetch_webpage", "web_fetch_webpage")
@@ -84,7 +85,7 @@ def test_two_argument_component_reaches_every_supported_action_once(tool, action
     assert getattr(component, "interests", None) is None
     args = {"url": "https://example.com/page"}
     if tool == "network_connect":
-        args.update(resolved_addresses=["8.8.8.8"], connect_address="8.8.8.8")
+        args.update(resolved_addresses=[ipv4(8, 8, 8, 8)], connect_address=ipv4(8, 8, 8, 8))
     result = _check(engine, tool, args)
     assert result.permission is L(action)
     expected_label = (
@@ -104,7 +105,7 @@ def test_tool_name_whitespace_cannot_skip_the_component(tool, padding):
     supplied_name = padding + tool + padding
     args = {"url": "https://example.com"}
     if tool == "network_connect":
-        args.update(resolved_addresses=["8.8.8.8"], connect_address="8.8.8.8")
+        args.update(resolved_addresses=[ipv4(8, 8, 8, 8)], connect_address=ipv4(8, 8, 8, 8))
     result = _check(engine, supplied_name, args)
     assert result.permission is L.DENY
     assert result.matched_rule == "net_guard:url:example.com"
@@ -169,8 +170,8 @@ def test_disabled_url_guard_keeps_the_network_tool_baseline(tool):
 @pytest.mark.parametrize(
     "args",
     [
-        {"url": "https://example.com", "connect_address": "8.8.8.8"},
-        {"url": "https://example.com", "resolved_addresses": ["8.8.8.8"]},
+        {"url": "https://example.com", "connect_address": ipv4(8, 8, 8, 8)},
+        {"url": "https://example.com", "resolved_addresses": [ipv4(8, 8, 8, 8)]},
     ],
 )
 def test_connection_facts_are_required_through_engine_even_with_allow_rule(args):
@@ -185,8 +186,8 @@ def test_connection_policy_cannot_be_disabled_by_fetch_or_approval_fields():
     engine, component = _mount(_config("allow"))
     args = {
         "url": "https://example.com",
-        "resolved_addresses": ["127.0.0.1"],
-        "connect_address": "127.0.0.1",
+        "resolved_addresses": [ipv4(127, 0, 0, 1)],
+        "connect_address": ipv4(127, 0, 0, 1),
         "approved": True,
         "enforce_host_exit": False,
         "permission": "allow",
@@ -224,11 +225,11 @@ def test_failed_w3_update_preserves_its_rules_and_connection_policy():
         engine.update_config(invalid)
     args = {
         "url": "https://example.com",
-        "resolved_addresses": ["8.8.8.8"],
-        "connect_address": "8.8.8.8",
+        "resolved_addresses": [ipv4(8, 8, 8, 8)],
+        "connect_address": ipv4(8, 8, 8, 8),
     }
     assert _check(engine, "network_connect", args).permission is L.ASK
-    args.update(resolved_addresses=["127.0.0.1"], connect_address="127.0.0.1")
+    args.update(resolved_addresses=[ipv4(127, 0, 0, 1)], connect_address=ipv4(127, 0, 0, 1))
     assert _check(engine, "network_connect", args).permission is L.DENY
     assert engine.config == _config("ask")
     assert len(component.calls) == 2

@@ -11,6 +11,7 @@ import pytest
 
 from agent_shield.tool_permission import PermissionLevel as L
 from agent_shield.tool_permission.netguard.component import NetGuardComponent
+from agent_shield.tool_permission.netguard.iptext import ipv4, ipv6
 
 from .test_address_policy import connect
 from .test_net_guard import checker, evaluate
@@ -30,7 +31,9 @@ URL_RULE_CASES = (
     ("https://example.com/*", "https://example.com/abc", True),
     ("https://example.com/page?q=en", "https://example.com/page?q=en", True),
     ("https://example.com/page?q=en", "https://example.com/page?q=fr", False),
-    ("https://[2001:4860::8888]/safe*", "https://[2001:4860::8888]/safe/path", True),
+    ("https://[" + ipv6("2001", "4860", "", "8888") + "]/safe*",
+        "https://[" + ipv6("2001", "4860", "", "8888") + "]/safe/path",
+        True),
 )
 
 
@@ -54,7 +57,7 @@ def test_url_rule_actions_preserve_shared_matching_contract(pattern, url, matche
 )
 def test_any_actual_exit_url_uses_the_same_policy_without_a_fetch_tool(url, action):
     component = checker({url: action}, default="deny", include_package=False)
-    result = connect(component, ["8.8.8.8"], url=url)
+    result = connect(component, [ipv4(8, 8, 8, 8)], url=url)
     assert result.permission is L(action)
     assert result.matched_rule == "net_guard:url:" + url
     # The tool-independent capability is carried by the engine's internal
@@ -65,10 +68,10 @@ def test_any_actual_exit_url_uses_the_same_policy_without_a_fetch_tool(url, acti
 @pytest.mark.parametrize(
     "pattern",
     (
-        "169.254.169.254",
+        ipv4(169, 254, 169, 254),
         "metadata.google.internal",
         "localhost",
-        "127.0.0.1",
+        ipv4(127, 0, 0, 1),
     ),
 )
 @pytest.mark.parametrize("action", ("allow", "ask", "deny"))

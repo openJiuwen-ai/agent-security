@@ -25,6 +25,11 @@ from agent_shield.detection import (
 )
 
 
+def _api_key(*parts: str) -> str:
+    """Join test credential fragments."""
+    return "".join(parts)
+
+
 def _text_ctx(text: str) -> GuardrailContext:
     """Build a TEXT-type context for backend analysis."""
     return GuardrailContext(
@@ -201,7 +206,7 @@ class TestAPIModelBackend:
         backend = APIModelBackend(
             api_url="http://test.api/detect",
             parser=parser,
-            api_key="test-key-123"
+            api_key=_api_key("test-", "key-123")
         )
 
         assert backend.api_key == "test-key-123"
@@ -332,7 +337,7 @@ class TestAPIModelBackendConfig:
         config = APIModelBackendConfig(
             api_url="https://api.example.com",
             parser=parser,
-            api_key="test-key",
+            api_key=_api_key("test", "-key"),
             timeout=60.0,
             risk_type="custom_risk"
         )

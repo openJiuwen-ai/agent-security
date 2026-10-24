@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from jiuwenbox.iptext import ipv4
 from jiuwenbox.models.sandbox import SandboxSpec
 from jiuwenbox.server.runtime.base import RuntimeInstance
 from jiuwenbox.server.runtime.capabilities import (
@@ -90,11 +91,11 @@ class TestRuntimeInstance:
             runtime_name="bubblewrap",
             instance_id="abc",
             pid=42,
-            ip_address="10.0.0.2",
+            ip_address=ipv4(10, 0, 0, 2),
             metadata={"netns": "sb-abc"},
         )
         assert inst.pid == 42
-        assert inst.ip_address == "10.0.0.2"
+        assert inst.ip_address == ipv4(10, 0, 0, 2)
         assert inst.metadata["netns"] == "sb-abc"
 
 

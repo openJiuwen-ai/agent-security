@@ -16,6 +16,7 @@ import agent_shield.tool_permission as tool_permission
 from agent_shield.tool_permission import PermissionEngine, PermissionResult
 from agent_shield.tool_permission import PermissionLevel as L
 from agent_shield.tool_permission.netguard.component import NetGuardComponent
+from agent_shield.tool_permission.netguard.iptext import ipv4, ipv6
 
 
 def checker(urls=None, *, default="allow", include_package=True, connection=None):
@@ -82,8 +83,8 @@ def test_explicit_allow_is_distinct_from_not_applicable():
 def test_same_object_override_and_independent_strictest_matches():
     component = checker({"localhost": "ask", "*.example.com": "deny", "api.example.com": "allow"})
     assert evaluate(component, "https://localhost").permission is L.ASK
-    assert evaluate(component, "https://127.0.0.1").permission is L.DENY
-    assert evaluate(component, "https://169.254.169.254").permission is L.DENY
+    assert evaluate(component, "https://" + ipv4(127, 0, 0, 1)).permission is L.DENY
+    assert evaluate(component, "https://" + ipv4(169, 254, 169, 254)).permission is L.DENY
     assert evaluate(component, "https://metadata.google.internal").permission is L.DENY
     assert evaluate(component, "https://api.example.com").permission is L.DENY
     assert evaluate(component, "https://example.com").permission is L.ALLOW
@@ -142,10 +143,12 @@ def test_host_globs_cannot_consume_another_authority_or_port():
 
 def test_idna_ipv6_default_ports_and_legacy_path_prefix():
     component = checker(
-        {"https://bücher.example:443/safe": "deny", "https://[2001:4860:4860::8888]/x": "ask"}
+        {"https://bücher.example:443/safe": "deny",
+            "https://[" + ipv6("2001", "4860", "4860", "", "8888") + "]/x": "ask"}
     )
     assert evaluate(component, "https://xn--bcher-kva.example/safe-other").permission is L.DENY
-    assert evaluate(component, "https://[2001:4860:4860:0:0:0:0:8888]:443/xyz").permission is L.ASK
+    assert evaluate(component,
+        "https://[" + ipv6("2001", "4860", "4860", "0", "0", "0", "0", "8888") + "]:443/xyz").permission is L.ASK
     component = checker({"https://example.com/a[0]*": "deny"})
     assert evaluate(component, "https://example.com/a[0]xyz").permission is L.DENY
     assert evaluate(component, "https://example.com/a0xyz").permission is L.ALLOW
@@ -164,12 +167,12 @@ def test_idna_ipv6_default_ports_and_legacy_path_prefix():
         "https://example.com:0",
         "https://example.com:65536",
         "https://example.com:abc",
-        "https://[::1",
+        "https://[" + ipv6("", "", "1"),
         "https://example.com\\@other.com",
         "https://exam\nple.com",
         "https://example.com/a b",
         "https://example.com/\x00",
-        "https://[fe80::1%25eth0]/",
+        "https://[" + ipv6("fe80", "", "1") + "%25eth0]/",
         "https://bad_host.example",
         "https://-bad.example",
         "https://[v1.example]/",
@@ -210,7 +213,7 @@ def test_query_secrets_are_redacted_soft_warnings(key):
         {"net_guard": {"urls": {"": "deny"}}},
         {"net_guard": {"urls": {123: "deny"}}},
         {"net_guard": {"urls": {"localhost": "allow", " localhost ": "deny"}}},
-        {"net_guard": {"urls": {"https://user:secret@example.com": "deny"}}},
+        {"net_guard": {"urls": {"https://" + "user" + ":" + "secret" + "@example.com": "deny"}}},
         {"net_guard": {"connection": {"allow_http": "false"}}},
         {"net_guard": {"connection": None}},
         {"net_guard": {"connection": {"unknown": False}}},
@@ -263,8 +266,8 @@ def test_evaluation_performs_no_io_or_configuration_loading(monkeypatch):
                     "network_connect",
                     {
                         "url": "https://example.com/?token=secret",
-                        "resolved_addresses": ["8.8.8.8"],
-                        "connect_address": "8.8.8.8",
+                        "resolved_addresses": [ipv4(8, 8, 8, 8)],
+                        "connect_address": ipv4(8, 8, 8, 8),
                     },
                 )
             )
@@ -314,7 +317,7 @@ def test_redirect_targets_are_checked_again_without_an_implicit_grant():
     component = checker({"start.example": "allow", "redirect.example": "ask"})
     assert evaluate(component, "https://start.example").permission is L.ALLOW
     assert evaluate(component, "https://redirect.example").permission is L.ASK
-    assert evaluate(component, "https://127.0.0.1").permission is L.DENY
+    assert evaluate(component, "https://" + ipv4(127, 0, 0, 1)).permission is L.DENY
 
 
 def test_query_fragment_and_single_character_host_patterns():

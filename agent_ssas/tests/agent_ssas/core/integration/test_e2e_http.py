@@ -14,6 +14,10 @@ from pathlib import Path
 import httpx
 import pytest
 from httpx import ASGITransport
+from tests.fixtures.event_factory import (
+    generate_event_sequence,
+    generate_permission_interrupt_event,
+)
 
 from agent_ssas.core.framework.access_adapter.http_server import create_app
 from agent_ssas.core.framework.access_adapter.agent_remote_backend import (
@@ -21,10 +25,6 @@ from agent_ssas.core.framework.access_adapter.agent_remote_backend import (
 )
 from agent_ssas.core.framework.config.settings import AgentSSASConfig
 from agent_ssas.core.framework.core_types.assessment import RiskLevel
-from tests.fixtures.event_factory import (
-    generate_event_sequence,
-    generate_permission_interrupt_event,
-)
 
 
 @pytest.fixture
@@ -36,12 +36,10 @@ def ssas_config(tmp_path):
         http_timeout=5.0,
     )
 
-
 @pytest.fixture
 def app(ssas_config):
     """创建 FastAPI 应用。"""
     return create_app(ssas_config)
-
 
 @pytest.fixture
 async def client(app):
@@ -50,14 +48,12 @@ async def client(app):
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
 
-
 @pytest.fixture
 async def backend(ssas_config, client):
     """创建 AgentSSASRemoteBackend,注入模拟服务端客户端。"""
     b = AgentSSASRemoteBackend(ssas_config)
     b._client = client  # pylint: disable=protected-access
     return b
-
 
 @pytest.mark.integration
 @pytest.mark.level1

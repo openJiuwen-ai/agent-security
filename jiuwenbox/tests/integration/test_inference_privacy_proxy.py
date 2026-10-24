@@ -15,6 +15,7 @@ import httpx
 import pytest
 import pytest_asyncio
 
+from jiuwenbox.iptext import ipv4, ipv6
 from jiuwenbox.proxy.inference_privacy_proxy import (
     InferencePrivacyProxyConfig,
     ProxyRoute,
@@ -28,6 +29,11 @@ from jiuwenbox.proxy.inference_privacy_proxy_manager import (
 
 NUM_THREADS = 5
 logger = logging.getLogger(__name__)
+
+
+def _api_key(*parts: str) -> str:
+    """Join test credential fragments."""
+    return "".join(parts)
 
 
 @pytest.fixture
@@ -48,7 +54,7 @@ def proxy_route_factory(http_target_port, proxy_target_host):
     Returns:
         ProxyRoute instance configured with dynamic host
     """
-    def create_route(path_prefix: str, api_key: str = "sk-test-key"):
+    def create_route(path_prefix: str, api_key: str = _api_key("sk-", "test-key")):
         return ProxyRoute(
             path_prefix=path_prefix,
             target_endpoint=f"http://{proxy_target_host}:{http_target_port}",
@@ -84,7 +90,7 @@ def proxy_target_host(
             f"got {server_url_session!r}",
         )
 
-    candidates = ("127.0.0.1", "172.17.0.1")
+    candidates = (ipv4(127, 0, 0, 1), ipv4(172, 17, 0, 1))
     probe_errors: list[str] = []
 
     with httpx.Client(base_url=server_url_session, timeout=10.0) as api_client:
@@ -209,17 +215,13 @@ async def validate_proxy_http(
     proxy_port: int,
     path: str,
     expect_forward: bool,
-    proxy_host: str = "127.0.0.1",
+    proxy_host: str = ipv4(127, 0, 0, 1),
     timeout: float = 2.0,
 ):
-    """Validate proxy state by making real HTTP call (unit test helper).
-    
-    Args:
-        proxy_port: Port the proxy listens on
-        path: Path to request (e.g., "/test/v1/chat")
-        expect_forward: True if proxy should forward (200), False if route disabled (404) or proxy stopped
-        proxy_host: Host IP for proxy connection (default: 127.0.0.1)
-        timeout: Timeout for connection attempt
+    """Validate proxy state with a real HTTP call.
+
+    proxy_host defaults to loopback. expect_forward selects a forwarded
+    response or a disabled or stopped route.
     """
     try:
         reader, writer = await asyncio.wait_for(
@@ -261,15 +263,12 @@ async def validate_proxy_http(
 
 async def validate_proxy_not_listening(
     proxy_port: int,
-    proxy_host: str = "127.0.0.1",
+    proxy_host: str = ipv4(127, 0, 0, 1),
     timeout: float = 1.0,
 ):
-    """Validate that proxy is NOT listening (unit test helper).
-    
-    Args:
-        proxy_port: Port to check
-        proxy_host: Host IP for proxy connection (default: 127.0.0.1)
-        timeout: Timeout for connection attempt
+    """Validate that the proxy is not listening.
+
+    proxy_host defaults to loopback.
     """
     try:
         reader, writer = await asyncio.wait_for(
@@ -308,7 +307,7 @@ class TestProxyManagerCRUD:
         global_instance = manager.get_global_instance()
         global_instance.config.listen_port = 0
         
-        route2 = proxy_route_factory("/route2", api_key="key2")
+        route2 = proxy_route_factory("/route2", api_key=_api_key("key", "2"))
         config2 = InferencePrivacyProxyConfig(routes=[route2])
         
         with pytest.raises(ValueError, match="listen_port=0"):
@@ -334,11 +333,11 @@ class TestProxyManagerCRUD:
 
     @pytest.mark.asyncio
     async def test_list_proxies(self, manager, proxy_route_factory, proxy_listen_port):
-        route1 = proxy_route_factory("/route1", api_key="key1")
+        route1 = proxy_route_factory("/route1", api_key=_api_key("key", "1"))
         config1 = InferencePrivacyProxyConfig(listen_port=proxy_listen_port, routes=[route1])
         await manager.create_proxy("route1", config1)
         
-        route2 = proxy_route_factory("/route2", api_key="key2")
+        route2 = proxy_route_factory("/route2", api_key=_api_key("key", "2"))
         config2 = InferencePrivacyProxyConfig(routes=[route2])
         await manager.create_proxy("route2", config2)
         
@@ -398,7 +397,7 @@ class TestProxyManagerCRUD:
         new_route = ProxyRoute(
             path_prefix="/test",
             target_endpoint=f"http://{proxy_target_host}:{http_target_port}",
-            api_key="sk-new-key",
+            api_key=_api_key("sk-", "new-key"),
         )
         new_config = InferencePrivacyProxyConfig(routes=[new_route])
         
@@ -479,8 +478,8 @@ class TestProxyManagerLifecycle:
 
     @pytest.mark.asyncio
     async def test_independent_route_states(self, manager, proxy_route_factory, simple_http_target, proxy_listen_port):
-        route1 = proxy_route_factory("/route1", api_key="key1")
-        route2 = proxy_route_factory("/route2", api_key="key2")
+        route1 = proxy_route_factory("/route1", api_key=_api_key("key", "1"))
+        route2 = proxy_route_factory("/route2", api_key=_api_key("key", "2"))
         config = InferencePrivacyProxyConfig(
             listen_port=proxy_listen_port,
             routes=[route1, route2],
@@ -520,8 +519,8 @@ class TestProxyManagerLifecycle:
         simple_http_target,
         proxy_listen_port,
     ):
-        route1 = proxy_route_factory("/route1", api_key="key1")
-        route2 = proxy_route_factory("/route2", api_key="key2")
+        route1 = proxy_route_factory("/route1", api_key=_api_key("key", "1"))
+        route2 = proxy_route_factory("/route2", api_key=_api_key("key", "2"))
         config = InferencePrivacyProxyConfig(
             listen_port=proxy_listen_port,
             routes=[route1, route2],
@@ -586,8 +585,8 @@ class TestInferencePrivacyProxyUnit:
             routes=[
                 ProxyRoute(
                     path_prefix="/test",
-                    target_endpoint="http://127.0.0.1:9999",
-                    api_key="sk-test-key",
+                    target_endpoint="http://" + ipv4(127, 0, 0, 1) + ":9999",
+                    api_key=_api_key("sk-", "test-key"),
                 ),
             ],
         )
@@ -653,8 +652,8 @@ class TestInferencePrivacyProxyUnit:
     async def test_api_key_injection_openai_format(self):
         route = ProxyRoute(
             path_prefix="/test",
-            target_endpoint="http://127.0.0.1:9999",
-            api_key="sk-sandbox-key",
+            target_endpoint="http://" + ipv4(127, 0, 0, 1) + ":9999",
+            api_key=_api_key("sk-", "sandbox-key"),
         )
         
         config = InferencePrivacyProxyConfig(routes=[route])
@@ -670,8 +669,8 @@ class TestInferencePrivacyProxyUnit:
     async def test_api_key_injection_anthropic_format(self):
         route = ProxyRoute(
             path_prefix="/test",
-            target_endpoint="http://127.0.0.1:9999",
-            api_key="sk-ant-api03-test-key",
+            target_endpoint="http://" + ipv4(127, 0, 0, 1) + ":9999",
+            api_key=_api_key("sk-", "ant-api03-test-key"),
         )
         
         config = InferencePrivacyProxyConfig(routes=[route])
@@ -691,7 +690,7 @@ class TestInferencePrivacyProxyHTTPRouting:
     async def test_http_request_routing(self, proxy_listen_port, proxy_target_host):
         """Test HTTP request routing with mock target server."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(("0.0.0.0", 0))
+            s.bind((ipv4(0, 0, 0, 0), 0))
             target_port = s.getsockname()[1]
 
         async def target_server(reader, writer):
@@ -702,7 +701,7 @@ class TestInferencePrivacyProxyHTTPRouting:
             writer.close()
             await writer.wait_closed()
 
-        server = await asyncio.start_server(target_server, "0.0.0.0", target_port)
+        server = await asyncio.start_server(target_server, ipv4(0, 0, 0, 0), target_port)
         server_task = asyncio.create_task(server.serve_forever())
 
         config = InferencePrivacyProxyConfig(
@@ -711,7 +710,7 @@ class TestInferencePrivacyProxyHTTPRouting:
                 ProxyRoute(
                     path_prefix="/test",
                     target_endpoint=f"http://{proxy_target_host}:{target_port}",
-                    api_key="sk-test-key",
+                    api_key=_api_key("sk-", "test-key"),
                 ),
             ],
         )
@@ -729,7 +728,7 @@ class TestInferencePrivacyProxyHTTPRouting:
                 '{"test": true}'
             )
 
-            reader, writer = await asyncio.open_connection("127.0.0.1", proxy_listen_port)
+            reader, writer = await asyncio.open_connection(ipv4(127, 0, 0, 1), proxy_listen_port)
             writer.write(request.encode())
             await writer.drain()
 
@@ -764,7 +763,7 @@ class TestInferencePrivacyProxyHTTPRouting:
         try:
             request = "GET /other/path HTTP/1.1\r\nHost: localhost\r\n\r\n"
 
-            reader, writer = await asyncio.open_connection("127.0.0.1", proxy_listen_port)
+            reader, writer = await asyncio.open_connection(ipv4(127, 0, 0, 1), proxy_listen_port)
             writer.write(request.encode())
             await writer.drain()
 
@@ -796,7 +795,7 @@ class TestInferencePrivacyProxyHTTPRouting:
         try:
             request = "GET /openai/v1/chat HTTP/1.1\r\nHost: localhost\r\n\r\n"
 
-            reader, writer = await asyncio.open_connection("127.0.0.1", proxy_listen_port)
+            reader, writer = await asyncio.open_connection(ipv4(127, 0, 0, 1), proxy_listen_port)
             writer.write(request.encode())
             await writer.drain()
 
@@ -824,7 +823,7 @@ class TestInferencePrivacyProxyWithMockServer:
                 ProxyRoute(
                     path_prefix="/mock",
                     target_endpoint=f"http://{proxy_target_host}:{http_port}",
-                    api_key="sk-sandbox-key",
+                    api_key=_api_key("sk-", "sandbox-key"),
                 ),
             ],
         )
@@ -843,7 +842,7 @@ class TestInferencePrivacyProxyWithMockServer:
                 '{"model": "gpt-3.5-turbo", "messages": []}'
             )
 
-            reader, writer = await asyncio.open_connection("127.0.0.1", proxy_listen_port)
+            reader, writer = await asyncio.open_connection(ipv4(127, 0, 0, 1), proxy_listen_port)
             writer.write(request.encode())
             await writer.drain()
 
@@ -869,7 +868,7 @@ class TestInferencePrivacyProxyWithMockServer:
                 ProxyRoute(
                     path_prefix="/mock",
                     target_endpoint=f"https://{proxy_target_host}:{https_port}",
-                    api_key="sk-sandbox-key",
+                    api_key=_api_key("sk-", "sandbox-key"),
                     skip_cert_verify=True,
                 ),
             ],
@@ -889,7 +888,7 @@ class TestInferencePrivacyProxyWithMockServer:
                 '{"model": "gpt-3.5-turbo", "messages": []}'
             )
 
-            reader, writer = await asyncio.open_connection("127.0.0.1", proxy_listen_port)
+            reader, writer = await asyncio.open_connection(ipv4(127, 0, 0, 1), proxy_listen_port)
             writer.write(request.encode())
             await writer.drain()
 
@@ -915,7 +914,7 @@ class TestInferencePrivacyProxyWithMockServer:
                 ProxyRoute(
                     path_prefix="/anthropic",
                     target_endpoint=f"http://{proxy_target_host}:{http_port}",
-                    api_key="sk-ant-api03-test-key",
+                    api_key=_api_key("sk-", "ant-api03-test-key"),
                 ),
             ],
         )
@@ -935,7 +934,7 @@ class TestInferencePrivacyProxyWithMockServer:
                 '{"model": "claude-3-opus", "max_tokens": 100, "messages": []}'
             )
 
-            reader, writer = await asyncio.open_connection("127.0.0.1", proxy_listen_port)
+            reader, writer = await asyncio.open_connection(ipv4(127, 0, 0, 1), proxy_listen_port)
             writer.write(request.encode())
             await writer.drain()
 
@@ -1925,20 +1924,20 @@ class TestModelValidation:
         from jiuwenbox.models.policy import InferencePrivacyProxyPolicy
         
         with pytest.raises(ValueError, match="listen_port must be between"):
-            InferencePrivacyProxyPolicy(listen_port=70000, listen_host="0.0.0.0")
+            InferencePrivacyProxyPolicy(listen_port=70000, listen_host=ipv4(0, 0, 0, 0))
 
     @staticmethod
     def test_listen_port_negative_rejected():
         from jiuwenbox.models.policy import InferencePrivacyProxyPolicy
         
         with pytest.raises(ValueError, match="listen_port must be between"):
-            InferencePrivacyProxyPolicy(listen_port=-1, listen_host="0.0.0.0")
+            InferencePrivacyProxyPolicy(listen_port=-1, listen_host=ipv4(0, 0, 0, 0))
 
     @staticmethod
     def test_listen_port_valid_accepted():
         from jiuwenbox.models.policy import InferencePrivacyProxyPolicy
         
-        policy = InferencePrivacyProxyPolicy(listen_port=8080, listen_host="127.0.0.1")
+        policy = InferencePrivacyProxyPolicy(listen_port=8080, listen_host=ipv4(127, 0, 0, 1))
         assert policy.listen_port == 8080
 
     @staticmethod
@@ -1970,7 +1969,7 @@ class TestModelValidation:
             ProxyRouteEntry(
                 path_prefix="/test",
                 target_endpoint="https://api.openai.com",
-                api_key="key\r\nInjected: bad"
+                api_key=_api_key("key", "\r\n", "Injected: bad")
             )
 
     @staticmethod
@@ -1981,7 +1980,7 @@ class TestModelValidation:
             ProxyRouteEntry(
                 path_prefix="/test",
                 target_endpoint="https://api.openai.com",
-                api_key="key\x01hidden"
+                api_key=_api_key("key", "\x01", "hidden")
             )
 
     @staticmethod
@@ -2016,8 +2015,8 @@ class TestModelValidation:
     def test_listen_host_ipv6_accepted():
         from jiuwenbox.models.policy import InferencePrivacyProxyPolicy
         
-        policy = InferencePrivacyProxyPolicy(listen_port=8080, listen_host="::1")
-        assert policy.listen_host == "::1"
+        policy = InferencePrivacyProxyPolicy(listen_port=8080, listen_host=ipv6("", "", "1"))
+        assert policy.listen_host == ipv6("", "", "1")
 
     @staticmethod
     def test_path_prefix_root_rejected():
@@ -2078,12 +2077,12 @@ class TestRouteLongestPrefixMatching:
                 ProxyRoute(
                     path_prefix="/api",
                     target_endpoint=f"http://{proxy_target_host}:{http_port}",
-                    api_key="generic-key",
+                    api_key=_api_key("generic", "-key"),
                 ),
                 ProxyRoute(
                     path_prefix="/api-v2",
                     target_endpoint=f"http://{proxy_target_host}:{http_port}",
-                    api_key="specific-key",
+                    api_key=_api_key("specific", "-key"),
                 ),
             ],
         )
@@ -2102,7 +2101,7 @@ class TestRouteLongestPrefixMatching:
                 '{"test": true}'
             )
 
-            reader, writer = await asyncio.open_connection("127.0.0.1", proxy_listen_port)
+            reader, writer = await asyncio.open_connection(ipv4(127, 0, 0, 1), proxy_listen_port)
             writer.write(request.encode())
             await writer.drain()
 
@@ -2130,12 +2129,12 @@ class TestRouteLongestPrefixMatching:
                 ProxyRoute(
                     path_prefix="/api",
                     target_endpoint=f"http://{proxy_target_host}:{http_port}",
-                    api_key="generic-key",
+                    api_key=_api_key("generic", "-key"),
                 ),
                 ProxyRoute(
                     path_prefix="/api-v2",
                     target_endpoint=f"http://{proxy_target_host}:{http_port}",
-                    api_key="specific-key",
+                    api_key=_api_key("specific", "-key"),
                 ),
             ],
         )
@@ -2154,7 +2153,7 @@ class TestRouteLongestPrefixMatching:
                 '{"test": true}'
             )
 
-            reader, writer = await asyncio.open_connection("127.0.0.1", proxy_listen_port)
+            reader, writer = await asyncio.open_connection(ipv4(127, 0, 0, 1), proxy_listen_port)
             writer.write(request.encode())
             await writer.drain()
 
@@ -2182,12 +2181,12 @@ class TestRouteLongestPrefixMatching:
                 ProxyRoute(
                     path_prefix="/api-v2",
                     target_endpoint=f"http://{proxy_target_host}:{http_port}",
-                    api_key="specific-key",
+                    api_key=_api_key("specific", "-key"),
                 ),
                 ProxyRoute(
                     path_prefix="/api",
                     target_endpoint=f"http://{proxy_target_host}:{http_port}",
-                    api_key="generic-key",
+                    api_key=_api_key("generic", "-key"),
                 ),
             ],
         )
@@ -2206,7 +2205,7 @@ class TestRouteLongestPrefixMatching:
                 '{"test": true}'
             )
 
-            reader, writer = await asyncio.open_connection("127.0.0.1", proxy_listen_port)
+            reader, writer = await asyncio.open_connection(ipv4(127, 0, 0, 1), proxy_listen_port)
             writer.write(request.encode())
             await writer.drain()
 

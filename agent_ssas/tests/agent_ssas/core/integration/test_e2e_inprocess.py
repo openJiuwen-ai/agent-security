@@ -12,14 +12,14 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
-from agent_ssas.core.framework.access_adapter.agent_backend import AgentSSASBackend
-from agent_ssas.core.framework.config.settings import AgentSSASConfig
-from agent_ssas.core.framework.core_types.assessment import RiskLevel
 from tests.fixtures.event_factory import (
     generate_event_sequence,
     generate_permission_interrupt_event,
 )
+
+from agent_ssas.core.framework.access_adapter.agent_backend import AgentSSASBackend
+from agent_ssas.core.framework.config.settings import AgentSSASConfig
+from agent_ssas.core.framework.core_types.assessment import RiskLevel
 
 
 @pytest.fixture
@@ -27,14 +27,12 @@ def ssas_config(tmp_path):
     """测试用 AgentSSASConfig,指向临时目录。"""
     return AgentSSASConfig(ssas_home=str(tmp_path))
 
-
 @pytest.fixture
 async def backend(ssas_config):
     """创建并初始化 AgentSSASBackend。"""
     b = AgentSSASBackend(ssas_config)
     await b.initialize()
     yield b
-
 
 @pytest.mark.integration
 @pytest.mark.level1

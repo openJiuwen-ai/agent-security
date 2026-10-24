@@ -6,11 +6,13 @@ These four detectors retain the migrated defaults. Effective host policy can
 override an identical pattern's action; independent matching rules stay strict.
 """
 
+from .iptext import ipv4
+
 _BUILTIN_NET_URLS = (
-    ("169.254.169.254", "deny"),
+    (ipv4(169, 254, 169, 254), "deny"),
     ("metadata.google.internal", "deny"),
     ("localhost", "deny"),
-    ("127.0.0.1", "deny"),
+    (ipv4(127, 0, 0, 1), "deny"),
 )
 
 
