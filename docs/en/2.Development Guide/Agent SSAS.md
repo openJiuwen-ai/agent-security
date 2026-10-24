@@ -2,7 +2,7 @@
 
 Agent SSAS (package `agent-ssas`, import name `agent_ssas`) collects agent runtime events, runs threat detection, and stores the result as an OCSF log. It is not tied to one agent framework. The current JiuwenSwarm integration is a security rail.
 
-The component's own documentation is [agent-ssas/docs/README.md](../../../agent-ssas/docs/README.md): tutorials, how-to guides, configuration reference, and architecture notes. This page only places it inside the repository.
+The component's own documentation is [agent_ssas/docs/README.md](../../../agent_ssas/docs/README.md): tutorials, how-to guides, configuration reference, and architecture notes. This page only places it inside the repository.
 
 ---
 
@@ -30,9 +30,9 @@ Built-in detection modules include `agent_moss` and `security_rail_detection`. `
 
 | Goal | Document |
 | --- | --- |
-| Concepts | `agent-ssas/docs/en/tutorial/01-introduction.md` |
-| In-process loop | `agent-ssas/docs/en/tutorial/02-quickstart.md` |
-| JiuwenSwarm integration | `agent-ssas/docs/en/tutorial/03-integrate-jiuwenswarm.md` |
-| Configuration fields | `agent-ssas/docs/en/reference/configuration.md` |
+| Concepts | `agent_ssas/docs/en/tutorial/01-introduction.md` |
+| In-process loop | `agent_ssas/docs/en/tutorial/02-quickstart.md` |
+| JiuwenSwarm integration | `agent_ssas/docs/en/tutorial/03-integrate-jiuwenswarm.md` |
+| Configuration fields | `agent_ssas/docs/en/reference/configuration.md` |
 
-Examples are in `agent-ssas/examples/`. The JiuwenSwarm integration patches are in `agent-ssas/patches/`.
+Examples are in `agent_ssas/examples/`. The JiuwenSwarm integration patches are in `agent_ssas/patches/`.

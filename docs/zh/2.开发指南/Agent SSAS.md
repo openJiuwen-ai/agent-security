@@ -2,7 +2,7 @@
 
 Agent SSAS（包名 `agent-ssas`，导入名 `agent_ssas`）采集智能体运行时事件，做威胁检测，并把结果落成 OCSF 日志。它不绑定某一个智能体框架。当前通过安全 Rail 接入 JiuwenSwarm。
 
-组件自己的文档中心在 [agent-ssas/docs/README.md](../../../agent-ssas/docs/README.md)，里面有教程、操作指南、配置参考和架构说明。本文只说明它在本仓库中的位置。
+组件自己的文档中心在 [agent_ssas/docs/README.md](../../../agent_ssas/docs/README.md)，里面有教程、操作指南、配置参考和架构说明。本文只说明它在本仓库中的位置。
 
 ---
 
@@ -30,9 +30,9 @@ Agent SSAS（包名 `agent-ssas`，导入名 `agent_ssas`）采集智能体运�
 
 | 想做的事 | 文档 |
 | --- | --- |
-| 认识概念 | `agent-ssas/docs/zh/tutorial/01-introduction.md` |
-| 在本进程跑通 | `agent-ssas/docs/zh/tutorial/02-quickstart.md` |
-| 接入 JiuwenSwarm | `agent-ssas/docs/zh/tutorial/03-integrate-jiuwenswarm.md` |
-| 配置字段 | `agent-ssas/docs/zh/reference/configuration.md` |
+| 认识概念 | `agent_ssas/docs/zh/tutorial/01-introduction.md` |
+| 在本进程跑通 | `agent_ssas/docs/zh/tutorial/02-quickstart.md` |
+| 接入 JiuwenSwarm | `agent_ssas/docs/zh/tutorial/03-integrate-jiuwenswarm.md` |
+| 配置字段 | `agent_ssas/docs/zh/reference/configuration.md` |
 
-示例在 `agent-ssas/examples/`。JiuwenSwarm 的接入补丁在 `agent-ssas/patches/`。
+示例在 `agent_ssas/examples/`。JiuwenSwarm 的接入补丁在 `agent_ssas/patches/`。

@@ -7,4 +7,4 @@ This guide covers how to install the three components in this repository, and wh
 | [Repository and install](Repository%20and%20install.md) | Layout, Python version, local install of each component |
 | [Agent SSAS](Agent%20SSAS.md) | Situational awareness: two subsystems and two runtime modes |
 | [JiuwenBox](JiuwenBox.md) | Sandbox service: policy, process isolation, HTTP API |
-| [agent-shield](agent-shield.md) | In-process decisions: action checks and content detection |
+| [Agent Shield](Agent%20Shield.md) | In-process decisions: action checks and content detection |

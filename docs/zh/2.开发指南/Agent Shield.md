@@ -1,4 +1,4 @@
-# agent-shield
+# Agent Shield
 
 agent-shield（分发名 `agent-shield`，导入名 `agent_shield`）是进程内的判定 SDK。它做两件事：对一次工具调用给出 allow、ask 或 deny；对进入模型的内容给出风险信号。
 

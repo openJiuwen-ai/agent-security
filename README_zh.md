@@ -8,7 +8,7 @@
 
 当前仓库包含以下组件，后续将持续扩展更多安全能力：
 
-- **Agent SSAS**：Agent 安全态势感知系统（Security Situation Awareness System）。通过事件采集与可插拔检测模块框架，实时感知 Agent 行为并产出 OCSF 格式威胁报告，支持进程内与独立 HTTP 服务两种运行模式，可无缝接入 JiuwenSwarm 等智能体运行时。详见 [agent-ssas/README.zh.md](./agent-ssas/README.zh.md)。
+- **Agent SSAS**：Agent 安全态势感知系统（Security Situation Awareness System）。通过事件采集与可插拔检测模块框架，实时感知 Agent 行为并产出 OCSF 格式威胁报告，支持进程内与独立 HTTP 服务两种运行模式，可无缝接入 JiuwenSwarm 等智能体运行时。详见 [agent_ssas/README.zh.md](./agent_ssas/README.zh.md)。
 - **JiuwenBox Sandbox**：轻量 Agent 安全沙箱服务，为 Agent 工具调用与代码执行提供分层隔离。
 
 ## 参与贡献
