@@ -8,10 +8,9 @@
 启动方式:
     python -m agent_ssas.core.modes.http.server
 
-环境变量:
-    SSAS_MODE=http            (触发 HTTP 模式)
-    SSAS_HTTP_HOST=0.0.0.0   (监听地址)
-    SSAS_HTTP_PORT=8443       (监听端口)
+监听地址与端口来自 AgentSSASConfig,可由环境变量 SSAS_HTTP_HOST、
+SSAS_HTTP_PORT 覆盖。未设置 SSAS_HTTP_HOST 时只绑定本机回环地址,
+避免管理端口暴露在全部网络接口上。
 """
 
 from __future__ import annotations
