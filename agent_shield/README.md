@@ -7,7 +7,9 @@
 
 沙箱（F2）是独立交付件，见同仓 `../jiuwenbox/`。
 
-## 目录 ↔ 工作项对照（依据 docs/重构分工.md）
+文档在仓库根目录，中文从 [../docs/zh/SUMMARY.md](../docs/zh/SUMMARY.md) 进入，英文在 [../docs/en/SUMMARY.md](../docs/en/SUMMARY.md)。
+
+## 目录 ↔ 工作项对照
 
 | 工作项 | 目录 |
 |---|---|
