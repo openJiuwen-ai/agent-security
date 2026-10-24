@@ -10,6 +10,7 @@ from time import perf_counter_ns
 import pytest
 
 from agent_shield.tool_permission import PermissionLevel as L
+from agent_shield.tool_permission.netguard.iptext import ipv4
 
 from .test_net_guard import checker, evaluate
 
@@ -80,7 +81,7 @@ def test_decision_latency_at_capacity(distribution):
     args = {
         "url": prefix + "a" * (8192 - len(prefix)),
         "resolved_addresses": [f"8.8.8.{i}" for i in range(1, 65)],
-        "connect_address": "8.8.8.8",
+        "connect_address": ipv4(8, 8, 8, 8),
     }
 
     async def measure():

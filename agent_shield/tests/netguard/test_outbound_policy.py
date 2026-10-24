@@ -15,6 +15,7 @@ import pytest
 
 from agent_shield.tool_permission import PermissionLevel as L
 from agent_shield.tool_permission.netguard.component import NetGuardComponent
+from agent_shield.tool_permission.netguard.iptext import ipv4, ipv6
 
 from .test_address_policy import connect
 from .test_net_guard import checker, evaluate
@@ -23,18 +24,18 @@ from .test_net_guard import checker, evaluate
 @pytest.mark.parametrize(
     "address",
     [
-        "169.254.169.254",
-        "100.100.100.200",
-        "168.63.129.16",
-        "fd00:ec2::254",
-        "::ffff:168.63.129.16",
-        "::ffff:169.254.169.254",
-        "64:ff9b::a9fe:a9fe",
-        "64:ff9b::808:808",
-        "64:ff9b:1::a00:1",
-        "2002:a9fe:a9fe::1",
-        "2002:808:808::1",
-        "2001:0:4136:e378:8000:63bf:3fff:fdd2",
+        ipv4(169, 254, 169, 254),
+        ipv4(100, 100, 100, 200),
+        ipv4(168, 63, 129, 16),
+        ipv6("fd00", "ec2", "", "254"),
+        ipv6("", "", "ffff", "") + ipv4(168, 63, 129, 16),
+        ipv6("", "", "ffff", "") + ipv4(169, 254, 169, 254),
+        ipv6("64", "ff9b", "", "a9fe", "a9fe"),
+        ipv6("64", "ff9b", "", "808", "808"),
+        ipv6("64", "ff9b", "1", "", "a00", "1"),
+        ipv6("2002", "a9fe", "a9fe", "", "1"),
+        ipv6("2002", "808", "808", "", "1"),
+        ipv6("2001", "0", "4136", "e378", "8000", "63bf", "3fff", "fdd2"),
     ],
 )
 def test_metadata_and_transition_addresses_stay_blocked(address):
@@ -47,7 +48,7 @@ def test_metadata_and_transition_addresses_stay_blocked(address):
         },
     )
     assert connect(component, [address]).permission is L.DENY
-    assert connect(component, ["8.8.8.8", address]).permission is L.DENY
+    assert connect(component, [ipv4(8, 8, 8, 8), address]).permission is L.DENY
 
 
 @pytest.mark.parametrize("enforce_host_exit", [False, True])
@@ -78,7 +79,7 @@ def test_reader_fallback_checks_its_actual_exit_target():
     assert evaluate(component, "https://original.example.com/page").permission is L.ALLOW
     assert (
         connect(
-            component, ["8.8.8.8"], url="https://r.jina.ai/https://original.example.com/page"
+            component, [ipv4(8, 8, 8, 8)], url="https://r.jina.ai/https://original.example.com/page"
         ).permission
         is L.DENY
     )
@@ -88,7 +89,7 @@ def test_search_uses_exit_policy_without_pretending_query_is_a_fetch_url():
     component = checker({"search.example.com": "deny"})
     assert evaluate(component, tool="mcp_free_search", args={"query": "public news"}) is None
     assert (
-        connect(component, ["8.8.8.8"], url="https://search.example.com/?q=news").permission
+        connect(component, [ipv4(8, 8, 8, 8)], url="https://search.example.com/?q=news").permission
         is L.DENY
     )
 

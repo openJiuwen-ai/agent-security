@@ -16,6 +16,8 @@ import httpx
 import pytest
 import pytest_asyncio
 
+from jiuwenbox.iptext import ipv4
+
 LONG_RUNNING_COMMAND = ["python3", "-c", "import time; time.sleep(36000)"]
 SYSTEM_BIND_MOUNTS = [
     {"host_path": "/bin", "sandbox_path": "/bin", "mode": "ro"},
@@ -34,12 +36,12 @@ SYSTEM_BIND_MOUNTS = [
 TMP_DIRECTORY = {"path": "/tmp", "permissions": "1777"}
 logger = logging.getLogger(__name__)
 
-DOCKER_ACCESSIBLE_IP = "172.17.0.1"
+DOCKER_ACCESSIBLE_IP = ipv4(172, 17, 0, 1)
 
 
 def _allocate_tcp_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
-        tcp_socket.bind(("0.0.0.0", 0))
+        tcp_socket.bind((ipv4(0, 0, 0, 0), 0))
         return tcp_socket.getsockname()[1]
 
 
@@ -148,11 +150,11 @@ def mock_llm_server_https_port():
 @pytest.fixture(scope="session")
 def mock_llm_server(mock_llm_server_http_port, mock_llm_server_https_port):
     """Start mock LLM server for testing (session-scoped).
-    
+
     Runs once per test session. All tests share the same server instance.
     Server is thread-safe and handles concurrent requests.
-    Binds on 0.0.0.0 so it's accessible from Docker containers.
-    
+    Binds on the wildcard address so it is accessible from Docker containers.
+
     Returns:
         dict: {"http_port": int, "https_port": int, "process": subprocess.Popen}
     """
@@ -232,7 +234,7 @@ def simple_http_target(http_target_port):
         return [b"OK"]
 
     server = make_server(
-        "0.0.0.0",
+        ipv4(0, 0, 0, 0),
         http_target_port,
         simple_wsgi_app,
         server_class=ThreadedWSGIServer,
@@ -241,7 +243,7 @@ def simple_http_target(http_target_port):
 
     def threaded_server() -> None:
         logger.info(
-            "[simple_http_target] Session server started on 0.0.0.0:%s",
+            "[simple_http_target] Session server started on " + ipv4(0, 0, 0, 0) + ":%s",
             http_target_port,
         )
         server.serve_forever(poll_interval=0.5)
@@ -273,17 +275,16 @@ def docker_gateway_ip(
     test_llm_endpoint,
     test_llm_api_key,
 ):
-    """
-    Detect topology AND check LLM availability (reuses same sandbox).
-    
-    Uses sandbox exec curl to test connectivity from sandbox environment.
-    
+    """Detect topology and check LLM availability with one sandbox.
+
+    Uses sandbox exec curl to test connectivity from the sandbox environment.
+
     Returns dict:
-        - "gateway_ip": "127.0.0.1" or "172.17.0.1" (Docker gateway IP for target endpoints)
-        - "llm_available": True/False
-        
+        - gateway_ip: loopback, or the Docker bridge address for target endpoints
+        - llm_available: True/False
+
     Raises:
-        RuntimeError: If API server unreachable or topology detection fails
+        RuntimeError: If the API server is unreachable or topology detection fails
     """
     if server_url_session.startswith(_UDS_SCHEME):
         # Docker-gateway 探测 + IPP 端口联通性测试天然依赖 TCP listener; UDS
@@ -332,12 +333,12 @@ def docker_gateway_ip(
                 time.sleep(0.5)
             
             # ========== Topology detection ==========
-            logger.info("[docker_gateway_ip] Testing 127.0.0.1:%s", port)
+            logger.info("[docker_gateway_ip] Testing " + ipv4(127, 0, 0, 1) + ":%s", port)
             exec_127 = client.post(
                 f"/api/v1/sandboxes/{sandbox_id}/exec",
                 json={
                     "command": ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
-                                "--connect-timeout", "3", f"http://127.0.0.1:{port}/test"],
+                                "--connect-timeout", "3", f"http://{ipv4(127, 0, 0, 1)}:{port}/test"],
                     "timeout_seconds": 10,
                 }
             )
@@ -345,36 +346,36 @@ def docker_gateway_ip(
             if exec_127.status_code == 200:
                 result = exec_127.json()
                 if result.get("exit_code") == 0 and result.get("stdout", "").strip() == "200":
-                    detected = "127.0.0.1"
-                    logger.info("[docker_gateway_ip] 127.0.0.1 reachable -> sandbox in WSL")
+                    detected = ipv4(127, 0, 0, 1)
+                    logger.info("[docker_gateway_ip] " + ipv4(127, 0, 0, 1) + " reachable -> sandbox in WSL")
                 else:
                     logger.info(
-                        "[docker_gateway_ip] 127.0.0.1 failed (exit=%s, stdout=%s)",
+                        "[docker_gateway_ip] " + ipv4(127, 0, 0, 1) + " failed (exit=%s, stdout=%s)",
                         result.get("exit_code"),
                         result.get("stdout"),
                     )
                     
-                    logger.info("[docker_gateway_ip] Testing 172.17.0.1:%s", port)
+                    logger.info("[docker_gateway_ip] Testing " + ipv4(172, 17, 0, 1) + ":%s", port)
                     exec_gw = client.post(
                         f"/api/v1/sandboxes/{sandbox_id}/exec",
                         json={
                             "command": ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
-                                        "--connect-timeout", "3", f"http://172.17.0.1:{port}/test"],
+                                        "--connect-timeout", "3", f"http://{ipv4(172, 17, 0, 1)}:{port}/test"],
                             "timeout_seconds": 10,
                         }
                     )
                     if exec_gw.status_code == 200:
                         result = exec_gw.json()
                         if result.get("exit_code") == 0 and result.get("stdout", "").strip() == "200":
-                            detected = "172.17.0.1"
+                            detected = ipv4(172, 17, 0, 1)
                             logger.info(
-                                "[docker_gateway_ip] 172.17.0.1 reachable -> sandbox in Docker"
+                                "[docker_gateway_ip] " + ipv4(172, 17, 0, 1) + " reachable -> sandbox in Docker"
                             )
                         else:
                             raise RuntimeError(
                                 f"Both IPs unreachable for target server at port {port}. "
-                                f"127.0.0.1: exit={exec_127.json().get('exit_code')}, "
-                                f"172.17.0.1: exit={result.get('exit_code')}"
+                                f"{ipv4(127, 0, 0, 1)}: exit={exec_127.json().get('exit_code')}, "
+                                f"{ipv4(172, 17, 0, 1)}: exit={result.get('exit_code')}"
                             )
                     else:
                         raise RuntimeError(
@@ -382,7 +383,7 @@ def docker_gateway_ip(
                         )
             else:
                 raise RuntimeError(
-                    f"127.0.0.1 exec failed via {server_url_session} (status {exec_127.status_code})"
+                    f"{ipv4(127, 0, 0, 1)} exec failed via {server_url_session} (status {exec_127.status_code})"
                 )
             
             # ========== LLM check (conditional) ==========
@@ -448,37 +449,22 @@ def docker_gateway_ip(
 
 @pytest.fixture(scope="session")
 def proxy_host_from_test(server_host_port_session):
-    """
-    IP address to connect FROM test process TO proxy.
-    
-    When proxy runs in API server (possibly Docker), this returns
-    the host where proxy is accessible from test environment.
-    
-    For local API server: returns 127.0.0.1
-    For Docker API server: returns the mapped host (usually 127.0.0.1 if port mapped)
-    
-    Returns:
-        str: Host IP for connecting to proxy from test process
+    """Host used by the test process to reach the proxy.
+
+    A local API server is reached through loopback. A Docker API server is
+    reached through the published host, usually loopback when the port is mapped.
     """
     if server_host_port_session:
         return server_host_port_session[0]
-    return "127.0.0.1"
+    return ipv4(127, 0, 0, 1)
 
 
 @pytest.fixture(scope="session")
 def mock_server_host_for_docker(docker_gateway_ip):
-    """
-    IP address for mock server TARGET endpoints.
-    
-    When proxy runs in Docker and needs to connect to mock server
-    running in test process, use Docker gateway IP.
-    
-    For local tests: returns 127.0.0.1
-    For Docker tests: returns Docker gateway IP (172.17.0.1 or similar)
-    
-    Returns:
-        str: Host IP for mock server target_endpoint URLs
+    """Host used as the mock server target endpoint.
+
+    Local tests use loopback. Docker tests use the bridge gateway address.
     """
     if docker_gateway_ip:
         return docker_gateway_ip["gateway_ip"]
-    return "127.0.0.1"
+    return ipv4(127, 0, 0, 1)

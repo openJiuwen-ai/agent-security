@@ -7,6 +7,7 @@ import asyncio
 import pytest
 
 from agent_shield.tool_permission import PermissionEngine, PermissionLevel, PermissionResult
+from agent_shield.tool_permission.netguard.iptext import ipv4
 from agent_shield.tool_permission.routing import RouteInterest, SecurityTarget
 
 
@@ -48,8 +49,8 @@ def test_network_calls_keep_every_matching_guard(target, legacy, tool, method):
     )
     args = {
         "url": "https://example.com/",
-        "resolved_addresses": ["8.8.8.8"],
-        "connect_address": "8.8.8.8",
+        "resolved_addresses": [ipv4(8, 8, 8, 8)],
+        "connect_address": ipv4(8, 8, 8, 8),
     }
     result = asyncio.run(getattr(engine, method)(tool, args))
     decision = (

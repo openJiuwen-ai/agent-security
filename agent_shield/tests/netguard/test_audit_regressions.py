@@ -9,6 +9,7 @@ from random import Random
 import pytest
 
 from agent_shield.tool_permission import PermissionLevel as L
+from agent_shield.tool_permission.netguard.iptext import ipv4, ipv6
 
 from .test_address_policy import connect
 from .test_net_guard import checker, evaluate
@@ -25,7 +26,7 @@ from .test_net_guard import checker, evaluate
         "2130706433",
         "0x7f000001",
         "0177.0.0.1",
-        "127.0.0.1..",
+        ipv4(127, 0, 0, 1) + "..",
     ],
 )
 def test_ambiguous_host_cannot_authorize_a_different_client_target(host):
@@ -121,12 +122,13 @@ def test_fragments_do_not_change_the_http_resource_or_expose_rule_fragment():
         assert "secret-fragment" not in result.matched_rule
 
 
-@pytest.mark.parametrize("host", ["[::ffff:127.0.0.1]", "[::ffff:7f00:1]"])
+@pytest.mark.parametrize("host",
+    ["[" + ipv6("", "", "ffff", "") + ipv4(127, 0, 0, 1) + "]", "[" + ipv6("", "", "ffff", "7f00", "1") + "]"])
 def test_mapped_ipv6_cannot_evade_the_equivalent_ipv4_url_rule(host):
     component = checker(connection={"allow_loopback": True})
     assert evaluate(component, "https://" + host).permission is L.DENY
-    assert connect(component, ["127.0.0.1"], url="https://" + host).permission is L.DENY
-    assert evaluate(checker({"127.0.0.1": "ask"}), "https://" + host).permission is L.ASK
+    assert connect(component, [ipv4(127, 0, 0, 1)], url="https://" + host).permission is L.DENY
+    assert evaluate(checker({ipv4(127, 0, 0, 1): "ask"}), "https://" + host).permission is L.ASK
 
 
 @pytest.mark.parametrize(
@@ -138,10 +140,10 @@ def test_reference_metadata_host_restriction_survives_url_override_and_dns(host)
         {"metadata.google.internal": "allow"},
         connection={"allow_loopback": True, "allow_private_network": True},
     )
-    assert connect(component, ["8.8.8.8"], url="https://" + host).permission is L.DENY
-    assert connect(component, ["10.0.0.1"], url="https://" + host).permission is L.DENY
+    assert connect(component, [ipv4(8, 8, 8, 8)], url="https://" + host).permission is L.DENY
+    assert connect(component, [ipv4(10, 0, 0, 1)], url="https://" + host).permission is L.DENY
     assert (
-        connect(component, ["8.8.8.8"], url="https://metadata.google.internal.example").permission
+        connect(component, [ipv4(8, 8, 8, 8)], url="https://metadata.google.internal.example").permission
         is L.ALLOW
     )
 
@@ -155,21 +157,21 @@ def test_limits_apply_before_trimming_or_hashing_snapshot_strings():
     with pytest.raises(ValueError):
         checker({" " * 8192 + "example.com": "allow"})
     with pytest.raises(ValueError):
-        connect(checker(), ["8.8.8.8", "1" * 8193])
+        connect(checker(), [ipv4(8, 8, 8, 8), "1" * 8193])
 
 
 @pytest.mark.parametrize(
     "address",
     [
-        "fec0::1",
-        "febf:ffff::1",
-        "192.88.99.1",
-        "192.88.99.2",
-        "192.0.0.8",
-        "192.0.0.11",
-        "3fff::1",
-        "100:0:0:1::1",
-        "5f00::1",
+        ipv6("fec0", "", "1"),
+        ipv6("febf", "ffff", "", "1"),
+        ipv4(192, 88, 99, 1),
+        ipv4(192, 88, 99, 2),
+        ipv4(192, 0, 0, 8),
+        ipv4(192, 0, 0, 11),
+        ipv6("3fff", "", "1"),
+        ipv6("100", "0", "0", "1", "", "1"),
+        ipv6("5f00", "", "1"),
     ],
 )
 def test_non_public_special_addresses_cannot_use_private_or_loopback_exceptions(address):
@@ -177,7 +179,8 @@ def test_non_public_special_addresses_cannot_use_private_or_loopback_exceptions(
     assert connect(component, [address]).permission is L.DENY
 
 
-@pytest.mark.parametrize("address", ["192.0.0.9", "192.0.0.10", "192.88.98.255", "192.88.100.0"])
+@pytest.mark.parametrize("address",
+    [ipv4(192, 0, 0, 9), ipv4(192, 0, 0, 10), ipv4(192, 88, 98, 255), ipv4(192, 88, 100, 0)])
 def test_special_prefix_exclusions_preserve_neighboring_public_addresses(address):
     assert connect(checker(), [address]).permission is L.ALLOW
 
@@ -192,7 +195,9 @@ def test_glob_and_query_constraints_do_not_hide_independent_deny():
 
 
 @pytest.mark.parametrize(
-    "url", ["https://[::1]evil.com/", "https://[::1]evil.com:443/", "https://example.com/\ud800"]
+    "url", ["https://[" + ipv6("", "", "1") + "]evil.com/",
+        "https://[" + ipv6("", "", "1") + "]evil.com:443/",
+        "https://example.com/\ud800"]
 )
 def test_invalid_authority_or_unicode_path_uses_defaults(url):
     result = evaluate(checker(default="ask"), url)

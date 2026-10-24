@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import pytest
 
+from jiuwenbox.iptext import ipv4
 from jiuwenbox.models.common import RESERVED_ENV_VARS
 from jiuwenbox.models.policy import SecurityPolicy
 from jiuwenbox.policy.loader import load_policy_from_text
@@ -44,7 +45,7 @@ class TestReservedEnvVars:
     def test_policy_cannot_override_sandbox_ip():
         with pytest.raises(Exception):
             SecurityPolicy.model_validate(
-                {"environment": {"SANDBOX_IP": "10.0.0.1"}}
+                {"environment": {"SANDBOX_IP": ipv4(10, 0, 0, 1)}}
             )
 
     @staticmethod

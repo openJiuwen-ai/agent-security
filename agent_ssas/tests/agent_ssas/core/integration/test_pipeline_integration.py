@@ -12,11 +12,6 @@ import asyncio
 from pathlib import Path
 
 import pytest
-
-from agent_ssas.core.framework.access_adapter.agent_backend import AgentSSASBackend
-from agent_ssas.core.framework.config.settings import AgentSSASConfig
-from agent_ssas.core.framework.core_types.assessment import RiskAssessment, RiskLevel
-
 # 确保能导入测试 fixtures
 from tests.fixtures.event_factory import (
     CallInfo,
@@ -25,6 +20,10 @@ from tests.fixtures.event_factory import (
     create_raw_event,
     generate_permission_interrupt_event,
 )
+
+from agent_ssas.core.framework.access_adapter.agent_backend import AgentSSASBackend
+from agent_ssas.core.framework.config.settings import AgentSSASConfig
+from agent_ssas.core.framework.core_types.assessment import RiskAssessment, RiskLevel
 
 
 class TestPipelineIntegration:

@@ -17,10 +17,6 @@ import time
 from pathlib import Path
 
 import pytest
-
-from agent_ssas.core.framework.access_adapter.agent_backend import AgentSSASBackend
-from agent_ssas.core.framework.config.settings import AgentSSASConfig
-from agent_ssas.core.framework.core_types.assessment import RiskAssessment, RiskLevel
 from tests.fixtures.event_factory import (
     CallInfo,
     EventIds,
@@ -28,6 +24,10 @@ from tests.fixtures.event_factory import (
     create_raw_event,
     generate_permission_interrupt_event,
 )
+
+from agent_ssas.core.framework.access_adapter.agent_backend import AgentSSASBackend
+from agent_ssas.core.framework.config.settings import AgentSSASConfig
+from agent_ssas.core.framework.core_types.assessment import RiskAssessment, RiskLevel
 
 
 class TestPerf:
@@ -175,7 +175,6 @@ class TestPerf:
         # 此处取 60 秒作为 CI 环境宽松上限)
         batch_limit = 60.0
         assert total_latency < batch_limit, f"批量延迟 {total_latency:.2f}s 超过上限 {batch_limit}s"
-
 
 def _make_lifecycle_event_sequence(index: int) -> list[dict]:
     """构造单次生命周期事件序列(6 个事件)。

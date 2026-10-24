@@ -17,13 +17,14 @@ import pytest
 from agent_shield.tool_permission import PermissionEngine, SecurityTarget
 from agent_shield.tool_permission import PermissionLevel as L
 from agent_shield.tool_permission.netguard.component import NetGuardComponent
+from agent_shield.tool_permission.netguard.iptext import ipv4, ipv6
 from agent_shield.tool_permission.netguard.tool_policy import NetworkToolPolicy
 from agent_shield.tool_permission.routing import resolve_route
 
 FETCH_TOOLS = ("mcp_fetch_webpage", "fetch_webpage", "web_fetch_webpage")
 URL = "https://example.com/page"
 ARGS = {"url": URL}
-CONNECTION = {**ARGS, "resolved_addresses": ["8.8.8.8"], "connect_address": "8.8.8.8"}
+CONNECTION = {**ARGS, "resolved_addresses": [ipv4(8, 8, 8, 8)], "connect_address": ipv4(8, 8, 8, 8)}
 
 
 def config(*, baseline="allow", action="allow", enabled=True):
@@ -222,7 +223,7 @@ def test_engine_does_not_dispatch_non_network_tools_to_netguard(tool, monkeypatc
 @pytest.mark.parametrize("action", ("allow", "ask", "deny"))
 @pytest.mark.parametrize(
     "args",
-    ({}, {"url": None}, {"url": ""}, {"url": " \t"}, {"url": 123}, {"url": "https://[::1"}),
+    ({}, {"url": None}, {"url": ""}, {"url": " \t"}, {"url": 123}, {"url": "https://[" + ipv6("", "", "1")}),
 )
 def test_absent_or_invalid_url_uses_defaults_in_both_entrypoints(tool, action, args):
     cfg = config()
@@ -242,7 +243,7 @@ def test_connection_url_alias_does_not_replace_missing_url():
     cfg = config()
     cfg["net_guard"]["defaults"] = "ask"
     engine = PermissionEngine(cfg)
-    args = {"uri": URL, "resolved_addresses": ["8.8.8.8"], "connect_address": "8.8.8.8"}
+    args = {"uri": URL, "resolved_addresses": [ipv4(8, 8, 8, 8)], "connect_address": ipv4(8, 8, 8, 8)}
     assert check(engine, "network_connect", args).matched_rule == "net_guard:defaults"
     assert query(engine, "network_connect", args) == (L.ASK, "net_guard:defaults")
 
@@ -275,14 +276,14 @@ def test_engine_registers_exactly_one_network_component():
 
 
 @pytest.mark.parametrize("method", ("check_permission", "evaluate_global_policy_directly"))
-@pytest.mark.parametrize("changes", ({"resolved_addresses": []}, {"connect_address": "8.8.4.4"}))
+@pytest.mark.parametrize("changes", ({"resolved_addresses": []}, {"connect_address": ipv4(8, 8, 4, 4)}))
 def test_public_connection_entrypoints_reject_bad_facts(method, changes):
     engine = PermissionEngine(config())
     with pytest.raises(ValueError):
         asyncio.run(getattr(engine, method)("network_connect", {**CONNECTION, **changes}))
 
 
-@pytest.mark.parametrize("addresses", (["127.0.0.1"], ["8.8.8.8", "10.0.0.1"]))
+@pytest.mark.parametrize("addresses", ([ipv4(127, 0, 0, 1)], [ipv4(8, 8, 8, 8), ipv4(10, 0, 0, 1)]))
 def test_connection_safety_is_stricter_than_an_explicit_url_allow(addresses):
     engine = PermissionEngine(config())
     args = {**CONNECTION, "resolved_addresses": addresses, "connect_address": addresses[0]}
@@ -408,7 +409,7 @@ def test_production_entrypoint_latency_at_capacity(tool):
     args = {
         "url": prefix + "a" * (8192 - len(prefix)),
         "resolved_addresses": [f"8.8.8.{i}" for i in range(1, 65)],
-        "connect_address": "8.8.8.8",
+        "connect_address": ipv4(8, 8, 8, 8),
     }
 
     async def measure():

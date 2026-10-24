@@ -14,10 +14,6 @@ import json
 from pathlib import Path
 
 import pytest
-
-from agent_ssas.core.framework.access_adapter.agent_backend import AgentSSASBackend
-from agent_ssas.core.framework.config.settings import AgentSSASConfig
-from agent_ssas.core.framework.core_types.assessment import RiskAssessment, RiskLevel
 from tests.fixtures.event_factory import (
     CallInfo,
     EventIds,
@@ -26,6 +22,10 @@ from tests.fixtures.event_factory import (
     generate_event_sequence,
     generate_permission_interrupt_event,
 )
+
+from agent_ssas.core.framework.access_adapter.agent_backend import AgentSSASBackend
+from agent_ssas.core.framework.config.settings import AgentSSASConfig
+from agent_ssas.core.framework.core_types.assessment import RiskAssessment, RiskLevel
 
 
 class TestEndToEnd:

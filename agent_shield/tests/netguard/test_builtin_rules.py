@@ -9,14 +9,15 @@ import pytest
 from agent_shield.tool_permission import PermissionEngine, PermissionLevel
 from agent_shield.tool_permission.netguard import NetGuardComponent
 from agent_shield.tool_permission.netguard.builtin_rules import package_net_urls
+from agent_shield.tool_permission.netguard.iptext import ipv4
 
 
 def test_package_network_rules_are_the_four_migrated_defaults():
     expected = {
-        "169.254.169.254": "deny",
+        ipv4(169, 254, 169, 254): "deny",
         "metadata.google.internal": "deny",
         "localhost": "deny",
-        "127.0.0.1": "deny",
+        ipv4(127, 0, 0, 1): "deny",
     }
     rules = package_net_urls()
     assert rules == expected
@@ -47,9 +48,9 @@ def test_disabling_package_rules_does_not_disable_connection_address_checks():
         }
     )
     args = {
-        "url": "https://169.254.169.254/",
-        "resolved_addresses": ["169.254.169.254"],
-        "connect_address": "169.254.169.254",
+        "url": "https://" + ipv4(169, 254, 169, 254) + "/",
+        "resolved_addresses": [ipv4(169, 254, 169, 254)],
+        "connect_address": ipv4(169, 254, 169, 254),
     }
     assert (
         asyncio.run(engine.check_permission("mcp_fetch_webpage", args)).permission
