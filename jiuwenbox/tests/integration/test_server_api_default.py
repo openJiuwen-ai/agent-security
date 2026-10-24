@@ -19,7 +19,7 @@ import pytest
 import yaml
 
 from jiuwenbox.bundled_configs import default_policy_path
-from jiuwenbox.iptext import ipv4, ipv6
+from jiuwenbox.iptext import cidr, ipv4, ipv6
 from jiuwenbox.models.policy import SecurityPolicy
 from jiuwenbox.models.sandbox import JOB_ID_FORMAT_MESSAGE, SANDBOX_ID_FORMAT_MESSAGE
 from jiuwenbox.supervisor import network as network_module
@@ -926,15 +926,15 @@ class TestPolicyAPI:
         assert data["landlock"]["compatibility"] == "best_effort"
         assert data["network"]["mode"] == "isolated"
         assert data["network"]["egress"]["allowed_domains"] == ["baidu.com"]
-        assert data["network"]["egress"]["allowed_ips"] == [ipv4(127, 0, 0, 1) + "/32", ipv6("", "", "1") + "/128"]
-        assert data["network"]["egress"]["blocked_ips"] == [ipv4(169, 254, 169, 254) + "/32"]
+        assert data["network"]["egress"]["allowed_ips"] == [cidr(ipv4(127, 0, 0, 1), 32), cidr(ipv6("", "", "1"), 128)]
+        assert data["network"]["egress"]["blocked_ips"] == [cidr(ipv4(169, 254, 169, 254), 32)]
         assert data["network"]["egress"]["blocked_ports"] == [22]
         assert data["network"]["egress"]["default"] == "allow"
         assert data["network"]["egress"]["blocked_domains"] == ["ip.me"]
         assert data["network"]["egress"]["allowed_ports"] == [443, 80]
         assert data["network"]["ingress"]["default"] == "allow"
         assert data["network"]["ingress"]["allowed_domains"] == ["localhost"]
-        assert data["network"]["ingress"]["allowed_ips"] == [ipv4(127, 0, 0, 1) + "/32", ipv6("", "", "1") + "/128"]
+        assert data["network"]["ingress"]["allowed_ips"] == [cidr(ipv4(127, 0, 0, 1), 32), cidr(ipv6("", "", "1"), 128)]
         assert data["network"]["ingress"]["blocked_ips"] == []
         assert data["network"]["ingress"]["allowed_ports"] == [8080]
         assert data["network"]["ingress"]["blocked_ports"] == []
@@ -967,10 +967,10 @@ class TestPolicyAPI:
                 "network": {
                     "egress": {
                         "allowed_domains": ["extra.example.com"],
-                        "allowed_ips": [ipv4(203, 0, 113, 10) + "/32"],
+                        "allowed_ips": [cidr(ipv4(203, 0, 113, 10), 32)],
                     },
                     "ingress": {
-                        "allowed_ips": [ipv4(10, 0, 0, 0) + "/8"],
+                        "allowed_ips": [cidr(ipv4(10, 0, 0, 0), 8)],
                         "allowed_ports": [9090],
                     },
                 },
@@ -1008,17 +1008,17 @@ class TestPolicyAPI:
             "extra.example.com",
         ]
         assert data["network"]["egress"]["allowed_ips"] == [
-            ipv4(127, 0, 0, 1) + "/32",
-            ipv6("", "", "1") + "/128",
-            ipv4(203, 0, 113, 10) + "/32",
+            cidr(ipv4(127, 0, 0, 1), 32),
+            cidr(ipv6("", "", "1"), 128),
+            cidr(ipv4(203, 0, 113, 10), 32),
         ]
-        assert data["network"]["egress"]["blocked_ips"] == [ipv4(169, 254, 169, 254) + "/32"]
+        assert data["network"]["egress"]["blocked_ips"] == [cidr(ipv4(169, 254, 169, 254), 32)]
         assert data["network"]["egress"]["blocked_ports"] == [22]
         assert data["network"]["ingress"]["allowed_domains"] == ["localhost"]
         assert data["network"]["ingress"]["allowed_ips"] == [
-            ipv4(127, 0, 0, 1) + "/32",
-            ipv6("", "", "1") + "/128",
-            ipv4(10, 0, 0, 0) + "/8",
+            cidr(ipv4(127, 0, 0, 1), 32),
+            cidr(ipv6("", "", "1"), 128),
+            cidr(ipv4(10, 0, 0, 0), 8),
         ]
         assert data["network"]["ingress"]["allowed_ports"] == [8080, 9090]
         assert data["filesystem_policy"]["read_only"] == [
@@ -1083,15 +1083,15 @@ class TestPolicyAPI:
                     "egress": {
                         "default": "deny",
                         "allowed_domains": ["override.example.com"],
-                        "allowed_ips": [ipv4(198, 51, 100, 10) + "/32"],
-                        "blocked_ips": [ipv4(198, 51, 100, 11) + "/32"],
+                        "allowed_ips": [cidr(ipv4(198, 51, 100, 10), 32)],
+                        "blocked_ips": [cidr(ipv4(198, 51, 100, 11), 32)],
                         "allowed_ports": [80],
                         "blocked_ports": [25],
                     },
                     "ingress": {
                         "default": "allow",
-                        "allowed_ips": [ipv4(10, 0, 0, 0) + "/8"],
-                        "blocked_ips": [ipv4(10, 0, 5, 0) + "/24"],
+                        "allowed_ips": [cidr(ipv4(10, 0, 0, 0), 8)],
+                        "blocked_ips": [cidr(ipv4(10, 0, 5, 0), 24)],
                         "allowed_ports": [9090],
                         "blocked_ports": [22],
                     },
@@ -1130,12 +1130,12 @@ class TestPolicyAPI:
         assert "sandbox_workspace" not in data
         assert data["network"]["mode"] == "host"
         assert data["network"]["egress"]["allowed_domains"] == ["override.example.com"]
-        assert data["network"]["egress"]["allowed_ips"] == [ipv4(198, 51, 100, 10) + "/32"]
-        assert data["network"]["egress"]["blocked_ips"] == [ipv4(198, 51, 100, 11) + "/32"]
+        assert data["network"]["egress"]["allowed_ips"] == [cidr(ipv4(198, 51, 100, 10), 32)]
+        assert data["network"]["egress"]["blocked_ips"] == [cidr(ipv4(198, 51, 100, 11), 32)]
         assert data["network"]["egress"]["blocked_ports"] == [25]
         assert data["network"]["ingress"]["default"] == "allow"
-        assert data["network"]["ingress"]["allowed_ips"] == [ipv4(10, 0, 0, 0) + "/8"]
-        assert data["network"]["ingress"]["blocked_ips"] == [ipv4(10, 0, 5, 0) + "/24"]
+        assert data["network"]["ingress"]["allowed_ips"] == [cidr(ipv4(10, 0, 0, 0), 8)]
+        assert data["network"]["ingress"]["blocked_ips"] == [cidr(ipv4(10, 0, 5, 0), 24)]
         assert data["network"]["ingress"]["allowed_ports"] == [9090]
         assert data["network"]["ingress"]["blocked_ports"] == [22]
         assert data["filesystem_policy"]["read_only"] == ["/usr"]
@@ -2616,7 +2616,7 @@ class TestPolicyEnforcement:
                     "egress": {"default": "allow"},
                     "ingress": {
                         "default": "deny",
-                        "allowed_ips": [ipv4(127, 0, 0, 1) + "/32"],
+                        "allowed_ips": [cidr(ipv4(127, 0, 0, 1), 32)],
                         "allowed_ports": [18081],
                     },
                 },
@@ -2649,7 +2649,7 @@ class TestPolicyEnforcement:
                     "egress": {"default": "allow"},
                     "ingress": {
                         "default": "deny",
-                        "allowed_ips": [ipv4(127, 0, 0, 1) + "/32"],
+                        "allowed_ips": [cidr(ipv4(127, 0, 0, 1), 32)],
                         "allowed_ports": [18081],
                         "blocked_ports": [18082],
                     },
@@ -2683,7 +2683,7 @@ class TestPolicyEnforcement:
                     "egress": {"default": "allow"},
                     "ingress": {
                         "default": "deny",
-                        "allowed_ips": [ipv4(127, 0, 0, 1) + "/32"],
+                        "allowed_ips": [cidr(ipv4(127, 0, 0, 1), 32)],
                         "allowed_ports": [18083],
                     },
                 },
@@ -3358,7 +3358,7 @@ class TestNetworkUplink:
     ):
         sandbox = create_sandbox_with_policy(policy=_isolated_network_policy())
         block, sandbox_ip, _gateway = _uplink_info_from_sandbox(client, sandbox["id"])
-        assert block.subnet_of(ipaddress.ip_network(ipv4(100, 64, 0, 0) + "/10"))
+        assert block.subnet_of(ipaddress.ip_network(cidr(ipv4(100, 64, 0, 0), 10)))
         assert sandbox_ip == block.network_address + 2
 
     @staticmethod
@@ -3366,7 +3366,7 @@ class TestNetworkUplink:
         client,
         create_sandbox_with_policy,
     ):
-        pool = ipv4(10, 55, 0, 0) + "/24"
+        pool = cidr(ipv4(10, 55, 0, 0), 24)
         sandbox = create_sandbox_with_policy(
             policy=_isolated_network_policy(uplink_subnet=pool),
         )
@@ -3375,7 +3375,7 @@ class TestNetworkUplink:
 
     @staticmethod
     def test_isolated_uplink_skips_route_occupied_block(client):
-        pool = ipv4(10, 55, 0, 0) + "/24"
+        pool = cidr(ipv4(10, 55, 0, 0), 24)
         policy = _with_runtime_support(_isolated_network_policy(uplink_subnet=pool))
 
         first_response = client.post("/api/v1/sandboxes", json={
@@ -3402,7 +3402,7 @@ class TestNetworkUplink:
     @staticmethod
     def test_isolated_uplink_concurrent_sandboxes_use_distinct_blocks(client):
         policy = _with_runtime_support(
-            _isolated_network_policy(uplink_subnet=ipv4(10, 55, 0, 0) + "/24"),
+            _isolated_network_policy(uplink_subnet=cidr(ipv4(10, 55, 0, 0), 24)),
         )
 
         def create_one(index: int):
@@ -3433,7 +3433,7 @@ class TestNetworkUplink:
         # Policy allows pools up to /24; /30 is rejected at validation time.
         # This link-local /24 is a valid pool, but every /30 overlaps the reserved
         # link-local range and is filtered out by the allocator.
-        pool = ipv4(169, 254, 0, 0) + "/24"
+        pool = cidr(ipv4(169, 254, 0, 0), 24)
         response = client.post("/api/v1/sandboxes", json={
             "policy_mode": "override",
             "policy": _with_runtime_support(

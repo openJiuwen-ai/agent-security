@@ -27,12 +27,14 @@ def ssas_config(tmp_path):
     """测试用 AgentSSASConfig,指向临时目录。"""
     return AgentSSASConfig(ssas_home=str(tmp_path))
 
+
 @pytest.fixture
 async def backend(ssas_config):
     """创建并初始化 AgentSSASBackend。"""
     b = AgentSSASBackend(ssas_config)
     await b.initialize()
     yield b
+
 
 @pytest.mark.integration
 @pytest.mark.level1

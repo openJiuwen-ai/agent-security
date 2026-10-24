@@ -14,7 +14,7 @@ import sys
 
 import pytest
 
-from jiuwenbox.iptext import ipv4
+from jiuwenbox.iptext import cidr, ipv4
 from jiuwenbox.models.policy import NetworkRulePolicy
 from jiuwenbox.models.sandbox import BackgroundJobStatus, ExecResult
 from jiuwenbox.server.runtime.base import RuntimeExecRequest
@@ -158,7 +158,7 @@ class TestEgressFilter:
 
     def test_allowed_ip_cidr(self):
         f = self._filter(NetworkRulePolicy(
-            default="deny", allowed_ips=[ipv4(10, 0, 0, 0) + "/8"],
+            default="deny", allowed_ips=[cidr(ipv4(10, 0, 0, 0), 8)],
         ))
         assert f.allow(ipv4(10, 1, 2, 3), 443)[0] is True
         assert f.allow(ipv4(192, 168, 1, 1), 443)[0] is False
@@ -166,8 +166,8 @@ class TestEgressFilter:
     def test_blocked_ip_wins_over_allowed(self):
         f = self._filter(NetworkRulePolicy(
             default="deny",
-            allowed_ips=[ipv4(0, 0, 0, 0) + "/0"],
-            blocked_ips=[ipv4(169, 254, 169, 254) + "/32"],
+            allowed_ips=[cidr(ipv4(0, 0, 0, 0), 0)],
+            blocked_ips=[cidr(ipv4(169, 254, 169, 254), 32)],
         ))
         assert f.allow(ipv4(169, 254, 169, 254), 80)[0] is False
         assert f.allow(ipv4(8, 8, 8, 8), 80)[0] is True
