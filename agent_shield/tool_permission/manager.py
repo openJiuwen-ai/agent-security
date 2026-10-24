@@ -25,6 +25,9 @@ class PermissionManager:
       count against ``max_keys`` and cannot be removed.
     * Deciding with a key that has not been registered raises ``KeyError``;
       there is no fallback to the default configuration.
+    * A decision can instead carry its own ``config``: a throw-away engine is
+      built for that call only and nothing is registered.  When ``config`` is
+      given it takes precedence and ``key`` is ignored.
     * Writes (update/remove) take a lock; reads do not.  A replacement swaps
       the whole engine object, so a reader sees either the old engine or the
       new one, and a decision already running keeps the engine it started with.
@@ -55,6 +58,13 @@ class PermissionManager:
         if engine is None:
             raise KeyError(f"no permission config registered for key {resolved!r}")
         return engine
+
+    def _engine_for(self, key: str | None, config: Mapping[str, Any] | None) -> PermissionEngine:
+        if config is None:
+            return self._engine(key)
+        if not isinstance(config, Mapping):
+            raise TypeError("config must be a mapping")
+        return PermissionEngine(config)
 
     def update_config(self, config: Mapping[str, Any], key: str | None = None) -> None:
         """Register or wholly replace the configuration of ``key``.
@@ -89,20 +99,26 @@ class PermissionManager:
         tool_name: str,
         tool_args: Mapping[str, Any],
         key: str | None = None,
+        *,
+        config: Mapping[str, Any] | None = None,
     ) -> PermissionResult:
-        """Evaluate one tool call with the configuration registered under ``key``."""
+        """Evaluate one tool call with the config under ``key`` or a one-off ``config``."""
 
-        return await self._engine(key).check_permission(tool_name, tool_args)
+        return await self._engine_for(key, config).check_permission(tool_name, tool_args)
 
     async def evaluate_global_policy_directly(
         self,
         tool_name: str,
         tool_args: Mapping[str, Any],
         key: str | None = None,
+        *,
+        config: Mapping[str, Any] | None = None,
     ) -> tuple[PermissionLevel | None, str | None]:
-        """Return the raw ``(permission, matched_rule)`` under ``key``."""
+        """Return the raw ``(permission, matched_rule)`` under ``key`` or a one-off ``config``."""
 
-        return await self._engine(key).evaluate_global_policy_directly(tool_name, tool_args)
+        return await self._engine_for(key, config).evaluate_global_policy_directly(
+            tool_name, tool_args
+        )
 
     def get_config(self, key: str | None = None) -> Mapping[str, Any]:
         """Return the configuration registered under ``key`` as a read-only view."""

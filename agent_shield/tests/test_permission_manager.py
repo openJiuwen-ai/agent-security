@@ -136,6 +136,64 @@ def test_evaluate_global_policy_directly_follows_the_key() -> None:
     assert asyncio.run(run("b"))[0] is PermissionLevel.DENY
 
 
+# --- one-off config -------------------------------------------------------------------
+
+
+def test_one_off_config_decides_without_registering() -> None:
+    manager = PermissionManager()
+    manager.update_config(_BASE, "a")
+    keys_before = manager.keys()
+
+    result = asyncio.run(manager.check_permission("bash", {"command": "ls"}, config=_DENY))
+
+    assert result.permission is PermissionLevel.DENY
+    assert manager.keys() == keys_before
+    assert _level(manager, "a") is PermissionLevel.ALLOW
+    assert dict(manager.get_config()) == {}
+
+
+def test_one_off_config_for_global_policy() -> None:
+    manager = PermissionManager()
+
+    permission, _rule = asyncio.run(
+        manager.evaluate_global_policy_directly("bash", {"command": "ls"}, config=_DENY)
+    )
+
+    assert permission is PermissionLevel.DENY
+
+
+def test_one_off_config_is_not_affected_by_later_changes_to_the_dict() -> None:
+    manager = PermissionManager()
+    config = {"tools": {"bash": "deny"}, "package_builtin_rules": False, "shell_allowlist": None}
+    result = asyncio.run(manager.check_permission("bash", {"command": "ls"}, config=config))
+    config["tools"]["bash"] = "allow"
+
+    assert result.permission is PermissionLevel.DENY
+    assert config["tools"]["bash"] == "allow"
+
+
+def test_config_takes_precedence_over_key() -> None:
+    manager = PermissionManager()
+    manager.update_config(_BASE, "a")
+
+    result = asyncio.run(manager.check_permission("bash", {"command": "ls"}, "a", config=_DENY))
+    permission, _rule = asyncio.run(
+        manager.evaluate_global_policy_directly("bash", {"command": "ls"}, "missing", config=_DENY)
+    )
+
+    assert result.permission is PermissionLevel.DENY
+    assert permission is PermissionLevel.DENY
+
+
+def test_invalid_one_off_config_raises() -> None:
+    manager = PermissionManager()
+
+    with pytest.raises(ValueError):
+        asyncio.run(manager.check_permission("bash", {"command": "ls"}, config={"enabled": "yes"}))
+    with pytest.raises(TypeError):
+        asyncio.run(manager.check_permission("bash", {"command": "ls"}, config=[]))  # type: ignore[arg-type]
+
+
 # --- unregistered keys and argument validation ----------------------------------------
 
 
