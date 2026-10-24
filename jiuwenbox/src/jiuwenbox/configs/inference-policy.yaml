@@ -1,6 +1,8 @@
 # Yuanrong (Edge/Remote) configuration.
-# This file extends the default policy with inference privacy proxy enabled.
-# The proxy runs on the edge server and routes LLM API requests.
+# This file extends the default policy with the inference privacy proxy.
+# The proxy stays off until the deployed copy sets listen_port above 0.
+# This sample binds the loopback address only. On the deployed copy, set
+# listen_host to the specific address for that service.
 #
 # The commented routes are a template. Copy a block into `routes` on the
 # deployed copy, or add routes through the proxy REST API.
@@ -11,15 +13,15 @@ version: 1
 name: "inference-policy"
 
 inference_privacy_proxies:
-  listen_host: "0.0.0.0"  # MUST, bind to all interfaces for edge server access
-  listen_port: 8322  # MUST, set to enable proxy. 0 or omit to disable.
+  listen_host: "127.0.0.1"  # loopback only; set a specific address on the deployed copy
+  listen_port: 0  # 0 disables the proxy. Set a positive port on the deployed copy to enable it.
 
   # OPTIONAL: example forwarding rules.
   # routes:
   #   - path_prefix: "llm"
   #     target_endpoint: "http://127.0.0.1:9000"
   #     api_key: ""
-  #     # curl -X POST http://127.0.0.1:8322/llm/v1/chat/completions \
+  #     # curl -X POST http://127.0.0.1:<listen_port>/llm/v1/chat/completions \
   #     #   -H "Authorization: Bearer <client-token>"
   #     # ==> http://127.0.0.1:9000/v1/chat/completions \
   #     #   -H "Authorization: Bearer <upstream-key>"
@@ -28,7 +30,7 @@ inference_privacy_proxies:
   #     target_endpoint: "http://127.0.0.1:9001"
   #     api_key: ""
   #     skip_cert_verify: false # for a self-signed cert server, debug only
-  #     # curl -X POST http://127.0.0.1:8322/custom/v1/chat/completions \
+  #     # curl -X POST http://127.0.0.1:<listen_port>/custom/v1/chat/completions \
   #     #   -H "Authorization: Bearer <client-token>"
   #     # ==> http://127.0.0.1:9001/v1/chat/completions \
   #     #   -H "Authorization: Bearer <upstream-key>"
