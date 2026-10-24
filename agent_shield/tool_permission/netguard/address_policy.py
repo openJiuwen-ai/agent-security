@@ -21,8 +21,8 @@ def _ip_networks(cidrs: tuple[str, ...]) -> tuple:
     """Build IP networks from CIDR text."""
 
     networks = []
-    for cidr in cidrs:
-        networks.append(ipaddress.ip_network(cidr))
+    for value in cidrs:
+        networks.append(ipaddress.ip_network(value))
     return tuple(networks)
 
 
