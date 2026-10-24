@@ -5,7 +5,7 @@ Rules:
 - Each submodule is its own facade; callers import from ``agent_shield.<sub>``.
 - Inside a submodule, imports are relative.  Across submodules, only the other
   submodule's root may be imported (never its internals).
-- Code outside agent_shield (jiuwenbox, agent-ssas) imports at most one level
+- Code outside agent_shield (jiuwenbox, agent_ssas) imports at most one level
   below the package root, and agent_shield never imports those projects.
 """
 
@@ -98,7 +98,7 @@ def test_agent_shield_does_not_import_sibling_projects() -> None:
     assert not offenders, offenders
 
 
-@pytest.mark.parametrize("project", ("jiuwenbox", "agent-ssas"))
+@pytest.mark.parametrize("project", ("jiuwenbox", "agent_ssas"))
 def test_other_projects_use_submodule_roots_only(project: str) -> None:
     root = REPO_ROOT / project
     if not root.is_dir():

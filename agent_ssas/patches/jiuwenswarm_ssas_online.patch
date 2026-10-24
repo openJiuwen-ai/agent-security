@@ -153,7 +153,7 @@ index 1ad1889bd..338e1c686 100644
      "tree-sitter-bash>=0.25.0,<0.26.0",
      "playwright>=1.40,<2",
      "uv>=0.4.0,<0.13",
-+    "agent-ssas @ git+https://gitcode.com/openJiuwen/agent-security.git@main#subdirectory=agent-ssas",
++    "agent-ssas @ git+https://gitcode.com/openJiuwen/agent-security.git@main#subdirectory=agent_ssas",
  ]
  
  [project.optional-dependencies]
@@ -161,7 +161,7 @@ index 1ad1889bd..338e1c686 100644
  [tool.uv.sources]
  workswarm-tui = { path = "./packages/jiuwenswarm-tui" }  # build-config: tui-source
  openjiuwen = { git = "https://gitcode.com/openJiuwen/agent-core.git", rev = "b5f189ba1054a338d8fa3e009b13053776340e44" }
-+agent-ssas = { git = "https://gitcode.com/openJiuwen/agent-security.git", branch = "main", subdirectory = "agent-ssas" }
++agent-ssas = { git = "https://gitcode.com/openJiuwen/agent-security.git", branch = "main", subdirectory = "agent_ssas" }
  
  [dependency-groups]
  # Testing (keep in sync with optional-dependencies.test)

@@ -1,4 +1,4 @@
-# agent-shield
+# Agent Shield
 
 agent-shield (distribution name `agent-shield`, import name `agent_shield`) is the in-process decision SDK. It does two things: it returns allow, ask, or deny for one tool call, and it returns a risk signal for content that is about to reach a model.
 

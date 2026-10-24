@@ -21,7 +21,7 @@ From the repository root, enter each component directory.
 Agent SSAS:
 
 ```bash
-cd agent-ssas
+cd agent_ssas
 uv venv
 uv pip install -e .
 uv pip install -e ".[http]"
@@ -41,6 +41,6 @@ pytest
 
 | Component | In-repo document |
 | --- | --- |
-| Agent SSAS | [Agent SSAS](Agent%20SSAS.md). The full tutorial set is `agent-ssas/docs/README.md` |
+| Agent SSAS | [Agent SSAS](Agent%20SSAS.md). The full tutorial set is `agent_ssas/docs/README.md` |
 | JiuwenBox | [JiuwenBox](JiuwenBox.md). API and deployment notes are in `jiuwenbox/README.md` |
-| agent-shield | [agent-shield](agent-shield.md) |
+| agent-shield | [Agent Shield](Agent%20Shield.md) |
