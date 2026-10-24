@@ -2,7 +2,7 @@
 
 """Sandbox policy projection from host permission rules."""
 
-from agent_shield.tool_permission.netguard.iptext import ipv4
+from agent_shield.tool_permission.netguard.iptext import cidr, ipv4
 from agent_shield.tool_permission.sandbox_projection import project_sandbox_policy
 
 
@@ -36,7 +36,7 @@ def test_net_and_file_rules_split_into_lists_and_skipped():
 
     assert projected.allow_domains == ["pypi.org"]
     assert projected.deny_domains == ["evil.example"]
-    assert ipv4(169, 254, 169, 254) + "/32" in projected.deny_ips
+    assert cidr(ipv4(169, 254, 169, 254), 32) in projected.deny_ips
     assert projected.allow_read == ["C:/work/repo"]
     assert projected.allow_write == ["C:/work/repo"]
     assert projected.deny_read == ["/etc/shadow"]

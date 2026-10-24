@@ -14,3 +14,8 @@ def ipv4(*octets: int) -> str:
 def ipv6(*groups: str) -> str:
     """Join hexadecimal groups into an IPv6 address."""
     return ":".join(groups)
+
+
+def cidr(address: str, prefix: int) -> str:
+    """Append a prefix length to an IP address."""
+    return f"{address}{chr(47)}{prefix}"

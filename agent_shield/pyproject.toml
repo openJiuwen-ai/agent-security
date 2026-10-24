@@ -24,6 +24,7 @@ dev = [
 
 [tool.setuptools]
 # Flat layout: this directory is itself the agent_shield package.
+license-files = ["LICENSE"]
 package-dir = {"agent_shield" = "."}
 packages = [
     "agent_shield",
