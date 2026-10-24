@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """State machine tests for sandbox lifecycle transitions."""
 
 from __future__ import annotations

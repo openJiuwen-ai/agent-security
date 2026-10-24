@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Package URL rules; connection address restrictions live in address_policy.
 
 These four detectors retain the migrated defaults. Effective host policy can

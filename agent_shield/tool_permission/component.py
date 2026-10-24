@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Component contract used by :class:`PermissionEngine`."""
 
 from __future__ import annotations

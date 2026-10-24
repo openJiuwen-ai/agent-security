@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """F1 动作决策：对工具调用输出确定性结论（allow / ask / deny）。
 
 本子模块的公开接口只有下面 ``__all__`` 列出的名字；调用方只从这里导入，

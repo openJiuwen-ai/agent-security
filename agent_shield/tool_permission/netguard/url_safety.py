@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Pure URL parsing and redacted network risk facts. No DNS resolution."""
 
 from __future__ import annotations

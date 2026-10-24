@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Integration tests for HTTP-aware inference privacy proxy with path routing."""
 
 import asyncio

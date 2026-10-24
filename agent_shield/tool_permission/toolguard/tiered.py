@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Layered command permission policy (R06-R12).
 
 One component, one interface: the pipeline below runs inside ``evaluate``.

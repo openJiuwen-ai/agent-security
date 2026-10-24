@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Shell AST pre-processing for tiered command permissions (R09, R11).
 
 The module prefers a tree-sitter bash backend when the optional runtime

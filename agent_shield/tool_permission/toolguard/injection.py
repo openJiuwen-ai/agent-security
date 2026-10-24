@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Command-injection detection for POSIX shell and PowerShell tools.
 
 The patterns, labels and first-hit semantics are carried over unchanged from the

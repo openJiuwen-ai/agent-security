@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """W3 through the public SDK facade and its production component set.
 
 No engine subclass, fake baseline or external repository is used here.

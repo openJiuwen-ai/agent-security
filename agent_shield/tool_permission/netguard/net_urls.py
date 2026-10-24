@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Build immutable URL rules from package defaults and effective host policy."""
 
 # All invalid configuration/action inputs follow W3's ValueError contract.

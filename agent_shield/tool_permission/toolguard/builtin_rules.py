@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Package built-in command rules (R07, R12).
 
 Pure data: every entry carries its default ``action``; ``severity`` is only a label.

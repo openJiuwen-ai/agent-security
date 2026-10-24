@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Shared fixtures for integration tests."""
 
 from __future__ import annotations

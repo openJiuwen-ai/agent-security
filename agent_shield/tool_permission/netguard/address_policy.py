@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Validate host-provided DNS snapshots without making network calls."""
 
 # All invalid configuration/action inputs follow W3's ValueError contract.

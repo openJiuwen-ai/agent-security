@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Shared URL policy contracts and deliberate migration differences.
 
 Rule scenarios were checked against agent-core develop 1fe6a036 and security

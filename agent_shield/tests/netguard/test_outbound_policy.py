@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Shared outbound policy: protected targets, actual exits and effective rules.
 
 Scenario provenance: jiuwenswarm xiaoyi_0.2.4.beta3.security commit

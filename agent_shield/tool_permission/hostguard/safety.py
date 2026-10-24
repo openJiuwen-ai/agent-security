@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Host availability guards: block commands that would kill the Swarm runtime."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Connection snapshots, address classes and per-hop DNS validation."""
 
 import pytest

@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Test configuration and environment detection utilities."""
 
 from __future__ import annotations

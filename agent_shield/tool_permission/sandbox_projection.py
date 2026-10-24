@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Project host permission rules onto a sandbox policy fragment.
 
 NetGuard and FileGuard rules that are a single host or an absolute path become

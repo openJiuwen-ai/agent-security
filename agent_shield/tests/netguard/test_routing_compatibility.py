@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Compatibility of older two-argument W3 component adapters.
 
 This fixture deliberately has no subscriptions. Production registration is
