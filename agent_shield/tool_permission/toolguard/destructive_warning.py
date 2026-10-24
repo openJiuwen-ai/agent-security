@@ -113,7 +113,8 @@ class DestructiveWarningComponent:
         RouteInterest(SecurityTarget.COMMAND, CommandDialect.POWERSHELL),
     )
 
-    def configure(self, config: Mapping[str, object]) -> None:
+    @staticmethod
+    def configure(config: Mapping[str, object]) -> None:
         """Patterns are code-owned; there are no configuration fields."""
         del config
 

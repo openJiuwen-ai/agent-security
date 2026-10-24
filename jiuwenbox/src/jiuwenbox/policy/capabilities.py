@@ -23,6 +23,25 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 
+def _filesystem_is_restricted(policy: SecurityPolicy) -> bool:
+    """Return whether the policy asks for filesystem enforcement."""
+
+    filesystem = policy.filesystem_policy
+    if filesystem.read_only or filesystem.read_write:
+        return True
+    return bool(filesystem.bind_mounts or filesystem.bind_root_entries)
+
+
+def _endpoint_is_restricted(endpoint) -> bool:
+    """Return whether one egress or ingress block names a concrete target."""
+
+    if endpoint.allowed_domains or endpoint.blocked_domains:
+        return True
+    if endpoint.allowed_ips or endpoint.blocked_ips:
+        return True
+    return bool(endpoint.allowed_ports or endpoint.blocked_ports)
+
+
 def _required_capabilities(policy: SecurityPolicy) -> set[str]:
     """Derive the security capabilities a policy implicitly requests.
 
@@ -37,8 +56,7 @@ def _required_capabilities(policy: SecurityPolicy) -> set[str]:
     """
     required: set[str] = set()
 
-    fs = policy.filesystem_policy
-    if fs.read_only or fs.read_write or fs.bind_mounts or fs.bind_root_entries:
+    if _filesystem_is_restricted(policy):
         required.add("filesystem_acl")
 
     if policy.process != policy.process.model_validate({}):
@@ -47,22 +65,7 @@ def _required_capabilities(policy: SecurityPolicy) -> set[str]:
         required.add("process_tree_containment")
 
     net = policy.network
-    egress = net.egress
-    ingress = net.ingress
-    if (
-        egress.allowed_domains
-        or egress.blocked_domains
-        or egress.allowed_ips
-        or egress.blocked_ips
-        or egress.allowed_ports
-        or egress.blocked_ports
-        or ingress.allowed_domains
-        or ingress.blocked_domains
-        or ingress.allowed_ips
-        or ingress.blocked_ips
-        or ingress.allowed_ports
-        or ingress.blocked_ports
-    ):
+    if _endpoint_is_restricted(net.egress) or _endpoint_is_restricted(net.ingress):
         required.add("egress_filter")
 
     return required

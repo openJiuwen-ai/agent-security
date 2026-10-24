@@ -111,6 +111,21 @@ class BackgroundJob:
     exit_code: int | None = None
 
 
+def _bounded_acl_roots(workspace, read_write, bind_mounts) -> list[str]:
+    """Collect non-empty ACL roots from the workspace and policy paths."""
+
+    candidates = [workspace]
+    if read_write:
+        candidates.extend(read_write)
+    for mount in bind_mounts or []:
+        candidates.append(mount.sandbox_path)
+    roots = []
+    for path in candidates:
+        if path:
+            roots.append(path)
+    return roots
+
+
 def _summarize_command(command: list[str], max_length: int = 180) -> str:
     text = json.dumps(command, ensure_ascii=False)
     if len(text) <= max_length:
@@ -176,6 +191,29 @@ class WindowsRuntime(RuntimeAdapter):
                 f"current platform is {sys.platform!r}"
             )
 
+    def ensure_platform(self) -> None:
+        """Reject hosts that cannot run the Windows sandbox runtime."""
+
+        self._ensure_platform()
+
+    def bind_exec_state(self, runners: dict) -> None:
+        """Install an in-memory runner table for exec tests."""
+
+        self._background_jobs = {}
+        self._win_runners = runners
+        self._exec_concurrency_limit = 8
+        self._win_exec_sem = None
+
+        def skip_platform_check() -> None:
+            return None
+
+        self._ensure_platform = skip_platform_check
+
+    def background_job(self, sandbox_id: str, job_id: str) -> BackgroundJob:
+        """Return one tracked background job."""
+
+        return self._background_jobs[sandbox_id][job_id]
+
     # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
@@ -223,6 +261,12 @@ class WindowsRuntime(RuntimeAdapter):
                 )
 
     @staticmethod
+    def file_op_unavailable(sandbox_id: str) -> RuntimeFileOpResult:
+        """Report that the runner IPC channel is not available."""
+
+        return WindowsRuntime._file_op_unavailable(sandbox_id)
+
+    @staticmethod
     def _file_op_unavailable(sandbox_id: str) -> RuntimeFileOpResult:
         return RuntimeFileOpResult(
             ok=False,
@@ -232,6 +276,12 @@ class WindowsRuntime(RuntimeAdapter):
                 "the runner is not running or its control port is gone"
             ),
         )
+
+    @staticmethod
+    def file_op_result_from_response(response: dict[str, Any]) -> RuntimeFileOpResult:
+        """Translate one runner file-operation response."""
+
+        return WindowsRuntime._file_op_result_from_response(response)
 
     @staticmethod
     def _file_op_result_from_response(response: dict[str, Any]) -> RuntimeFileOpResult:
@@ -393,11 +443,11 @@ class WindowsRuntime(RuntimeAdapter):
                 deny_read=deny_read_paths,
                 sandbox_user_sid=sandbox_user_sid,
                 preinstalled_read_paths=_preinstalled,
-                bounded_roots=[p for p in (
-                    [workspace]
-                    + list(policy.filesystem_policy.read_write or [])
-                    + [m.sandbox_path for m in policy.filesystem_policy.bind_mounts or []]
-                ) if p],
+                bounded_roots=_bounded_acl_roots(
+                    workspace,
+                    policy.filesystem_policy.read_write,
+                    policy.filesystem_policy.bind_mounts,
+                ),
             )
             if sandbox_user_sid:
                 _traverse_targets: list[str] = [workspace, *allow_write_paths]
@@ -887,6 +937,12 @@ class WindowsRuntime(RuntimeAdapter):
         return job
 
     @staticmethod
+    def job_status(job: BackgroundJob) -> BackgroundJobStatus:
+        """Return the public status view of one background job."""
+
+        return WindowsRuntime._job_status(job)
+
+    @staticmethod
     def _job_status(job: BackgroundJob) -> BackgroundJobStatus:
         return BackgroundJobStatus(
             job_id=job.job_id,
@@ -998,7 +1054,7 @@ class WindowsRuntime(RuntimeAdapter):
                 loop.run_in_executor(None, self._send_runner_shutdown_blocking, runner),
                 timeout=DAEMON_SHUTDOWN_TIMEOUT_SECONDS,
             )
-        except (asyncio.TimeoutError, OSError) as exc:
+        except OSError as exc:
             logger.debug("Windows runner shutdown 失败 %s: %s", sandbox_id, exc)
 
     @staticmethod

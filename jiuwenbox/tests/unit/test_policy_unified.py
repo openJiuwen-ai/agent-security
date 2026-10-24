@@ -12,36 +12,43 @@ from jiuwenbox.server.runtime.errors import PolicyValidationError
 
 
 class TestSchemaVersion:
-    def test_legacy_policy_without_schema_version_loads(self):
+    @staticmethod
+    def test_legacy_policy_without_schema_version_loads():
         policy = load_policy_from_text("name: legacy\n")
         assert policy.schema_version == 1
         assert policy.name == "legacy"
 
-    def test_explicit_v1_loads(self):
+    @staticmethod
+    def test_explicit_v1_loads():
         policy = load_policy_from_text("schema_version: 1\nname: v1\n")
         assert policy.schema_version == 1
         assert policy.name == "v1"
 
-    def test_future_version_rejected(self):
+    @staticmethod
+    def test_future_version_rejected():
         with pytest.raises(PolicyValidationError):
             load_policy_from_text("schema_version: 999\nname: future\n")
 
-    def test_boolean_schema_version_rejected(self):
+    @staticmethod
+    def test_boolean_schema_version_rejected():
         with pytest.raises(PolicyValidationError):
             load_policy_from_text("schema_version: true\nname: bad\n")
 
 
 class TestReservedEnvVars:
-    def test_reserved_set_contains_sandbox_ip(self):
+    @staticmethod
+    def test_reserved_set_contains_sandbox_ip():
         assert "SANDBOX_IP" in RESERVED_ENV_VARS
 
-    def test_policy_cannot_override_sandbox_ip(self):
+    @staticmethod
+    def test_policy_cannot_override_sandbox_ip():
         with pytest.raises(Exception):
             SecurityPolicy.model_validate(
                 {"environment": {"SANDBOX_IP": "10.0.0.1"}}
             )
 
-    def test_policy_allows_normal_env(self):
+    @staticmethod
+    def test_policy_allows_normal_env():
         policy = SecurityPolicy.model_validate(
             {"environment": {"FOO": "bar", "SANDBOX_IPCASE": "x"}}
         )
@@ -49,7 +56,8 @@ class TestReservedEnvVars:
 
 
 class TestCapabilityValidation:
-    def test_unsupported_security_capability_fails_closed(self):
+    @staticmethod
+    def test_unsupported_security_capability_fails_closed():
         from jiuwenbox.policy.capabilities import validate_policy_capabilities
         from jiuwenbox.server.runtime.capabilities import RuntimeCapabilities
         from jiuwenbox.server.runtime.errors import CapabilityUnsupportedError
@@ -61,7 +69,8 @@ class TestCapabilityValidation:
         with pytest.raises(CapabilityUnsupportedError):
             validate_policy_capabilities(policy, caps)
 
-    def test_supported_capability_passes(self):
+    @staticmethod
+    def test_supported_capability_passes():
         from jiuwenbox.policy.capabilities import validate_policy_capabilities
         from jiuwenbox.server.runtime.capabilities import RuntimeCapabilities
 

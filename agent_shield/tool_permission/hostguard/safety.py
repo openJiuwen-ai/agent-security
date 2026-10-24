@@ -284,13 +284,11 @@ def _check_segment_safety(
         base = _segment_base_command(segment)
         tokens = _segment_tokens(segment) if base else None
         parsed.append((segment, base, tokens))
-        if (
-            python_name_kill
-            and tokens
-            and base in _PS_PROCESS_ENUM_BASES
-            and _segment_has_interpreter_name(tokens)
-        ):
-            enum_interpreter = True
+        enumerates_processes = bool(tokens) and base in _PS_PROCESS_ENUM_BASES
+        names_interpreter = bool(tokens) and _segment_has_interpreter_name(tokens)
+        if python_name_kill and enumerates_processes:
+            if names_interpreter:
+                enum_interpreter = True
     literals = _self_identity_literals()
     for segment, base, tokens in parsed:
         if tokens is None:
@@ -300,16 +298,14 @@ def _check_segment_safety(
             continue
         if python_name_kill and base == "wmic":
             lowered_tokens = [token.lower() for token in tokens]
-            if (
-                "process" in lowered_tokens
-                and "delete" in lowered_tokens
-                and "processid" not in segment.lower()
-                and _segment_has_interpreter_name(tokens)
-            ):
-                return (
-                    "blocked pattern: wmic name-based kill of host python "
-                    "interpreter (use PID-precise kill for own spawned processes)"
-                )
+            deletes_by_name = "process" in lowered_tokens and "delete" in lowered_tokens
+            not_by_pid = "processid" not in segment.lower()
+            if deletes_by_name and not_by_pid:
+                if _segment_has_interpreter_name(tokens):
+                    return (
+                        "blocked pattern: wmic name-based kill of host python "
+                        "interpreter (use PID-precise kill for own spawned processes)"
+                    )
             continue
         if base not in _KILL_FAMILY_BASES:
             continue

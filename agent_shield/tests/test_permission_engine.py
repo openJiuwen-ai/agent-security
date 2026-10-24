@@ -243,7 +243,15 @@ def test_all_subscription_matches_each_category(tool: str) -> None:
     assert RouteInterest(SecurityTarget.ALL).matches(route)
 
 
-@pytest.mark.parametrize("target", [SecurityTarget.FILE, SecurityTarget.NETWORK, SecurityTarget.OTHER, SecurityTarget.ALL])
+@pytest.mark.parametrize(
+    "target",
+    [
+        SecurityTarget.FILE,
+        SecurityTarget.NETWORK,
+        SecurityTarget.OTHER,
+        SecurityTarget.ALL,
+    ],
+)
 def test_non_command_dialect_subscription_is_rejected(target: SecurityTarget) -> None:
     with pytest.raises(ValueError):
         RouteInterest(target, CommandDialect.POSIX_SHELL)

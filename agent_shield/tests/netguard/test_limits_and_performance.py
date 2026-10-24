@@ -3,6 +3,7 @@
 """Capacity boundaries and reproducible, IO-free decision timing."""
 
 import asyncio
+import logging
 from statistics import median
 from time import perf_counter_ns
 
@@ -69,7 +70,11 @@ def test_decision_latency_at_capacity(distribution):
         "glob_suffix": lambda i: f"*host{i}.example.com",
         "glob_prefix": lambda i: f"host{i}.example.*",
     }
-    rules = {patterns[distribution](i): "deny" for i in range(9996)}
+    pattern_for = patterns.get(distribution)
+    assert pattern_for is not None
+    rules = {}
+    for index in range(9996):
+        rules[pattern_for(index)] = "deny"
     component = checker(rules)
     prefix = "https://host9995.example.com/"
     args = {
@@ -91,6 +96,11 @@ def test_decision_latency_at_capacity(distribution):
 
     samples = asyncio.run(measure())
     p50, p99 = median(samples), samples[int(len(samples) * 0.99) - 1]
-    print(f"W3 {distribution} capacity decision latency: P50={p50:.3f}ms P99={p99:.3f}ms")
+    logging.getLogger(__name__).info(
+        "W3 %s capacity decision latency: P50=%.3fms P99=%.3fms",
+        distribution,
+        p50,
+        p99,
+    )
     assert p50 < 1.0
     assert p99 < 5.0

@@ -119,8 +119,10 @@ def test_user_action_override_changes_package_rule_action() -> None:
     ],
 )
 def test_compound_chain_rule(command: str, chained: bool) -> None:
-    config = {**_ALLOW_BASH, "guard_actions": {k: "allow" for k in (
-        "too_complex", "parse_unavailable", "structure_guard", "interpreter_sink")}}
+    guard_actions = {}
+    for key in ("too_complex", "parse_unavailable", "structure_guard", "interpreter_sink"):
+        guard_actions[key] = "allow"
+    config = {**_ALLOW_BASH, "guard_actions": guard_actions}
     result = _run(config, command)
     assert (result.permission is PermissionLevel.ASK) is chained
     if chained:

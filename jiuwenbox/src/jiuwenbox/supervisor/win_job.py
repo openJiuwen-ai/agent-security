@@ -2,8 +2,8 @@
 """Windows Job Object 资源限制 (等价 Linux cgroup).
 
 对齐 docs/window沙箱.md 6.8:
-  - 内存上限   -> JobObjectExtendedLimitInformation.ProcessMemoryLimit
-  - CPU 速率   -> JobObjectCpuRateControlInformation.CpuRate
+  - 内存上限   -> JobObjectExtendedLimitInformation.process_memory_limit
+  - CPU 速率   -> JobObjectCpuRateControlInformation.cpu_rate
   - 进程数上限 -> JobObjectBasicLimitInformation.ActiveProcessLimit
   - 全部清理   -> JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
 
@@ -58,8 +58,8 @@ class JobObjExtenLimit(ctypes.Structure):  # noqa: N801 - Win32 SDK 规范类名
     _fields_ = [
         ("BasicLimitInformation", JobObjBaseLimit),
         ("IoInfo", IoCounters),
-        ("ProcessMemoryLimit", ctypes.c_size_t),
-        ("JobMemoryLimit", ctypes.c_size_t),
+        ("process_memory_limit", ctypes.c_size_t),
+        ("job_memory_limit", ctypes.c_size_t),
         ("PeakProcessMemoryUsed", ctypes.c_size_t),
         ("PeakJobMemoryUsed", ctypes.c_size_t),
     ]
@@ -67,8 +67,8 @@ class JobObjExtenLimit(ctypes.Structure):  # noqa: N801 - Win32 SDK 规范类名
 
 class JobObjCpuRateControl(ctypes.Structure):  # noqa: N801 - Win32 SDK 规范类名
     _fields_ = [
-        ("ControlFlags", wintypes.DWORD),
-        ("CpuRate", wintypes.DWORD),
+        ("control_flags", wintypes.DWORD),
+        ("cpu_rate", wintypes.DWORD),
     ]
 
 
@@ -155,15 +155,15 @@ def create_job(
             const.JOB_OBJECT_LIMIT_JOB_MEMORY
             | const.JOB_OBJECT_LIMIT_PROCESS_MEMORY
         )
-        ext.JobMemoryLimit = int(memory_max)  # noqa: N815 - Win32 SDK 字段名
-        ext.ProcessMemoryLimit = int(memory_max)  # noqa: N815 - Win32 SDK 字段名
+        ext.job_memory_limit = int(memory_max)  # noqa: N815 - Win32 SDK 字段名
+        ext.process_memory_limit = int(memory_max)  # noqa: N815 - Win32 SDK 字段名
     if max_processes is not None and max_processes > 0:
         ext.BasicLimitInformation.LimitFlags |= const.JOB_OBJECT_LIMIT_ACTIVE_PROCESS
         ext.BasicLimitInformation.ActiveProcessLimit = int(max_processes)
 
     ok = kernel32.SetInformationJobObject(
         job_handle,
-        const.JobObjectExtendedLimitInformation,
+        const.JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
         ctypes.byref(ext),
         ctypes.sizeof(ext),
     )
@@ -174,15 +174,15 @@ def create_job(
     # --- 2. CPU 速率限制 ---
     if cpu_rate is not None and 0 < cpu_rate <= 100:
         rate = JobObjCpuRateControl()
-        rate.ControlFlags = (  # noqa: N815 - Win32 SDK 字段名
+        rate.control_flags = (  # noqa: N815 - Win32 SDK 字段名
             const.JOB_OBJECT_CPU_RATE_CONTROL_ENABLE
             | const.JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP
         )
         # CpuRate 以 0.01% 为单位, 百分比 * 100.
-        rate.CpuRate = int(cpu_rate * 100)  # noqa: N815 - Win32 SDK 字段名
+        rate.cpu_rate = int(cpu_rate * 100)  # noqa: N815 - Win32 SDK 字段名
         ok = kernel32.SetInformationJobObject(
             job_handle,
-            const.JobObjectCpuRateControlInformation,
+            const.JOB_OBJECT_CPU_RATE_CONTROL_INFORMATION,
             ctypes.byref(rate),
             ctypes.sizeof(rate),
         )
@@ -258,7 +258,7 @@ def create_exec_job() -> int:
     ext.BasicLimitInformation.LimitFlags = const.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
     ok = kernel32.SetInformationJobObject(
         job_handle,
-        const.JobObjectExtendedLimitInformation,
+        const.JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
         ctypes.byref(ext),
         ctypes.sizeof(ext),
     )
@@ -281,7 +281,7 @@ def release_exec_job(job_handle: int) -> None:
     try:
         limits = JobObjExtenLimit()
         if not kernel32.SetInformationJobObject(
-            wintypes.HANDLE(job_handle), const.JobObjectExtendedLimitInformation,
+            wintypes.HANDLE(job_handle), const.JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
             ctypes.byref(limits), ctypes.sizeof(limits),
         ):
             raise ctypes.WinError(ctypes.get_last_error())

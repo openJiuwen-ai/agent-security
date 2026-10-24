@@ -46,7 +46,8 @@ class InjectionComponent:
         RouteInterest(SecurityTarget.COMMAND, CommandDialect.POWERSHELL),
     )
 
-    def configure(self, config: Mapping[str, object]) -> None:
+    @staticmethod
+    def configure(config: Mapping[str, object]) -> None:
         """Accept the complete engine config; the patterns are code-defined."""
         del config
 

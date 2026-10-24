@@ -131,9 +131,9 @@ def _wfp_error(hr: int, where: str) -> "OSError":
 # ---------------------------------------------------------------------------
 class Guid(ctypes.Structure):  # noqa: N801 - Win32 SDK 规范类名
     _fields_ = [
-        ("Data1", wintypes.DWORD),
-        ("Data2", wintypes.WORD),
-        ("Data3", wintypes.WORD),
+        ("data_1", wintypes.DWORD),
+        ("data_2", wintypes.WORD),
+        ("data_3", wintypes.WORD),
         ("Data4", ctypes.c_ubyte * 8),
     ]
 
@@ -154,9 +154,9 @@ def _guid_from_str(s: str) -> Guid:
             f"(若含 '-UDP'/'-TCP' 后缀, 请更新 win_wfp.py 至含 _dns_filter_guid_str 的版本)"
         ) from exc
     g = Guid()
-    g.Data1 = u.time_low  # noqa: N815 - Win32 SDK 字段名
-    g.Data2 = u.time_mid  # noqa: N815 - Win32 SDK 字段名
-    g.Data3 = u.time_hi_version  # noqa: N815 - Win32 SDK 字段名
+    g.data_1 = u.time_low  # noqa: N815 - Win32 SDK 字段名
+    g.data_2 = u.time_mid  # noqa: N815 - Win32 SDK 字段名
+    g.data_3 = u.time_hi_version  # noqa: N815 - Win32 SDK 字段名
     # Data4 取 bytes_le 的后 8 字节 (uuid 库保证该顺序).
     for i, b in enumerate(u.bytes_le[8:]):
         g.Data4[i] = b  # noqa: N815 - Win32 SDK 字段名
@@ -167,9 +167,9 @@ def _guid_to_str(g: "Guid") -> str:
     """把 Guid 结构体转回标准 Guid 字符串 (review #1: uninstall 枚举后收集 key)."""
     import uuid
     # 构造 bytes_le: Data1(4, 小端) + Data2(2, 小端) + Data3(2, 小端) + Data4(8, 逐字节).
-    data1 = g.Data1  # noqa: N815 - Win32 SDK 字段名
-    data2 = g.Data2  # noqa: N815 - Win32 SDK 字段名
-    data3 = g.Data3  # noqa: N815 - Win32 SDK 字段名
+    data1 = g.data_1  # noqa: N815 - Win32 SDK 字段名
+    data2 = g.data_2  # noqa: N815 - Win32 SDK 字段名
+    data3 = g.data_3  # noqa: N815 - Win32 SDK 字段名
     data4 = bytes(g.Data4)  # noqa: N815 - Win32 SDK 字段名
     bytes_le = (
         data1.to_bytes(4, "little")
@@ -241,7 +241,7 @@ class FwpAddrMaskV4(ctypes.Structure):  # noqa: N801 - Win32 SDK 规范类名
 class FwpAddrMaskV6(ctypes.Structure):  # noqa: N801 - Win32 SDK 规范类名
     _fields_ = [
         ("addr", ctypes.c_uint8 * 16),
-        ("prefixLength", ctypes.c_uint8),
+        ("prefix_length", ctypes.c_uint8),
     ]
 
 
@@ -338,8 +338,8 @@ class FwpmDisplayData0(ctypes.Structure):  # noqa: N801 - Win32 SDK 规范类名
 class FwpmFilterCondition0(ctypes.Structure):  # noqa: N801 - Win32 SDK 规范类名
     """单个 filter condition: fieldKey + matchType + conditionValue."""
     _fields_ = [
-        ("fieldKey", Guid),
-        ("matchType", ctypes.c_uint32),  # FWP_MATCH_*
+        ("field_key", Guid),
+        ("match_type", ctypes.c_uint32),  # FWP_MATCH_*
         ("conditionValue", FwpConditionValue0),
     ]
 
@@ -371,7 +371,7 @@ class FwpmAction0(ctypes.Structure):  # noqa: N801 - Win32 SDK 规范类名
 # FWPM_FILTER0 (fwpmtypes.h). 布局严格对齐 windows-sys SDK (repr(C), x64):
 #   filterKey(GUID,16@0) displayData(FWPM_DISPLAY_DATA0,16@16) flags(UINT32,4@32)
 #   pad(4@36) providerKey(GUID*,8@40) providerData(FWP_BYTE_BLOB,16@48)
-#   layerKey(GUID,16@64) subLayerKey(GUID,16@80) weight(FWP_VALUE0,16@96)
+#   layerKey(GUID,16@64) sub_layer_key(GUID,16@80) weight(FWP_VALUE0,16@96)
 #   numFilterConditions(UINT32,4@112) pad(4@116)
 #   filterCondition(FWPM_FILTER_CONDITION0*,8@120) action(FWPM_ACTION0,24@128)
 #   Anonymous(FWPM_FILTER0_0,16@152)  union{UINT64 rawContext; GUID providerContextKey}
@@ -388,16 +388,16 @@ class FwpmFilterUnion(ctypes.Union):  # noqa: N801 - Win32 SDK 规范类名
 
 class FwpmFilter0(ctypes.Structure):  # noqa: N801 - Win32 SDK 规范类名
     _fields_ = [
-        ("filterKey", Guid),
+        ("filter_key", Guid),
         ("displayData", FwpmDisplayData0),       # 内嵌, 非 c_void_p
         ("flags", ctypes.c_uint32),
         ("providerKey", ctypes.c_void_p),          # Guid*
         ("providerData", FwpByteBlob),          # 内嵌, 非 providerDataSize+ptr
-        ("layerKey", Guid),
-        ("subLayerKey", Guid),
+        ("layer_key", Guid),
+        ("sub_layer_key", Guid),
         ("weight", FwpValue0),
-        ("numFilterConditions", ctypes.c_uint32),
-        ("filterCondition", ctypes.POINTER(FwpmFilterCondition0)),
+        ("num_filter_conditions", ctypes.c_uint32),
+        ("filter_condition", ctypes.POINTER(FwpmFilterCondition0)),
         ("action", FwpmAction0),
         ("Anonymous", FwpmFilterUnion),       # union{rawContext; providerContextKey}
         ("reserved", ctypes.c_void_p),            # Guid*
@@ -407,12 +407,12 @@ class FwpmFilter0(ctypes.Structure):  # noqa: N801 - Win32 SDK 规范类名
 
 
 class FwpmSubLayer(ctypes.Structure):  # noqa: N801,D205,D415 - Win32 SDK 类名 + docstring 格式
-    """FwpmSubLayer (fwpmtypes.h): subLayerKey + displayData(内嵌) +
+    """FwpmSubLayer (fwpmtypes.h): sub_layer_key + displayData(内嵌) +
         flags + providerKey(Guid*) + providerData(内嵌) + weight(UINT16).
         weight 是 UINT16, 旧版误为 c_uint32; 且无 providerDataSize 字段.
     """
     _fields_ = [
-        ("subLayerKey", Guid),
+        ("sub_layer_key", Guid),
         ("displayData", FwpmDisplayData0),
         ("flags", ctypes.c_uint32),
         ("providerKey", ctypes.c_void_p),   # Guid*
@@ -428,7 +428,7 @@ class FwpmSession0(ctypes.Structure):  # noqa: N801,D205,D415 - Win32 SDK 类名
         txnWait 字段、缺输出字段.
     """
     _fields_ = [
-        ("sessionKey", Guid),
+        ("session_key", Guid),
         ("displayData", FwpmDisplayData0),
         ("flags", ctypes.c_uint32),
         ("txnWaitTimeoutInMSec", ctypes.c_uint32),
@@ -514,7 +514,7 @@ def _open_engine() -> wintypes.HANDLE:
     """FwpmEngineOpen0 打开 WFP 引擎会话."""
     fwpu = _get_fwpuclnt()
     session = FwpmSession0()
-    session.sessionKey = _guid_from_str("00000000-0000-0000-0000-000000000000")  # noqa: N815 - Win32 SDK 字段名
+    session.session_key = _guid_from_str("00000000-0000-0000-0000-000000000000")  # noqa: N815 - Win32 SDK 字段名
     session.flags = const.FWP_SESSION_FLAG_NONE  # noqa: N815 - Win32 SDK 字段名
     engine = wintypes.HANDLE()
     hr = fwpu.FwpmEngineOpen0(
@@ -526,7 +526,7 @@ def _open_engine() -> wintypes.HANDLE:
     return engine
 
 
-def _add_sublayer(engine: wintypes.HANDLE, subLayerKey: str, weight: int) -> Guid:
+def _add_sublayer(engine: wintypes.HANDLE, sub_layer_key: str, weight: int) -> Guid:
     """创建/复用 sublayer (幂等: 已存在则忽略).
 
     S9 实跑: displayData.name 不能为 NULL (BFE 报 FWP_E_INVALID_AUTH_VALUE=
@@ -535,7 +535,7 @@ def _add_sublayer(engine: wintypes.HANDLE, subLayerKey: str, weight: int) -> Gui
     """
     fwpu = _get_fwpuclnt()
     sublayer = FwpmSubLayer()
-    sublayer.subLayerKey = _guid_from_str(subLayerKey)  # noqa: N815 - Win32 SDK 字段名
+    sublayer.sub_layer_key = _guid_from_str(sub_layer_key)  # noqa: N815 - Win32 SDK 字段名
     sublayer.displayData.name = "JiuwenBoxSandboxSublayer"  # noqa: N815 - Win32 SDK 字段名
     sublayer.displayData.description = "JiuwenBox sandbox egress filter sublayer"  # noqa: N815 - Win32 SDK 字段名
     sublayer.flags = const.FWPM_SUBLAYER_FLAG_PERSISTENT  # noqa: N815 - Win32 SDK 字段名
@@ -545,7 +545,7 @@ def _add_sublayer(engine: wintypes.HANDLE, subLayerKey: str, weight: int) -> Gui
         logger.debug("Sublayer 已存在, 跳过创建")
     elif hr != 0:
         raise _wfp_error(hr, "FwpmSubLayerAdd0")
-    return sublayer.subLayerKey  # noqa: N815 - Win32 SDK 字段名
+    return sublayer.sub_layer_key  # noqa: N815 - Win32 SDK 字段名
 
 
 def build_loopback_v4_condition() -> "tuple[FwpmFilterCondition0, FwpAddrMaskV4]":
@@ -558,8 +558,8 @@ def build_loopback_v4_condition() -> "tuple[FwpmFilterCondition0, FwpAddrMaskV4]
     1.0.0.127).
     """
     cond = FwpmFilterCondition0()
-    cond.fieldKey = _guid_from_str(const.FWPM_CONDITION_IP_REMOTE_ADDRESS)  # noqa: N815 - Win32 SDK 字段名
-    cond.matchType = const.FWP_MATCH_EQUAL  # noqa: N815 - Win32 SDK 字段名
+    cond.field_key = _guid_from_str(const.FWPM_CONDITION_IP_REMOTE_ADDRESS)  # noqa: N815 - Win32 SDK 字段名
+    cond.match_type = const.FWP_MATCH_EQUAL  # noqa: N815 - Win32 SDK 字段名
     cond.conditionValue.type = const.FWP_V4_ADDR_MASK  # noqa: N815 - Win32 SDK 字段名
     addr_mask = FwpAddrMaskV4()
     addr_mask.addr = const.LOOPBACK_IPV4_INT  # noqa: N815 - Win32 SDK 字段名 # 0x7F000001 = 127.0.0.1 host order
@@ -573,8 +573,8 @@ def build_loopback_v4_condition() -> "tuple[FwpmFilterCondition0, FwpAddrMaskV4]
 def _build_loopback_v6_condition() -> "tuple[FwpmFilterCondition0, FwpAddrMaskV6]":
     """构造 IPv6 ::1 条件. 返回 (cond, 存活的局部实例)."""
     cond = FwpmFilterCondition0()
-    cond.fieldKey = _guid_from_str(const.FWPM_CONDITION_IP_REMOTE_ADDRESS)  # noqa: N815 - Win32 SDK 字段名
-    cond.matchType = const.FWP_MATCH_EQUAL  # noqa: N815 - Win32 SDK 字段名
+    cond.field_key = _guid_from_str(const.FWPM_CONDITION_IP_REMOTE_ADDRESS)  # noqa: N815 - Win32 SDK 字段名
+    cond.match_type = const.FWP_MATCH_EQUAL  # noqa: N815 - Win32 SDK 字段名
     cond.conditionValue.type = const.FWP_V6_ADDR_AND_MASK  # noqa: N815 - Win32 SDK 字段名
     addr_mask = FwpAddrMaskV6()
     addr_arr = (ctypes.c_uint8 * 16)(
@@ -583,7 +583,7 @@ def _build_loopback_v6_condition() -> "tuple[FwpmFilterCondition0, FwpAddrMaskV6
     ctypes.memmove(
         ctypes.addressof(addr_mask.addr), addr_arr, 16,
     )
-    addr_mask.prefixLength = 128  # noqa: N815 - Win32 SDK 字段名
+    addr_mask.prefix_length = 128  # noqa: N815 - Win32 SDK 字段名
     cond.conditionValue.value.v6AddrMask = ctypes.cast(  # noqa: N815 - Win32 SDK 字段名
         ctypes.pointer(addr_mask), ctypes.c_void_p,
     ).value
@@ -604,8 +604,8 @@ def _build_ale_user_condition(sandbox_user_sid: str) -> "tuple[FwpmFilterConditi
     FwpByteBlob 实例引用, 调用方需保持其生命周期到 FwpmFilterAdd0 返回.
     """
     cond = FwpmFilterCondition0()
-    cond.fieldKey = _guid_from_str(const.FWPM_CONDITION_ALE_USER_ID)  # noqa: N815 - Win32 SDK 字段名
-    cond.matchType = const.FWP_MATCH_EQUAL  # noqa: N815 - Win32 SDK 字段名
+    cond.field_key = _guid_from_str(const.FWPM_CONDITION_ALE_USER_ID)  # noqa: N815 - Win32 SDK 字段名
+    cond.match_type = const.FWP_MATCH_EQUAL  # noqa: N815 - Win32 SDK 字段名
     cond.conditionValue.type = const.FWP_SECURITY_DESCRIPTOR_TYPE  # noqa: N815 - Win32 SDK 字段名
 
     # 用 win32security 构造自相关 SD. 延迟 import (Linux 无 pywin32).
@@ -687,8 +687,8 @@ def _build_port_eq_condition(port: int) -> FwpmFilterCondition0:
     个 EQUAL filter 更可靠, 端口范围通常 <=10 个, 开销可忽略.
     """
     cond = FwpmFilterCondition0()
-    cond.fieldKey = _guid_from_str(const.FWPM_CONDITION_IP_REMOTE_PORT)  # noqa: N815 - Win32 SDK 字段名
-    cond.matchType = const.FWP_MATCH_EQUAL  # noqa: N815 - Win32 SDK 字段名
+    cond.field_key = _guid_from_str(const.FWPM_CONDITION_IP_REMOTE_PORT)  # noqa: N815 - Win32 SDK 字段名
+    cond.match_type = const.FWP_MATCH_EQUAL  # noqa: N815 - Win32 SDK 字段名
     cond.conditionValue.type = const.FWP_UINT16  # noqa: N815 - Win32 SDK 字段名
     cond.conditionValue.value.uint16 = port  # noqa: N815 - Win32 SDK 字段名
     return cond
@@ -700,8 +700,8 @@ def _build_protocol_condition(protocol: int) -> FwpmFilterCondition0:
     protocol 值对齐 winnt.h / RFC 790: IPPROTO_TCP=6, IPPROTO_UDP=17.
     """
     cond = FwpmFilterCondition0()
-    cond.fieldKey = _guid_from_str(const.FWPM_CONDITION_IP_PROTOCOL)  # noqa: N815 - Win32 SDK 字段名
-    cond.matchType = const.FWP_MATCH_EQUAL  # noqa: N815 - Win32 SDK 字段名
+    cond.field_key = _guid_from_str(const.FWPM_CONDITION_IP_PROTOCOL)  # noqa: N815 - Win32 SDK 字段名
+    cond.match_type = const.FWP_MATCH_EQUAL  # noqa: N815 - Win32 SDK 字段名
     cond.conditionValue.type = const.FWP_UINT8  # noqa: N815 - Win32 SDK 字段名
     cond.conditionValue.value.uint8 = protocol  # noqa: N815 - Win32 SDK 字段名
     return cond
@@ -727,9 +727,9 @@ def _add_filter(  # pylint: disable=huawei-too-many-arguments
     fkey = _guid_from_str(filter_key)
 
     flt = FwpmFilter0()
-    flt.filterKey = fkey  # noqa: N815 - Win32 SDK 字段名
-    flt.layerKey = _guid_from_str(layer_key)  # noqa: N815 - Win32 SDK 字段名
-    flt.subLayerKey = sublayer_key  # noqa: N815 - Win32 SDK 字段名
+    flt.filter_key = fkey  # noqa: N815 - Win32 SDK 字段名
+    flt.layer_key = _guid_from_str(layer_key)  # noqa: N815 - Win32 SDK 字段名
+    flt.sub_layer_key = sublayer_key  # noqa: N815 - Win32 SDK 字段名
     flt.flags = const.FWPM_FILTER_FLAG_PERSISTENT  # noqa: N815 - Win32 SDK 字段名
     # S9: displayData.name 不能为 NULL (同 sublayer, BFE 拒绝)。用传入的 display_name。
     flt.displayData.name = display_name  # noqa: N815 - Win32 SDK 字段名
@@ -739,11 +739,11 @@ def _add_filter(  # pylint: disable=huawei-too-many-arguments
     flt.action.type = action_type  # noqa: N815 - Win32 SDK 字段名
 
     cond_array = (FwpmFilterCondition0 * len(conditions))(*conditions)
-    flt.numFilterConditions = ctypes.c_uint32(len(conditions))  # noqa: N815 - Win32 SDK 字段名
+    flt.num_filter_conditions = ctypes.c_uint32(len(conditions))  # noqa: N815 - Win32 SDK 字段名
     # S12 旧 bug: 字段名拼错成 filterConditions (带 s), ctypes 当成新实例属性,
     # 结构体内的 filterCondition 字段保持 NULL, BFE 收到 numFilterConditions=1
     # 但 filterCondition=NULL, 返回 RPC_X_BAD_STUB_DATA (hr=0x6F7).
-    flt.filterCondition = ctypes.cast(cond_array, ctypes.POINTER(FwpmFilterCondition0))
+    flt.filter_condition = ctypes.cast(cond_array, ctypes.POINTER(FwpmFilterCondition0))
 
     fid = ctypes.c_uint64(0)
     hr = fwpu.FwpmFilterAdd0(engine, ctypes.byref(flt), None, ctypes.byref(fid))
@@ -770,7 +770,7 @@ def _add_filter(  # pylint: disable=huawei-too-many-arguments
             cond_field_keys = []
             for c in conditions:
                 try:
-                    cond_field_keys.append(_guid_to_str(c.fieldKey))
+                    cond_field_keys.append(_guid_to_str(c.field_key))
                 except Exception:  # noqa: BLE001
                     cond_field_keys.append("?")
             logger.error(
@@ -780,7 +780,7 @@ def _add_filter(  # pylint: disable=huawei-too-many-arguments
                 "flt_hex_first32=%s",
                 display_name, hr, ctypes.sizeof(flt), len(conditions),
                 cond_types, cond_field_keys, cond_sd_ptrs, flt.weight.type, action_type,
-                _ptr_val(flt.filterCondition),
+                _ptr_val(flt.filter_condition),
                 _ptr_val(flt.providerKey),
                 _ptr_val(flt.reserved),
                 flt_bytes[:32].hex(),
@@ -902,7 +902,7 @@ def _enumerate_sublayer_filters(engine) -> "list[str]":
     filter 也能清掉, 避免残留致 sublayer 删不掉 FWP_E_IN_USE).
 
     实现: FwpmFilterCreateEnumHandle0(NULL template 枚举所有 filter) +
-    FwpmFilterEnum0 拉一批 + 按 subLayerKey == JBX_SUBLAYER_KEY 过滤.
+    FwpmFilterEnum0 拉一批 + 按 sub_layer_key == JBX_SUBLAYER_KEY 过滤.
     返回的 entries 内存由 BFE 分配, 用 FwpmFreeMemory0 释放.
     """
     fwpu = _get_fwpuclnt()
@@ -940,9 +940,9 @@ def _enumerate_sublayer_filters(engine) -> "list[str]":
                 for i in range(n):
                     try:
                         flt = entries_ptr[i]
-                        # 按 subLayerKey 过滤: 只收本 sublayer 的 filter.
-                        if _guid_equal(flt.subLayerKey, sublayer_guid):
-                            keys.append(_guid_to_str(flt.filterKey))
+                        # 按 sub_layer_key 过滤: 只收本 sublayer 的 filter.
+                        if _guid_equal(flt.sub_layer_key, sublayer_guid):
+                            keys.append(_guid_to_str(flt.filter_key))
                     except Exception:  # noqa: BLE001 - 单条解析失败不中断
                         logger.debug("枚举 filter[%d] 解析失败", i, exc_info=True)
             finally:
@@ -963,7 +963,7 @@ def _enumerate_sublayer_filters(engine) -> "list[str]":
 def _guid_equal(a: "Guid", b: "Guid") -> bool:
     """比较两个 Guid 结构体是否相同 (字段逐一比)."""
     return (
-        a.Data1 == b.Data1 and a.Data2 == b.Data2 and a.Data3 == b.Data3  # noqa: N815 - Win32 SDK 字段名
+        a.data_1 == b.data_1 and a.data_2 == b.data_2 and a.data_3 == b.data_3  # noqa: N815 - Win32 SDK 字段名
         and bytes(a.Data4) == bytes(b.Data4)  # noqa: N815 - Win32 SDK 字段名
     )
 

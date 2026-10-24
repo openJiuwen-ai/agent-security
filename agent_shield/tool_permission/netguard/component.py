@@ -96,7 +96,7 @@ class NetGuardComponent:
             raise ValueError("net_guard must be a mapping")
         enabled = section.get("enabled", False)
         include_package = package_rules_enabled(config.get("package_builtin_rules"))
-        if type(enabled) is not bool:
+        if not isinstance(enabled, bool):
             raise ValueError("net_guard.enabled must be a boolean")
         default = parse_action(section.get("defaults", "allow"))
         connection = build_connection_policy(section.get("connection", {}))
@@ -110,7 +110,7 @@ class NetGuardComponent:
                 exact.setdefault(rule.host, []).append(rule)
             else:
                 positions = [i for i, char in enumerate(rule.host) if char in "*?"]
-                prefix, suffix = rule.host[: positions[0]], rule.host[positions[-1] + 1 :]
+                prefix, suffix = rule.host[:positions[0]], rule.host[positions[-1] + 1:]
                 index, key = (prefixes, prefix) if len(prefix) > len(suffix) else (suffixes, suffix)
                 index.setdefault(key, []).append(rule)
         # No state is mutated until every field and rule has been validated.
@@ -158,6 +158,15 @@ class NetGuardComponent:
         if self._state is None:
             raise RuntimeError("NetGuardComponent must be configured before evaluation")
         return self._state
+
+    def evaluate_url_policy(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, object],
+    ) -> PermissionResult | None:
+        """Evaluate URL policy for callers outside this component."""
+
+        return self._evaluate_url_policy(tool_name, tool_args)
 
     def _evaluate_url_policy(
         self,

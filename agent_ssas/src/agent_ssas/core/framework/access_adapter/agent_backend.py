@@ -70,6 +70,11 @@ class AgentSSASBackend:
         # 周期性 TTL 清理任务(定时兜底,低流量进程的过期数据不再无限滞留)
         self._cleanup_task: asyncio.Task[None] | None = None
 
+    async def wait_background_tasks(self) -> None:
+        """Wait until notify tasks from the latest report have finished."""
+
+        await self._pipeline.wait_background_tasks()
+
     async def close(self) -> None:
         """关闭数据库连接,释放资源。
 

@@ -28,6 +28,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+try:
+    import grp
+    import pwd
+except ModuleNotFoundError:
+    grp = None
+    pwd = None
+
 import yaml
 
 # ``grp`` / ``pwd`` are POSIX-only. This module is the Linux
@@ -40,9 +47,6 @@ if sys.platform == "win32":
         "jiuwenbox.server.runtime.process (BubblewrapRuntime) is Linux-only; "
         "use jiuwenbox.server.runtime.windows.WindowsRuntime on Windows"
     )
-
-import grp  # noqa: E402  (POSIX only; guarded above)
-import pwd  # noqa: E402  (POSIX only; guarded above)
 
 from jiuwenbox.logging_config import configure_logging
 from jiuwenbox.models.policy import NetworkMode, SecurityPolicy
@@ -2858,7 +2862,7 @@ class BubblewrapRuntime(RuntimeAdapter):
                 loop.run_in_executor(None, _ask_shutdown, socket_path),
                 timeout=DAEMON_SHUTDOWN_TIMEOUT_SECONDS,
             )
-        except (asyncio.TimeoutError, OSError) as exc:
+        except OSError as exc:
             logger.debug(
                 "Failed to send daemon shutdown for %s: %s",
                 sandbox_id,

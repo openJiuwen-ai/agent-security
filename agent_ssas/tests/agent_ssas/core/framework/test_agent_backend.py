@@ -202,10 +202,7 @@ class TestAgentSSASBackend:
         # observe 默认策略(全 notify)同步返回无风险
         assert assessment.risk_level == RiskLevel.SAFE
         # 等待 notify 后台任务完成(含告警落库)
-        await asyncio.gather(
-            *backend._pipeline._background_tasks,
-            return_exceptions=True,  # pylint: disable=protected-access
-        )
+        await backend.wait_background_tasks()
         alerts = await backend._storage.get_alerts()  # pylint: disable=protected-access
         assert len(alerts) == 1
         alert = alerts[0]
@@ -251,10 +248,7 @@ class TestAgentSSASBackend:
 
         await backend.report_event(raw_event)
         # 等待 notify 后台任务完成(含告警落库)
-        await asyncio.gather(
-            *backend._pipeline._background_tasks,
-            return_exceptions=True,  # pylint: disable=protected-access
-        )
+        await backend.wait_background_tasks()
         alerts = await backend._storage.get_alerts()  # pylint: disable=protected-access
         assert len(alerts) == 1
         assert alerts[0]["risk_level"] == "low"

@@ -37,9 +37,9 @@ def _config(ro: list[tuple[str, str]], rw: list[tuple[str, str]]) -> BwrapConfig
 
 
 class TestBindOrdering:
-    def test_rw_parent_emitted_before_ro_child(self):
-        """fb0dc85de: a ro child nested in an rw parent must come after the
-        rw parent so the child's read-only mount wins."""
+    @staticmethod
+    def test_rw_parent_emitted_before_ro_child():
+        """A read-only child mount is emitted after its read-write parent."""
         args = _config(
             ro=[("/h/ro", "/app/cache")],
             rw=[("/h/rw", "/app")],
@@ -55,7 +55,8 @@ class TestBindOrdering:
         )
         assert rw_parent_idx < ro_child_idx, binds
 
-    def test_ro_child_same_depth_sibling_ordering_is_stable(self):
+    @staticmethod
+    def test_ro_child_same_depth_sibling_ordering_is_stable():
         """Same-depth binds keep ro before rw (32a5caead)."""
         args = _config(
             ro=[("/h/a", "/x")],
@@ -70,7 +71,8 @@ class TestBindOrdering:
         )
         assert ro_idx < rw_idx, binds
 
-    def test_multi_level_nesting_deepest_last(self):
+    @staticmethod
+    def test_multi_level_nesting_deepest_last():
         """Multi-level nesting orders by depth: shallowest first, deepest last."""
         args = _config(
             ro=[("/h/ro", "/a/b/c/d")],
@@ -80,7 +82,8 @@ class TestBindOrdering:
         depths = [len(d.rstrip("/").split("/")) for f, s, d in binds if d != "/"]
         assert depths == sorted(depths), binds
 
-    def test_same_path_rw_overrides_ro(self):
+    @staticmethod
+    def test_same_path_rw_overrides_ro():
         """Same target path: ro emitted first, rw second (rw wins)."""
         args = _config(
             ro=[("/h/ro", "/shared")],
@@ -90,9 +93,9 @@ class TestBindOrdering:
         shared = [(f, s) for f, s, d in binds if d == "/shared"]
         assert shared == [("--ro-bind", "/h/ro"), ("--bind", "/h/rw")], binds
 
-    def test_policy_binds_not_shadowed_by_directories(self):
-        """32a5caead: the bind target parent dirs must be created (and sorted)
-        so policy bind mounts are not shadowed by ordinary directories."""
+    @staticmethod
+    def test_policy_binds_not_shadowed_by_directories():
+        """Parent directories are created so policy bind mounts are not shadowed."""
         args = _config(
             ro=[("/h/ro", "/opt/tool")],
             rw=[],

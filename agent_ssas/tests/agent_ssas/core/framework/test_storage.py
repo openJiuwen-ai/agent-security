@@ -235,7 +235,6 @@ class TestSQLiteStore:
         数据生命周期 P1 修复:回退 0.0 会导致行被 TTL 清理立即误删,
         修复后缺失 timestamp 的记录(如模块报告)落库时间为当前时间。
         """
-        import time
 
         before = time.time()
         # 构造缺失 timestamp 的记录(模拟分析器返回的报告 dict)
@@ -284,7 +283,6 @@ class TestTimestampTextColumn:
     async def test_event_timestamp_text_format(sqlite_store: SQLiteStore) -> None:
         """验证 events 表 timestamp_text 写入为可读格式。"""
         import re
-        import time
 
         now = time.time()
         await sqlite_store.record_event(_make_event(event_id="t1", timestamp=now))
@@ -391,7 +389,6 @@ class TestCleanupExpired:
     @pytest.mark.level0
     async def test_cleanup_events_by_ttl(sqlite_store: SQLiteStore) -> None:
         """验证 events 表按 TTL 清理过期数据,未过期数据保留。"""
-        import time
 
         now = time.time()
         # 一条 31 天前(过期,event_ttl=30),一条 1 天前(未过期)
@@ -408,7 +405,6 @@ class TestCleanupExpired:
     @pytest.mark.level0
     async def test_cleanup_alerts_by_ttl(sqlite_store: SQLiteStore) -> None:
         """验证 alerts 表按 90 天 TTL 清理。"""
-        import time
 
         now = time.time()
         await sqlite_store.create_alert({"alert_id": "old_alert", "timestamp": now - 91 * 86400})
@@ -424,7 +420,6 @@ class TestCleanupExpired:
     @pytest.mark.level0
     async def test_cleanup_ttl_zero_disabled(sqlite_store: SQLiteStore) -> None:
         """验证 ttl_days <= 0 时禁用清理(不删除任何数据)。"""
-        import time
 
         now = time.time()
         await sqlite_store.record_event(_make_event(event_id="old", timestamp=now - 365 * 86400))
@@ -453,7 +448,6 @@ class TestCleanupExpired:
         会被立即误删;修复后无效时间戳的历史遗留行保留待人工处置,
         正常过期行仍被删除。
         """
-        import time
 
         now = time.time()
         # 显式写入 timestamp=0.0 的行(record_event 落库显式 0 值)
@@ -479,7 +473,6 @@ class TestCleanupExpired:
         sqlite_store: SQLiteStore,
     ) -> None:
         """验证 timestamp 为 NULL 的行(绕过落库回退直插)清理后仍存在。"""
-        import time
 
         now = time.time()
         # 绕过 record_event 的回退逻辑,直插 timestamp 为 NULL 的行
@@ -503,7 +496,6 @@ class TestCleanupExpired:
         ssas_home: Path,
     ) -> None:
         """验证 ModuleStorageManager.cleanup 按 TTL 清理过程/结果库。"""
-        import time
 
         now = time.time()
         manager = ModuleStorageManager("ttl_test_module", ssas_home)
@@ -572,7 +564,6 @@ class TestModuleStorageManager:
         ssas_home: Path,
     ) -> None:
         """验证 process_store 未实例化时 cleanup 正常:不建库,result.db 正常清理。"""
-        import time
 
         now = time.time()
         manager = ModuleStorageManager("cleanup_lazy_module", ssas_home)

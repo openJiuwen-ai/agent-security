@@ -101,8 +101,9 @@ class SecurityRailAnalyzer:
         tool_call_id = detail.get("tool_call_id") or event_node.get("tool_call_id", "")
         if tool_call_id:
             evidence["tool_call_id"] = tool_call_id
-        if detail.get("reason"):
-            evidence["reason"] = detail["reason"]
+        reason = detail.get("reason")
+        if reason:
+            evidence["reason"] = reason
 
         # 推荐处置动作:策略拒绝/未知场景记录并告警,用户主动拒绝仅记录
         if deny_reason == "user_reject":

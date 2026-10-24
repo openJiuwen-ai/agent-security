@@ -40,6 +40,15 @@ _MAX_CACHED_SESSIONS = 100
 # 保证活跃 session 的 trace 不会被提前淘汰
 _MAX_CACHED_TRACES = 500
 
+
+
+def set_max_cached_traces(limit: int) -> None:
+    """Adjust the trace cache ceiling used by the preprocessor."""
+
+    global _MAX_CACHED_TRACES
+    _MAX_CACHED_TRACES = limit
+
+
 # 交互输入缓存的最大 interaction 数, 防止长期运行内存泄漏
 # 与 _MAX_CACHED_SESSIONS 同量级(每个 session 常驻少量活跃 interaction)
 _MAX_CACHED_INTERACTIONS = 100

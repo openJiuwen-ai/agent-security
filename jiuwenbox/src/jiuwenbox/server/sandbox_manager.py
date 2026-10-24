@@ -193,8 +193,8 @@ class SandboxManager:
             return get_runtime(canonical)
         return self.runtime
 
+    @staticmethod
     def _validate_runtime_capabilities(
-        self,
         policy: SecurityPolicy,
         runtime: RuntimeAdapter,
     ) -> None:

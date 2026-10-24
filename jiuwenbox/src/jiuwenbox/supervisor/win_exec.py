@@ -95,8 +95,9 @@ def _init_local_log(sandbox_id: str) -> None:
         log_dir = _os.path.join(home, "jiuwenbox-logs", sandbox_id)
         _os.makedirs(log_dir, exist_ok=True)
         path = _os.path.join(log_dir, "runner.log")
-        _local_log_path = path
-        _local_log_file = open(path, "a", encoding="utf-8", buffering=1)
+        with open(path, "a", encoding="utf-8", buffering=1):
+            _local_log_path = path
+        _local_log_file = None
     except OSError:
         _local_log_path = None
         _local_log_file = None
@@ -105,7 +106,7 @@ def _init_local_log(sandbox_id: str) -> None:
 def _local_log(level: str, msg: str, exc: str | None = None) -> None:
     """写一行本地日志 (带时间戳, 线程安全). best-effort, 不抛."""
     import time as _time
-    if _local_log_file is None:
+    if not _local_log_path:
         return
     try:
         ts = _time.strftime("%Y-%m-%d %H:%M:%S", _time.localtime())
@@ -113,8 +114,8 @@ def _local_log(level: str, msg: str, exc: str | None = None) -> None:
         if exc:
             line += f"\n{exc}"
         with _local_log_lock:
-            _local_log_file.write(line + "\n")
-            _local_log_file.flush()
+            with open(_local_log_path, "a", encoding="utf-8") as log_file:
+                log_file.write(line + "\n")
     except (OSError, ValueError):
         pass
 
@@ -192,13 +193,13 @@ class STARTUPINFOW(ctypes.Structure):
         ("dwXCountChars", wintypes.DWORD),
         ("dwYCountChars", wintypes.DWORD),
         ("dwFillAttribute", wintypes.DWORD),
-        ("dwFlags", wintypes.DWORD),
+        ("dw_flags", wintypes.DWORD),
         ("wShowWindow", wintypes.WORD),
         ("cbReserved2", wintypes.WORD),
         ("lpReserved2", ctypes.POINTER(wintypes.BYTE)),
-        ("hStdInput", wintypes.HANDLE),
-        ("hStdOutput", wintypes.HANDLE),
-        ("hStdError", wintypes.HANDLE),
+        ("h_std_input", wintypes.HANDLE),
+        ("h_std_output", wintypes.HANDLE),
+        ("h_std_error", wintypes.HANDLE),
     ]
 
 
@@ -213,9 +214,9 @@ class ProcessInfo(ctypes.Structure):
 
 class SecurityAttr(ctypes.Structure):
     _fields_ = [
-        ("nLength", wintypes.DWORD),
+        ("n_length", wintypes.DWORD),
         ("lpSecurityDescriptor", ctypes.c_void_p),
-        ("bInheritHandle", wintypes.BOOL),
+        ("b_inherit_handle", wintypes.BOOL),
     ]
 
 
@@ -385,7 +386,7 @@ def _build_runner_command(
 
     review #2: 鉴权 control_token 不再拼进命令行 (旧版 ``--control-token <token>``
     会被本机任意进程经 WMI Win32_Process.CommandLine / NtQueryInformationProcess
-    读 PEB 命令行泄露, 越权 exec). 改走匿名 pipe + STARTUPINFO.hStdInput:
+    读 PEB 命令行泄露, 越权 exec). 改走匿名 pipe + STARTUPINFO.h_std_input:
     box-server CreatePipe, 把读端经 hStdInput 传 runner, runner 启动后从 stdin
     读 [4 字节长度][token 字节], 关 stdin 再切 socket accept. token 只存在于
     进程内存, 不暴露给其他进程的 PEB/WMI.
@@ -448,7 +449,7 @@ def two_hop_spawn(
     (或直接用 two_hop_spawn_and_authorize 一步完成).
 
     review #2: control_token 不再经命令行传 (WMI/PEB 泄露), 改走匿名 pipe +
-    STARTUPINFO.hStdInput: 本函数建 pipe (读端继承给 runner, 写端 box-server
+    STARTUPINFO.h_std_input: 本函数建 pipe (读端继承给 runner, 写端 box-server
     持有不继承), 把读端经 hStdInput 传 runner. resume 前 buffer 里写好 token,
     runner resume 后从 stdin 读 token 再切 socket accept.
     """
@@ -467,8 +468,8 @@ def two_hop_spawn(
     token_write_h = wintypes.HANDLE()
     if control_token:
         sa = SecurityAttr()
-        sa.nLength = ctypes.sizeof(SecurityAttr)  # noqa: N815 - Win32 SDK 字段名
-        sa.bInheritHandle = True  # noqa: N815 - 读端继承给 runner
+        sa.n_length = ctypes.sizeof(SecurityAttr)  # noqa: N815 - Win32 SDK 字段名
+        sa.b_inherit_handle = True  # noqa: N815 - 读端继承给 runner
         if not kernel32.CreatePipe(
             ctypes.byref(token_read_handle), ctypes.byref(token_write_h),
             ctypes.byref(sa), 0,
@@ -484,10 +485,10 @@ def two_hop_spawn(
     startup.cb = ctypes.sizeof(STARTUPINFOW)  # noqa: N815
     startf_usestdhanle = 0x00000100  # noqa: N806 - Win32 SDK 常量风格
     if control_token:
-        startup.dwFlags = startf_usestdhanle  # noqa: N815 - 传 hStdInput
-        startup.hStdInput = wintypes.HANDLE(token_read_handle.value)  # noqa: N815
+        startup.dw_flags = startf_usestdhanle  # noqa: N815 - 传 hStdInput
+        startup.h_std_input = wintypes.HANDLE(token_read_handle.value)  # noqa: N815
     else:
-        startup.dwFlags = 0  # noqa: N815
+        startup.dw_flags = 0  # noqa: N815
     pi = ProcessInfo()
 
     # dwLogonFlags 不能为 0 (WinError 87); LOGON_NETCREDENTIALS_ONLY 会用调用方
@@ -497,7 +498,7 @@ def two_hop_spawn(
     # bInheritHandles 必须为 True: pipe 读端需继承到 runner 子进程 (CreateProcessWithLogonW
     # 的第 9 参是 lpEnvironment, 第 8 参是 dwCreationFlags, 句柄继承由 STARTUPINFO + USESTDHANDLE 驱动,
     # 但 CreateProcessWithLogonW 不像 CreateProcess 有显式 bInheritHandles 形参 — 它默认继承可继承句柄,
-    # 故 SECURITY_ATTRIBUTES.bInheritHandle=True 的 pipe 读端会被继承).
+    # 故 SECURITY_ATTRIBUTES.b_inherit_handle=True 的 pipe 读端会被继承).
     creation_flags = const.CREATE_NO_WINDOW | const.CREATE_SUSPENDED
     # env 块含 box-server 拼好的 PATH (tool_paths), runner 必须继承, 否则起 child 时 WinError 2.
     # env_block_buf 须存活到调用返回 (悬垂指针防护).
@@ -1070,10 +1071,10 @@ def _create_process_as_user(  # pylint: disable=huawei-too-many-arguments
 
     startup = STARTUPINFOW()
     startup.cb = ctypes.sizeof(STARTUPINFOW)
-    startup.dwFlags = 0x00000100  # STARTF_USESTDHANDLES noqa: N815 - Win32 SDK 字段名
-    startup.hStdInput = wintypes.HANDLE(stdin_fd)  # noqa: N815
-    startup.hStdOutput = wintypes.HANDLE(stdout_fd)  # noqa: N815
-    startup.hStdError = wintypes.HANDLE(stdout_fd)  # noqa: N815
+    startup.dw_flags = 0x00000100  # STARTF_USESTDHANDLES noqa: N815 - Win32 SDK 字段名
+    startup.h_std_input = wintypes.HANDLE(stdin_fd)  # noqa: N815
+    startup.h_std_output = wintypes.HANDLE(stdout_fd)  # noqa: N815
+    startup.h_std_error = wintypes.HANDLE(stdout_fd)  # noqa: N815
     pi = ProcessInfo()
 
     # env block 始终构造 (env=None 回退 os.environ), 故必须带 UNICODE flag,
@@ -1697,7 +1698,6 @@ def _fallback_bash_to_native_shell(command: list) -> None:
 def _exec_peer_disconnected(stream) -> bool:
     """exec 请求体已读完; 对端关闭专用连接表示该请求不再需要执行."""
     import select
-    import socket
 
     try:
         readable, _, _ = select.select([stream], [], [], 0)
@@ -1743,8 +1743,8 @@ def _handle_exec_request(stream, header, restricted_token, workspace, stdin_byte
     # 建立 pipe 收集子进程 stdout/stderr.
     kernel32 = get_kernel32()
     sa = SecurityAttr()
-    sa.nLength = ctypes.sizeof(SecurityAttr)  # noqa: N815
-    sa.bInheritHandle = True  # noqa: N815
+    sa.n_length = ctypes.sizeof(SecurityAttr)  # noqa: N815
+    sa.b_inherit_handle = True  # noqa: N815
     child_out_read = wintypes.HANDLE()
     child_out_write = wintypes.HANDLE()
     kernel32.CreatePipe(

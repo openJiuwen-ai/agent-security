@@ -158,7 +158,7 @@ def test_update_builds_new_components_and_swaps_them_in() -> None:
     new = engine.built[-1]
     assert new is not old
     assert all(component.configured == {"v": 2} for component in new)
-    assert engine._components is new
+    assert engine.components is new
 
 
 def test_failed_update_keeps_old_components_config_and_decisions() -> None:
@@ -170,7 +170,7 @@ def test_failed_update_keeps_old_components_config_and_decisions() -> None:
     with pytest.raises(ValueError, match="bad config"):
         engine.update_config({"v": 2, "boom": "ask"})
 
-    assert engine._components is old
+    assert engine.components is old
     assert dict(engine.config) == {"v": 1}
     assert [c.configured for c in old] == old_snapshot
     assert _level(engine, "ls") is PermissionLevel.ASK
@@ -222,7 +222,7 @@ def test_in_flight_call_keeps_the_components_it_started_with() -> None:
 
     async def scenario() -> tuple[PermissionLevel | None, PermissionLevel | None]:
         engine = SlowEngine({})
-        slow = engine._components[0]
+        slow = engine.components[0]
         assert isinstance(slow, Slow)
         slow.gate, slow.entered = asyncio.Event(), asyncio.Event()
 

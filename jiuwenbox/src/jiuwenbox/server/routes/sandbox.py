@@ -60,23 +60,23 @@ async def capabilities():
         try:
             cls = load_runtime_class(name)
             caps = cls().capabilities()
+            capabilities = {}
+            for field in (
+                "local_pid",
+                "background_jobs",
+                "fast_file_io",
+                "recursive_search",
+                "live_policy_update",
+                "network_identity",
+                "filesystem_acl",
+                "process_tree_containment",
+                "egress_filter",
+                "soft_delete",
+            ):
+                capabilities[field] = getattr(caps, field)
             result["runtimes"][name] = {
                 "available": True,
-                "capabilities": {
-                    field: getattr(caps, field)
-                    for field in (
-                        "local_pid",
-                        "background_jobs",
-                        "fast_file_io",
-                        "recursive_search",
-                        "live_policy_update",
-                        "network_identity",
-                        "filesystem_acl",
-                        "process_tree_containment",
-                        "egress_filter",
-                        "soft_delete",
-                    )
-                },
+                "capabilities": capabilities,
             }
         except Exception as exc:  # noqa: BLE001
             result["runtimes"][name] = {"available": False, "error": str(exc)}
