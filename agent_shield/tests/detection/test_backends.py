@@ -6,6 +6,7 @@ Tests for guardrail detection backends, backend configs, and GuardrailContext.
 """
 
 import asyncio
+import math
 import statistics
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -215,7 +216,7 @@ class TestAPIModelBackend:
             timeout=60.0
         )
 
-        assert backend.timeout == 60.0
+        assert math.isclose(backend.timeout, 60.0)
 
 
 class TestLocalModelBackend:

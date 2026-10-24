@@ -412,13 +412,10 @@ def _rebuild_acl_with_order(
                 and sid_key in drop_deny_sid_keys
             ):
                 continue
-            if (
-                keep_list_sid_keys is not None
-                and ace_type != const.ACCESS_DENIED_ACE_TYPE
-                and (int(access_mask) & const.FILE_LIST_DIRECTORY)
-                and sid_key not in keep_list_sid_keys
-            ):
-                continue
+            if keep_list_sid_keys is not None and ace_type != const.ACCESS_DENIED_ACE_TYPE:
+                has_list_right = int(access_mask) & const.FILE_LIST_DIRECTORY
+                if has_list_right and sid_key not in keep_list_sid_keys:
+                    continue
             if ace_type == const.ACCESS_DENIED_ACE_TYPE:
                 _add(ace_type, ace_flags, access_mask, sid, deny_aces)
             else:
@@ -1043,10 +1040,20 @@ def apply_sandbox_acl(
     # protected DACLs. Apply their final rules explicitly, including old files.
     roots = [os.path.abspath(os.path.expandvars(p)) for p in bounded_roots or [] if os.path.isdir(p)]
     roots = list({os.path.normcase(p): p for p in roots}.values())
-    roots = [p for p in roots if not any(
-        p != other and os.path.normcase(p).startswith(os.path.normcase(other).rstrip(os.sep) + os.sep)
-        for other in roots
-    )]
+    kept_roots = []
+    for path in roots:
+        path_key = os.path.normcase(path)
+        nested = False
+        for other in roots:
+            if path == other:
+                continue
+            other_prefix = os.path.normcase(other).rstrip(os.sep) + os.sep
+            if path_key.startswith(other_prefix):
+                nested = True
+                break
+        if not nested:
+            kept_roots.append(path)
+    roots = kept_roots
 
     def _bounded(path: str) -> bool:
         key = os.path.normcase(os.path.abspath(os.path.expandvars(path)))

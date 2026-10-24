@@ -245,12 +245,13 @@ class TieredPolicyComponent:
 
         # A user action override is addressed by one tool name plus the pattern, never a
         # rule id.  It replaces the action of that builtin detector for that tool only.
-        builtin_pairs = {
-            (tool, pattern)
-            for rule in builtins
-            if (pattern := _pattern(rule)) is not None
-            for tool in _tools(rule)
-        }
+        builtin_pairs: set[tuple[str, str]] = set()
+        for rule in builtins:
+            pattern = _pattern(rule)
+            if pattern is None:
+                continue
+            for tool in _tools(rule):
+                builtin_pairs.add((tool, pattern))
         action_overrides: dict[tuple[str, str], PermissionLevel] = {}
         configured_users: list[dict[str, Any]] = []
         for rule in users:
@@ -386,13 +387,16 @@ class TieredPolicyComponent:
         return PermissionLevel.ASK, f"{_PREFIX}:fallback(no_config)"
 
     def _approval(self, tool_name: str, command: str) -> tuple[PermissionLevel, str] | None:
-        labels = sorted({
-            _rule_label("approval_overrides", rule)
-            for rule in self._approval_overrides
-            if rule["_explicit_action"] is PermissionLevel.ALLOW
-            and _rule_targets_tool(rule, tool_name)
-            and _rule_matches(rule, command)
-        })
+        labels = []
+        for rule in self._approval_overrides:
+            if rule["_explicit_action"] is not PermissionLevel.ALLOW:
+                continue
+            if not _rule_targets_tool(rule, tool_name):
+                continue
+            if not _rule_matches(rule, command):
+                continue
+            labels.append(_rule_label("approval_overrides", rule))
+        labels = sorted(set(labels))
         if not labels:
             return None
         return PermissionLevel.ALLOW, f"{_PREFIX}:approval_overrides:" + "+".join(labels)

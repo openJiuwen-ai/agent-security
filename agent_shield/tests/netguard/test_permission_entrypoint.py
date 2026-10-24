@@ -7,6 +7,7 @@ Connection facts are injected; no DNS lookup or HTTP request is performed.
 """
 
 import asyncio
+import logging
 import socket
 from statistics import median
 from time import perf_counter_ns
@@ -266,11 +267,11 @@ def test_engine_registers_exactly_one_network_component():
     engine = PermissionEngine(config())
     network = [
         c
-        for c in engine._components
+        for c in engine.components
         if any(i.target is SecurityTarget.NETWORK for i in (c.interests or ()))
     ]
     assert len(network) == 1
-    assert type(network[0]) is NetGuardComponent
+    assert isinstance(network[0], NetGuardComponent)
 
 
 @pytest.mark.parametrize("method", ("check_permission", "evaluate_global_policy_directly"))
@@ -352,7 +353,7 @@ def test_in_flight_call_keeps_one_a_c_snapshot_across_update(monkeypatch):
     async def scenario():
         entered, proceed = asyncio.Event(), asyncio.Event()
         engine = PermissionEngine(config(action="ask"))
-        old_component = next(c for c in engine._components if isinstance(c, NetGuardComponent))
+        old_component = next(c for c in engine.components if isinstance(c, NetGuardComponent))
 
         async def pause(self, *args, **kwargs):
             if self is old_component:
@@ -423,6 +424,8 @@ def test_production_entrypoint_latency_at_capacity(tool):
 
     samples = asyncio.run(measure())
     p50, p99 = median(samples), samples[int(len(samples) * 0.99) - 1]
-    print(f"W3 production {tool} latency: P50={p50:.3f}ms P99={p99:.3f}ms")
+    logging.getLogger(__name__).info(
+        "W3 production %s latency: P50=%.3fms P99=%.3fms", tool, p50, p99,
+    )
     assert p50 < 1.0
     assert p99 < 5.0

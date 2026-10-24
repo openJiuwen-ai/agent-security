@@ -107,7 +107,9 @@ def _normalize_component(value: str, *, path: bool) -> str:
         if digits is None:
             raise ValueError("Invalid URL percent escape")
         code = int(digits, 16)
-        if code < 32 or code == 127 or (path and code in {37, 47, 92}):
+        control_char = code < 32 or code == 127
+        encoded_separator = path and code in {37, 47, 92}
+        if control_char or encoded_separator:
             raise ValueError("Ambiguous encoded URL character")
         char = chr(code)
         return char if char in _UNRESERVED else "%" + digits.upper()
@@ -158,7 +160,7 @@ def parse_url(value: str, *, pattern: bool = False) -> UrlTarget:
     if parts.netloc.startswith("["):
         # Keep the same boundary on older supported urllib.parse versions.
         closing = parts.netloc.find("]")
-        remainder = parts.netloc[closing + 1 :]
+        remainder = parts.netloc[closing + 1:]
         if remainder and not re.fullmatch(r":[0-9]+", remainder):
             raise ValueError("Invalid IPv6 URL authority")
         try:

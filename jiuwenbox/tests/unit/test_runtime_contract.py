@@ -31,7 +31,8 @@ from jiuwenbox.server.runtime.registry import (
 
 
 class TestErrorCodes:
-    def test_status_mapping_is_stable(self):
+    @staticmethod
+    def test_status_mapping_is_stable():
         assert HTTP_STATUS_BY_CODE[ErrorCode.POLICY_VALIDATION] == 400
         assert HTTP_STATUS_BY_CODE[ErrorCode.AUTH_FAILED] == 401
         assert HTTP_STATUS_BY_CODE[ErrorCode.NOT_FOUND] == 404
@@ -40,7 +41,8 @@ class TestErrorCodes:
         assert HTTP_STATUS_BY_CODE[ErrorCode.LIMIT_EXCEEDED] == 413
         assert HTTP_STATUS_BY_CODE[ErrorCode.RUNTIME_UNAVAILABLE] == 503
 
-    def test_error_to_dict(self):
+    @staticmethod
+    def test_error_to_dict():
         err = CapabilityUnsupportedError("policy wants filesystem_acl")
         assert err.code == ErrorCode.CAPABILITY_UNSUPPORTED
         assert err.status_code == 422
@@ -49,19 +51,22 @@ class TestErrorCodes:
             "detail": "policy wants filesystem_acl",
         }
 
-    def test_subclasses_are_jiuwenbox_errors(self):
+    @staticmethod
+    def test_subclasses_are_jiuwenbox_errors():
         err = JiuwenboxError("generic")
         assert err.code == ErrorCode.INTERNAL_ERROR
 
 
 class TestRuntimeCapabilities:
-    def test_default_capabilities_are_false(self):
+    @staticmethod
+    def test_default_capabilities_are_false():
         caps = RuntimeCapabilities(runtime_name="stub")
         assert caps.local_pid is False
         assert caps.soft_delete is False
         assert caps.egress_filter is False
 
-    def test_security_capabilities_set(self):
+    @staticmethod
+    def test_security_capabilities_set():
         assert "filesystem_acl" in SECURITY_CAPABILITIES
         assert "process_tree_containment" in SECURITY_CAPABILITIES
         assert "egress_filter" in SECURITY_CAPABILITIES
@@ -72,13 +77,15 @@ class TestRuntimeCapabilities:
 
 
 class TestRuntimeInstance:
-    def test_instance_defaults(self):
+    @staticmethod
+    def test_instance_defaults():
         inst = RuntimeInstance(runtime_name="bubblewrap", instance_id="abc")
         assert inst.pid is None
         assert inst.ip_address is None
         assert inst.metadata == {}
 
-    def test_instance_with_fields(self):
+    @staticmethod
+    def test_instance_with_fields():
         inst = RuntimeInstance(
             runtime_name="bubblewrap",
             instance_id="abc",
@@ -92,30 +99,36 @@ class TestRuntimeInstance:
 
 
 class TestRuntimeSelection:
-    def test_platform_default_matches_host(self):
+    @staticmethod
+    def test_platform_default_matches_host():
         import sys
 
         expected = "windows" if sys.platform == "win32" else "bubblewrap"
         assert platform_default_runtime() == expected
 
-    def test_explicit_runtime_wins(self):
+    @staticmethod
+    def test_explicit_runtime_wins():
         assert resolve_runtime_name("windows") == "windows"
         assert resolve_runtime_name("bubblewrap") == "bubblewrap"
 
-    def test_alias_mapping(self):
+    @staticmethod
+    def test_alias_mapping():
         assert resolve_runtime_name("process") == "bubblewrap"
         assert resolve_runtime_name("linux") == "bubblewrap"
 
-    def test_env_profile_is_used(self):
+    @staticmethod
+    def test_env_profile_is_used():
         assert resolve_runtime_name(None, env={RUNTIME_PROFILE_ENV: "windows"}) == "windows"
 
-    def test_explicit_beats_env_profile(self):
+    @staticmethod
+    def test_explicit_beats_env_profile():
         assert (
             resolve_runtime_name("bubblewrap", env={RUNTIME_PROFILE_ENV: "windows"})
             == "bubblewrap"
         )
 
-    def test_unknown_runtime_raises_on_load(self):
+    @staticmethod
+    def test_unknown_runtime_raises_on_load():
         from jiuwenbox.server.runtime.registry import load_runtime_class
 
         with pytest.raises(RuntimeResolutionError):
@@ -123,10 +136,12 @@ class TestRuntimeSelection:
 
 
 class TestSandboxSpecRuntimeField:
-    def test_sandbox_spec_carries_runtime(self):
+    @staticmethod
+    def test_sandbox_spec_carries_runtime():
         spec = SandboxSpec(env={}, sandbox_runtime="windows")
         assert spec.sandbox_runtime == "windows"
 
-    def test_sandbox_spec_default_none(self):
+    @staticmethod
+    def test_sandbox_spec_default_none():
         spec = SandboxSpec(env={})
         assert spec.sandbox_runtime is None

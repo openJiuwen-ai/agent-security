@@ -28,21 +28,24 @@ from jiuwenbox.supervisor.win_proxy import EgressFilter
 
 
 class TestPlatformGuard:
-    def test_runtime_requires_windows(self, monkeypatch):
+    @staticmethod
+    def test_runtime_requires_windows(monkeypatch):
         if sys.platform == "win32":
             pytest.skip("runs on non-win32 hosts only")
         monkeypatch.setattr("jiuwenbox.server.runtime.windows.runtime.sys.platform", "linux")
         with pytest.raises(RuntimeUnavailableError):
-            WindowsRuntime()._ensure_platform()
+            WindowsRuntime().ensure_platform()
 
-    def test_runtime_name_and_supported_platforms(self):
+    @staticmethod
+    def test_runtime_name_and_supported_platforms():
         runtime = WindowsRuntime()
         assert runtime.runtime_name == "windows"
         assert runtime.supported_platforms == ("win32",)
 
 
 class TestCapabilities:
-    def test_soft_delete_is_excluded(self):
+    @staticmethod
+    def test_soft_delete_is_excluded():
         caps = WindowsRuntime().capabilities()
         assert caps.runtime_name == "windows"
         assert caps.soft_delete is False
@@ -55,38 +58,44 @@ class TestCapabilities:
 
 
 class TestLoopbackPort:
-    def test_allocates_ephemeral_port(self):
+    @staticmethod
+    def test_allocates_ephemeral_port():
         port = _alloc_loopback_port()
         assert 1024 <= port <= 65535
 
-    def test_allocated_ports_differ(self):
+    @staticmethod
+    def test_allocated_ports_differ():
         ports = {_alloc_loopback_port() for _ in range(8)}
         assert len(ports) > 1
 
 
 class TestSummarizeCommand:
-    def test_short_command_is_verbatim(self):
+    @staticmethod
+    def test_short_command_is_verbatim():
         assert _summarize_command(["echo", "hi"]) == '["echo", "hi"]'
 
-    def test_long_command_is_truncated(self):
+    @staticmethod
+    def test_long_command_is_truncated():
         summary = _summarize_command(["python", "-c", "x" * 300])
         assert summary.endswith(" chars)")
 
 
 class TestBackgroundJobModel:
-    def test_job_defaults_running(self):
+    @staticmethod
+    def test_job_defaults_running():
         job = BackgroundJob(
             job_id="job-1", sandbox_id="sb-1", command=["echo"], pid=42, workdir=None,
         )
         assert job.exit_code is None
         assert job.finished_at is None
 
-    def test_status_maps_fields(self):
+    @staticmethod
+    def test_status_maps_fields():
         job = BackgroundJob(
             job_id="job-1", sandbox_id="sb-1", command=["echo"], pid=42,
             workdir="C:\\ws", exit_code=0,
         )
-        status = WindowsRuntime._job_status(job)
+        status = WindowsRuntime.job_status(job)
         assert isinstance(status, BackgroundJobStatus)
         assert status.job_id == "job-1"
         assert status.sandbox_id == "sb-1"
@@ -95,17 +104,20 @@ class TestBackgroundJobModel:
 
 
 class TestFileOpHelpers:
-    def test_unavailable_result(self):
-        result = WindowsRuntime._file_op_unavailable("sb-1")
+    @staticmethod
+    def test_unavailable_result():
+        result = WindowsRuntime.file_op_unavailable("sb-1")
         assert result.ok is False
         assert result.error == "daemon_unavailable"
 
-    def test_result_from_response_ok(self):
-        result = WindowsRuntime._file_op_result_from_response({"ok": True})
+    @staticmethod
+    def test_result_from_response_ok():
+        result = WindowsRuntime.file_op_result_from_response({"ok": True})
         assert result.ok is True
 
-    def test_result_from_response_errno(self):
-        result = WindowsRuntime._file_op_result_from_response(
+    @staticmethod
+    def test_result_from_response_errno():
+        result = WindowsRuntime.file_op_result_from_response(
             {"ok": False, "error": "io_error", "errno": 2, "stderr": "nope"},
         )
         assert result.ok is False
@@ -114,7 +126,8 @@ class TestFileOpHelpers:
 
 
 class TestEgressFilter:
-    def _filter(self, egress: NetworkRulePolicy) -> EgressFilter:
+    @staticmethod
+    def _filter(egress: NetworkRulePolicy) -> EgressFilter:
         return EgressFilter(egress, ingress=None)
 
     def test_default_deny_rejects_without_rules(self):
@@ -175,11 +188,9 @@ class TestExecDowngradeToSync:
     @pytest.mark.asyncio
     async def test_exec_background_records_finished_job(self):
         runtime = WindowsRuntime.__new__(WindowsRuntime)
-        runtime._background_jobs = {}
-        runtime._ensure_platform = lambda: None
-        runtime._win_runners = {"sb-1": {"control_port": 1, "control_token": "t", "pid": 1}}
-        runtime._exec_concurrency_limit = 8
-        runtime._win_exec_sem = None
+        runtime.bind_exec_state(
+            {"sb-1": {"control_port": 1, "control_token": "t", "pid": 1}},
+        )
 
         async def fake_exec(sandbox_id, request):
             return ExecResult(exit_code=0, stdout="ok")
@@ -193,7 +204,7 @@ class TestExecDowngradeToSync:
         assert result.job_id == "job-1"
         assert result.running is False
         assert result.exit_code == 0
-        stored = runtime._background_jobs["sb-1"]["job-1"]
+        stored = runtime.background_job("sb-1", "job-1")
         assert stored.exit_code == 0
 
 
@@ -201,11 +212,7 @@ class TestExecUnavailable:
     @pytest.mark.asyncio
     async def test_exec_reports_unavailable_runner(self):
         runtime = WindowsRuntime.__new__(WindowsRuntime)
-        runtime._background_jobs = {}
-        runtime._ensure_platform = lambda: None
-        runtime._win_runners = {}
-        runtime._exec_concurrency_limit = 8
-        runtime._win_exec_sem = None
+        runtime.bind_exec_state({})
 
         result = await runtime.exec("sb-1", RuntimeExecRequest(command=["echo"]))
         assert result.exit_code == 1

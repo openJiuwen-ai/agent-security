@@ -41,7 +41,7 @@ def checker(urls=None, *, default="allow", include_package=True, connection=None
 def evaluate(component, url=None, *, tool="mcp_fetch_webpage", args=None):
     # These tests isolate URL/address rules; production component aggregation is
     # covered through PermissionEngine in test_permission_entrypoint.py.
-    return component._evaluate_url_policy(tool, args if args is not None else {"url": url})
+    return component.evaluate_url_policy(tool, args if args is not None else {"url": url})
 
 
 @pytest.mark.parametrize("tool", ["mcp_fetch_webpage", "fetch_webpage", "web_fetch_webpage"])

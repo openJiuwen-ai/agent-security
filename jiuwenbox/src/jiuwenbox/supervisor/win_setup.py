@@ -68,10 +68,10 @@ class ShellExecuteInfo(ctypes.Structure):
     """SHELLEXECUTEINFOW, including its pointer-sized icon/monitor union."""
 
     _fields_ = [
-        ("cbSize", wintypes.DWORD), ("fMask", wintypes.ULONG),
-        ("hwnd", wintypes.HWND), ("lpVerb", wintypes.LPCWSTR),
-        ("lpFile", wintypes.LPCWSTR), ("lpParameters", wintypes.LPCWSTR),
-        ("lpDirectory", wintypes.LPCWSTR), ("nShow", wintypes.INT),
+        ("cb_size", wintypes.DWORD), ("f_mask", wintypes.ULONG),
+        ("hwnd", wintypes.HWND), ("lp_verb", wintypes.LPCWSTR),
+        ("lp_file", wintypes.LPCWSTR), ("lp_parameters", wintypes.LPCWSTR),
+        ("lpDirectory", wintypes.LPCWSTR), ("n_show", wintypes.INT),
         ("hInstApp", wintypes.HINSTANCE), ("lpIDList", ctypes.c_void_p),
         ("lpClass", wintypes.LPCWSTR), ("hkeyClass", wintypes.HKEY),
         ("dwHotKey", wintypes.DWORD), ("hIcon", wintypes.HANDLE),
@@ -1297,9 +1297,10 @@ def _write_uac_python_launcher(payload_exe: str, payload_args: list[str]) -> str
     import tempfile
 
     argv = [payload_exe, *payload_args]
-    setup_env = {k: v for k, v in os.environ.items() if k.startswith("JIUWENBOX_") or k in {
-        "PYTHONPATH",
-    }}
+    setup_env = {}
+    for key, value in os.environ.items():
+        if key.startswith("JIUWENBOX_") or key == "PYTHONPATH":
+            setup_env[key] = value
     body = (
         "import os, subprocess, sys\n"
         f"_argv = {argv!r}\n"
@@ -1390,12 +1391,12 @@ def _elevate_and_run_install(
         uac_file, params = _uac_shell_execute_target(py, parts)
 
     info = ShellExecuteInfo()
-    info.cbSize = ctypes.sizeof(info)
-    info.fMask = 0x40 | 0x100  # SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC
-    info.lpVerb = "runas"
-    info.lpFile = uac_file
-    info.lpParameters = params
-    info.nShow = SW_HIDE  # Hides the setup console, not Windows' UAC security prompt.
+    info.cb_size = ctypes.sizeof(info)
+    info.f_mask = 0x40 | 0x100  # SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC
+    info.lp_verb = "runas"
+    info.lp_file = uac_file
+    info.lp_parameters = params
+    info.n_show = SW_HIDE  # Hides the setup console, not Windows' UAC security prompt.
     logger.info("正在请求管理员授权以安装、修复或补授权 Windows 沙箱")
     if not _get_shell32().ShellExecuteExW(ctypes.byref(info)):
         err = ctypes.get_last_error()
@@ -1827,7 +1828,7 @@ def install(
 
         # 用户 policy 的 deny/allow 路径 (allow_read/deny_read/allow_write/deny_write)
         _acl_paths: list[str] = []
-        if _current_user_sid and (policy_path or acl_paths) and _wa is not None and _wc is not None:
+        if _acl_preauth_ready(_current_user_sid, policy_path, acl_paths, _wa, _wc):
             try:
                 _acl_paths = acl_paths if acl_paths is not None else _load_policy_acl_paths(policy_path)
             except Exception as exc:  # noqa: BLE001
@@ -1892,6 +1893,28 @@ def install(
         except Exception:  # noqa: BLE001 - 回滚 best-effort, 不掩盖原异常
             logger.error("install 失败后局部回滚也失败", exc_info=True)
         raise
+
+
+def _acl_preauth_ready(user_sid, policy_path, acl_paths, win_acl, win_const) -> bool:
+    """Return whether install can pre-authorize policy paths for this user."""
+
+    if not user_sid:
+        return False
+    if not (policy_path or acl_paths):
+        return False
+    return win_acl is not None and win_const is not None
+
+
+def _acl_path_is_placeholder(path: str) -> bool:
+    """Return whether a policy path is an unexpanded template."""
+
+    if "{{" in path:
+        return True
+    if not path.startswith("%"):
+        return False
+    if "%" not in path[1:]:
+        return False
+    return not os.path.exists(path)
 
 
 def collect_preinstall_paths(policy) -> list[str]:
@@ -1983,7 +2006,7 @@ def ensure_acl_policy_paths_authorized(
     need_elevate: set[str] = set()
     skipped: list[str] = []
     for p in new_acl_paths:
-        if "{{" in p or (p.startswith("%") and "%" in p[1:] and not os.path.exists(p)):
+        if _acl_path_is_placeholder(p):
             skipped.append(p)
             continue
         if not os.path.exists(p) or _can_write_dac(p):

@@ -97,7 +97,7 @@ def _project_net_guard(config: Mapping[str, Any], projected: SandboxPolicyProjec
     if not isinstance(section, Mapping):
         raise ValueError("net_guard must be a mapping")
     enabled = section.get("enabled", False)
-    if type(enabled) is not bool:
+    if not isinstance(enabled, bool):
         raise ValueError("net_guard.enabled must be a boolean")
     if not enabled:
         return

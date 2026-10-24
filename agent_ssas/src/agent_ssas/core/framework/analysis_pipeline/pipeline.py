@@ -85,6 +85,11 @@ class ThreatAnalysisPipeline:
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
 
+    async def wait_background_tasks(self) -> None:
+        """Wait for tracked background tasks, including alert persistence."""
+
+        await asyncio.gather(*self._background_tasks, return_exceptions=True)
+
     async def cleanup_report_files(self, ttl_days: int) -> int:
         """清理过期的威胁报告 JSON 文件,返回删除的文件数。
 

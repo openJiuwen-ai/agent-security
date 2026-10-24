@@ -345,7 +345,7 @@ class TestTraceLRUEviction:
         # 临时调小上限加速测试(直接改模块常量)
         import agent_ssas.core.framework.data_preprocessor.agent_preprocessor as ap
 
-        ap._MAX_CACHED_TRACES = 3
+        ap.set_max_cached_traces(3)
         try:
             # 写入 3 个 trace
             for tid in ("t1", "t2", "t3"):
@@ -376,7 +376,7 @@ class TestTraceLRUEviction:
             assert "t3" in traces
             assert "t4" in traces
         finally:
-            ap._MAX_CACHED_TRACES = original_max
+            ap.set_max_cached_traces(original_max)
 
     @staticmethod
     @pytest.mark.unit
@@ -392,7 +392,7 @@ class TestTraceLRUEviction:
         original_max = _MAX_CACHED_TRACES
         import agent_ssas.core.framework.data_preprocessor.agent_preprocessor as ap
 
-        ap._MAX_CACHED_TRACES = 2
+        ap.set_max_cached_traces(2)
         try:
             # 写入 t1(将成最旧)
             await parser.parse(
@@ -421,4 +421,4 @@ class TestTraceLRUEviction:
             # 重建的 trace 中节点正常注册
             assert node.node_id in events[-1].trace.all_nodes
         finally:
-            ap._MAX_CACHED_TRACES = original_max
+            ap.set_max_cached_traces(original_max)

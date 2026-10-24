@@ -14,53 +14,58 @@ from dataclasses import dataclass
 from .url_safety import UrlTarget
 
 MAX_DNS_ADDRESSES = 64
-_PRIVATE_V4 = tuple(
-    ipaddress.ip_network(cidr)
-    for cidr in (
-        "10.0.0.0/8",
-        "172.16.0.0/12",
-        "192.168.0.0/16",
-    )
-)
+
+
+def _ip_networks(cidrs: tuple[str, ...]) -> tuple:
+    """Build IP networks from CIDR text."""
+
+    networks = []
+    for cidr in cidrs:
+        networks.append(ipaddress.ip_network(cidr))
+    return tuple(networks)
+
+
+def _ip_addresses(values: tuple[str, ...]) -> frozenset:
+    """Build IP addresses from literal text."""
+
+    addresses = []
+    for value in values:
+        addresses.append(ipaddress.ip_address(value))
+    return frozenset(addresses)
+
+
+_PRIVATE_V4 = _ip_networks((
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+))
 # Keep the Xiaoyi inference proxy's special-target exclusions explicit rather
 # than relying on Python-version-specific is_global/is_reserved classifications.
-_FORBIDDEN_ENDPOINTS = frozenset(
-    ipaddress.ip_address(value)
-    for value in (
-        "100.100.100.200",
-        "168.63.129.16",
-        "fd00:ec2::254",
-    )
-)
-_IPV6_TRANSITION_NETWORKS = tuple(
-    ipaddress.ip_network(cidr)
-    for cidr in (
-        "2002::/16",
-        "2001::/32",
-        "64:ff9b::/96",
-        "64:ff9b:1::/48",
-    )
-)
+_FORBIDDEN_ENDPOINTS = _ip_addresses((
+    "100.100.100.200",
+    "168.63.129.16",
+    "fd00:ec2::254",
+))
+_IPV6_TRANSITION_NETWORKS = _ip_networks((
+    "2002::/16",
+    "2001::/32",
+    "64:ff9b::/96",
+    "64:ff9b:1::/48",
+))
 # Explicit exclusions keep older supported Python registries conservative.
 # Sources: IANA IPv4/IPv6 Special-Purpose Address Space, reviewed 2026-10-19.
 _SPECIAL_V4 = ipaddress.ip_network("192.0.0.0/24")
-_SPECIAL_V4_PUBLIC = frozenset(
-    ipaddress.ip_address(value)
-    for value in (
-        "192.0.0.9",
-        "192.0.0.10",
-    )
-)
+_SPECIAL_V4_PUBLIC = _ip_addresses((
+    "192.0.0.9",
+    "192.0.0.10",
+))
 _DEPRECATED_RELAY = ipaddress.ip_network("192.88.99.0/24")
-_NON_PUBLIC_V6 = tuple(
-    ipaddress.ip_network(cidr)
-    for cidr in (
-        "100:0:0:1::/64",
-        "3fff::/20",
-        "5f00::/16",
-        "fec0::/10",
-    )
-)
+_NON_PUBLIC_V6 = _ip_networks((
+    "100:0:0:1::/64",
+    "3fff::/20",
+    "5f00::/16",
+    "fec0::/10",
+))
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,13 +79,20 @@ def build_connection_policy(value: object) -> ConnectionPolicy:
     if not isinstance(value, Mapping):
         raise ValueError("net_guard.connection must be a mapping")
     fields = {"allow_http", "allow_loopback", "allow_private_network"}
-    if set(value) - fields or any(type(item) is not bool for item in value.values()):
+    invalid_type = False
+    for item in value.values():
+        if not isinstance(item, bool):
+            invalid_type = True
+            break
+    if set(value) - fields or invalid_type:
         raise ValueError("Invalid network connection policy")
     return ConnectionPolicy(**value)
 
 
 def normalize_address(value: object) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
-    if not isinstance(value, str) or not value or len(value) > 45 or "%" in value:
+    if not isinstance(value, str) or not value:
+        raise ValueError("DNS snapshot requires IP literals without zones")
+    if len(value) > 45 or "%" in value:
         raise ValueError("DNS snapshot requires IP literals without zones")
     try:
         address = ipaddress.ip_address(value)

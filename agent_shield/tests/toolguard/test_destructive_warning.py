@@ -193,7 +193,7 @@ def test_warning_partial_result_preserves_permission_fields(level):
     assert warning is not None
     decision = PermissionResult(permission=level, matched_rule="rule", reason="reason")
 
-    merged = PermissionEngine._merge_results([decision, warning])
+    merged = PermissionEngine.merge_results([decision, warning])
 
     assert merged.permission is level
     assert merged.matched_rule == decision.matched_rule

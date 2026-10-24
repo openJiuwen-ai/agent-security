@@ -21,27 +21,32 @@ def _policy(**filesystem_policy: object) -> SecurityPolicy:
 
 
 class TestAbsoluteSandboxPaths:
-    def test_posix_absolute_read_write_passes(self, tmp_path):
+    @staticmethod
+    def test_posix_absolute_read_write_passes(tmp_path):
         policy = _policy(read_write=["/opt/project"])
         assert policy.filesystem_policy.read_write == ["/opt/project"]
         _engine(tmp_path).validate_policy(policy)
 
-    def test_windows_drive_paths_pass(self, tmp_path):
+    @staticmethod
+    def test_windows_drive_paths_pass(tmp_path):
         engine = _engine(tmp_path)
         for path in (r"C:\Users\project", "C:/Users/project", "D:/work/repo"):
             policy = _policy(read_write=[path])
             engine.validate_policy(policy)
 
-    def test_unc_path_passes(self, tmp_path):
+    @staticmethod
+    def test_unc_path_passes(tmp_path):
         policy = _policy(read_write=[r"\\server\share\project"])
         _engine(tmp_path).validate_policy(policy)
 
-    def test_relative_path_still_rejected(self, tmp_path):
+    @staticmethod
+    def test_relative_path_still_rejected(tmp_path):
         policy = _policy(read_write=["project/files"])
         with pytest.raises(PolicyValidationError, match="absolute sandbox paths"):
             _engine(tmp_path).validate_policy(policy)
 
-    def test_bind_mount_accepts_windows_and_posix(self, tmp_path):
+    @staticmethod
+    def test_bind_mount_accepts_windows_and_posix(tmp_path):
         engine = _engine(tmp_path)
         windows = _policy(
             bind_mounts=[{
@@ -60,7 +65,8 @@ class TestAbsoluteSandboxPaths:
         engine.validate_policy(windows)
         engine.validate_policy(posix)
 
-    def test_relative_bind_mount_rejected(self, tmp_path):
+    @staticmethod
+    def test_relative_bind_mount_rejected(tmp_path):
         policy = _policy(
             bind_mounts=[{
                 "host_path": "relative/host",
@@ -71,13 +77,15 @@ class TestAbsoluteSandboxPaths:
         with pytest.raises(PolicyValidationError, match="absolute paths"):
             _engine(tmp_path).validate_policy(policy)
 
-    def test_windows_workspace_path_stays_reserved(self, tmp_path):
+    @staticmethod
+    def test_windows_workspace_path_stays_reserved(tmp_path):
         reserved = str(SANDBOX_WORKSPACE / "sbx")
         policy = _policy(read_write=[reserved])
         with pytest.raises(PolicyValidationError, match="server-managed backing storage"):
             _engine(tmp_path).validate_policy(policy)
 
-    def test_posix_reserved_launcher_path_stays_rejected(self, tmp_path):
+    @staticmethod
+    def test_posix_reserved_launcher_path_stays_rejected(tmp_path):
         policy = _policy(read_write=["/jiuwenbox/bin"])
         with pytest.raises(PolicyValidationError, match="reserved by"):
             _engine(tmp_path).validate_policy(policy)

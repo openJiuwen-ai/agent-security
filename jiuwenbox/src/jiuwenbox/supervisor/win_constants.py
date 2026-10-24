@@ -128,7 +128,7 @@ TOKEN_PRIMARY = 1
 TOKEN_IMPERSONATION = 2
 
 # 安全模拟级别 (SECURITY_IMPERSONATION_LEVEL).
-SecurityImpersonation = 2  # noqa: N806 - Win32 SDK 常量
+SECURITY_IMPERSONATION = 2  # noqa: N806 - Win32 SDK 常量
 
 # ---------------------------------------------------------------------------
 # 用户账户标志 (USER_INFO_1.usri1_flags / NetUserAdd), 对齐 lmaccess.h.
@@ -181,9 +181,9 @@ USER_INFO_1_LEVEL = 1
 #   JobObject AssociateCompletionPortInformation = 7
 #   JobObject GroupInformation            = 11
 # ---------------------------------------------------------------------------
-JobObjectBasicLimitInformation = 2  # noqa: N806 - Win32 SDK 常量
-JobObjectExtendedLimitInformation = 9  # noqa: N806 - Win32 SDK 常量
-JobObjectCpuRateControlInformation = 15  # noqa: N806 - Win32 SDK 常量
+JOB_OBJECT_BASIC_LIMIT_INFORMATION = 2  # noqa: N806 - Win32 SDK 常量
+JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9  # noqa: N806 - Win32 SDK 常量
+JOB_OBJECT_CPU_RATE_CONTROL_INFORMATION = 15  # noqa: N806 - Win32 SDK 常量
 
 # Job Object 基本限制标志 (JOBOBJECT_BASIC_LIMIT_INFORMATION.LimitFlags).
 JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x00000008
@@ -226,9 +226,9 @@ WRITE_DAC = 0x00040000
 # FILE_EXECUTE / FILE_TRAVERSE 同值; 父目录非递归 traverse 用.
 FILE_TRAVERSE = 0x00000020
 
-FILE_WRITE_DATA       = 0x00000002
-FILE_APPEND_DATA      = 0x00000004
-FILE_WRITE_EA         = 0x00000010
+FILE_WRITE_DATA = 0x00000002
+FILE_APPEND_DATA = 0x00000004
+FILE_WRITE_EA = 0x00000010
 FILE_WRITE_ATTRIBUTES = 0x00000100
 
 # allow_write 路径授予的写权限组合.

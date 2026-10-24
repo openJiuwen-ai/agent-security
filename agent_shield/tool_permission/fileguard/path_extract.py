@@ -419,11 +419,11 @@ def extract_accesses_native(
     outbound_base = agent_cwd if agent_cwd is not None else workspace
 
     if tool_name == "send_file_to_user":
-        resolved = [
-            (path, "read", "tool_arg")
-            for raw in normalize_file_path_list(tool_args.get("abs_file_path_list"))
-            if (path := _outbound_or_skip(raw, outbound_base)) is not None
-        ]
+        resolved = []
+        for raw in normalize_file_path_list(tool_args.get("abs_file_path_list")):
+            path = _outbound_or_skip(raw, outbound_base)
+            if path is not None:
+                resolved.append((path, "read", "tool_arg"))
         return resolved
     if tool_name in {"save_media_to_gallery", "save_file_to_file_manager"}:
         raw = tool_args.get("url")

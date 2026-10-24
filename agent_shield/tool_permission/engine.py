@@ -34,10 +34,11 @@ class PermissionEngine:
         self._enabled = True
         self._install(config or {})
 
-    def _build_components(self) -> tuple[PermissionComponent, ...]:
+    @staticmethod
+    def _build_components() -> tuple[PermissionComponent, ...]:
         """Create the engine-owned components."""
 
-        return (
+        components = [
             InjectionComponent(),
             CommandAllowlistComponent(),
             DestructiveWarningComponent(),
@@ -46,7 +47,8 @@ class PermissionEngine:
             FileGuardComponent(),
             ImmutableControlPlaneComponent(),
             NetGuardComponent(),
-        )
+        ]
+        return tuple(components)
 
     def _install(self, config: Mapping[str, Any]) -> None:
         """Build and configure a fresh component set, then swap it in.
@@ -154,6 +156,18 @@ class PermissionEngine:
 
         return self._config
 
+    @property
+    def components(self) -> tuple[PermissionComponent, ...]:
+        """Return the component set used by the current configuration."""
+
+        return self._components
+
+    @staticmethod
+    def merge_results(results: list[PermissionResult]) -> PermissionResult:
+        """Merge component results for callers outside the engine."""
+
+        return PermissionEngine._merge_results(results)
+
     @staticmethod
     def _merge_results(results: list[PermissionResult]) -> PermissionResult:
         """Merge component results without allowing a missing result to allow."""
@@ -196,4 +210,6 @@ class PermissionEngine:
             PermissionLevel.ASK: 2,
             PermissionLevel.DENY: 3,
         }
-        return ranks[permission] if permission is not None else -1
+        if permission is None:
+            return -1
+        return ranks.get(permission, -1)
