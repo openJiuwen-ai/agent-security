@@ -14,9 +14,16 @@ from urllib.parse import parse_qsl, quote, urlsplit
 MAX_URL_CHARS = 8192
 _HOST_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\Z")
 _AMBIGUOUS_URL = re.compile(r"[\x00-\x20\x7f\\]|\s")
+# ASCII whitespace is already <= 0x20, so a bytes translate matches the regex
+# without scanning an 8192-character URL through the re engine.
+_ASCII_URL_CLEAR = bytes(i for i in range(256) if not (i <= 0x20 or i == 0x7F or i == 0x5C))
 _NUMERIC_HOST = re.compile(r"(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+))*\Z")
 _PERCENT_ESCAPE = re.compile(r"%([0-9a-fA-F]{2})|%")
 _UNRESERVED = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+_PATH_QUOTE_SAFE = _UNRESERVED | set("/:@!$&'()*+,;=-._~%")
+_QUERY_QUOTE_SAFE = _PATH_QUOTE_SAFE | set("?=")
+_PATH_IDENTITY_DELETE = bytes(i for i in range(256) if chr(i) in _PATH_QUOTE_SAFE)
+_QUERY_IDENTITY_DELETE = bytes(i for i in range(256) if chr(i) in _QUERY_QUOTE_SAFE)
 _SECRET_WORDS = frozenset(
     {
         "auth",
@@ -101,6 +108,14 @@ def normalize_host(value: str, *, pattern: bool = False) -> str:
     return normalized
 
 
+def _has_ambiguous_url_text(value: str) -> bool:
+    """Return whether value matches the ambiguous-URL rejection regex."""
+
+    if value.isascii():
+        return bool(value.encode("ascii").translate(None, _ASCII_URL_CLEAR))
+    return _AMBIGUOUS_URL.search(value) is not None
+
+
 def _normalize_component(value: str, *, path: bool) -> str:
     def escape(match: re.Match[str]) -> str:
         digits = match.group(1)
@@ -120,6 +135,10 @@ def _normalize_component(value: str, *, path: bool) -> str:
     # separators. Reject those inputs rather than guessing the executed path.
     if path and any(segment in {".", ".."} for segment in value.split("/")):
         raise ValueError("Ambiguous URL dot segment")
+    if value.isascii():
+        delete = _PATH_IDENTITY_DELETE if path else _QUERY_IDENTITY_DELETE
+        if not value.encode("ascii").translate(None, delete):
+            return value
     try:
         return quote(value, safe="/:@!$&'()*+,;=-._~%" + ("?=" if not path else ""))
     except UnicodeError:
@@ -130,7 +149,7 @@ def parse_url(value: str, *, pattern: bool = False) -> UrlTarget:
     """Parse without silently discarding whitespace, credentials or bad ports."""
     if not isinstance(value, str) or not value or len(value) > MAX_URL_CHARS:
         raise ValueError("URL must be a non-empty string of at most 8192 characters")
-    if _AMBIGUOUS_URL.search(value) is not None:
+    if _has_ambiguous_url_text(value):
         raise ValueError("URL contains ambiguous characters")
     parsed_value = value
     if pattern and "://" in value and "?" in value.split("#", 1)[0]:

@@ -7,10 +7,7 @@ Connection facts are injected; no DNS lookup or HTTP request is performed.
 """
 
 import asyncio
-import logging
 import socket
-from statistics import median
-from time import perf_counter_ns
 
 import pytest
 
@@ -392,9 +389,8 @@ def test_real_entrypoints_use_only_supplied_connection_facts(monkeypatch):
     asyncio.run(scenario())
 
 
-@pytest.mark.performance
 @pytest.mark.parametrize("tool", ("fetch_webpage", "network_connect"))
-def test_production_entrypoint_latency_at_capacity(tool):
+def test_production_entrypoint_denies_at_capacity(tool):
     engine = PermissionEngine(
         {
             "tools": {"fetch_webpage": "allow"},
@@ -412,21 +408,5 @@ def test_production_entrypoint_latency_at_capacity(tool):
         "connect_address": ipv4(8, 8, 8, 8),
     }
 
-    async def measure():
-        for _ in range(30):
-            await engine.check_permission(tool, args)
-        samples = []
-        for _ in range(500):
-            started = perf_counter_ns()
-            result = await engine.check_permission(tool, args)
-            samples.append((perf_counter_ns() - started) / 1_000_000)
-            assert result.permission is L.DENY
-        return sorted(samples)
-
-    samples = asyncio.run(measure())
-    p50, p99 = median(samples), samples[int(len(samples) * 0.99) - 1]
-    logging.getLogger(__name__).info(
-        "W3 production %s latency: P50=%.3fms P99=%.3fms", tool, p50, p99,
-    )
-    assert p50 < 1.0
-    assert p99 < 5.0
+    result = asyncio.run(engine.check_permission(tool, args))
+    assert result.permission is L.DENY

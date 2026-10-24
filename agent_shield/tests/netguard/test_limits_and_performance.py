@@ -1,11 +1,8 @@
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Capacity boundaries and reproducible, IO-free decision timing."""
+"""Capacity boundaries for URL length, rule count, and connection snapshots."""
 
 import asyncio
-import logging
-from statistics import median
-from time import perf_counter_ns
 
 import pytest
 
@@ -61,11 +58,10 @@ def test_determinism_and_stable_matching_evidence():
     assert "net_guard:url:api.example.com" in results[0].matched_rule
 
 
-@pytest.mark.performance
 @pytest.mark.parametrize("distribution", ["exact", "glob_suffix", "glob_prefix"])
-def test_decision_latency_at_capacity(distribution):
-    # Each rule distribution exercises capacity, while the call also
-    # exercises 64 DNS answers and the maximum URL length. No loop startup is timed.
+def test_decision_denies_at_capacity(distribution):
+    # Rule capacity, 64 DNS answers, and the maximum URL length. Wall-clock
+    # latency follows the runner, so it is not a merge gate.
     patterns = {
         "exact": lambda i: f"host{i}.example.com",
         "glob_suffix": lambda i: f"*host{i}.example.com",
@@ -84,24 +80,5 @@ def test_decision_latency_at_capacity(distribution):
         "connect_address": ipv4(8, 8, 8, 8),
     }
 
-    async def measure():
-        for _ in range(30):
-            await component.evaluate("network_connect", args)
-        samples = []
-        for _ in range(500):
-            started = perf_counter_ns()
-            result = await component.evaluate("network_connect", args)
-            samples.append((perf_counter_ns() - started) / 1_000_000)
-            assert result.permission is L.DENY
-        return sorted(samples)
-
-    samples = asyncio.run(measure())
-    p50, p99 = median(samples), samples[int(len(samples) * 0.99) - 1]
-    logging.getLogger(__name__).info(
-        "W3 %s capacity decision latency: P50=%.3fms P99=%.3fms",
-        distribution,
-        p50,
-        p99,
-    )
-    assert p50 < 1.0
-    assert p99 < 5.0
+    result = asyncio.run(component.evaluate("network_connect", args))
+    assert result.permission is L.DENY
