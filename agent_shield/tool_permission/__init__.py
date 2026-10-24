@@ -7,6 +7,7 @@
 
 from .component import PermissionComponent
 from .engine import PermissionEngine
+from .manager import PermissionManager, get_permission_manager
 from .models import PermissionLevel, PermissionResult
 from .routing import (
     CommandDialect,
@@ -24,6 +25,7 @@ __all__ = [
     "PermissionComponent",
     "PermissionEngine",
     "PermissionLevel",
+    "PermissionManager",
     "PermissionResult",
     "CommandDialect",
     "RouteContext",
@@ -32,4 +34,5 @@ __all__ = [
     "SandboxPolicyProjection",
     "SkippedSandboxRule",
     "project_sandbox_policy",
+    "get_permission_manager",
 ]
