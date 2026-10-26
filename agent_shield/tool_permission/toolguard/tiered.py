@@ -2,10 +2,10 @@
 
 """Layered command permission policy (R06-R12).
 
-One component, one interface: the pipeline below runs inside ``evaluate``.
+The engine expands candidates (original / unwrapped / subcommands).  This
+component judges **one** candidate:
 
-    whole-tool deny -> unwrap launcher (R10) -> parse + structure floors (R09)
-    -> approval overrides -> sub-commands + whole views (R11) -> strictest
+    approval → rules → tool baseline → defaults → ASK
 """
 
 from __future__ import annotations
@@ -17,9 +17,8 @@ import sys
 from typing import Any
 
 from ..models import PermissionLevel, PermissionResult
-from ..routing import CommandDialect, RouteContext, RouteInterest, SecurityTarget
+from ..routing import CandidateKind, RouteContext
 from .builtin_rules import SHELL_TOOLS, package_command_rules
-from .command_canonicalize import canonicalize_shell_command_for_permission
 from .shell_ast import ShellAstParseResult, ShellSubcommand, parse_shell_for_permission
 
 logger = logging.getLogger(__name__)
@@ -140,14 +139,6 @@ def _structure_floors(
     return floors
 
 
-def _aggregate(results: list[tuple[str, PermissionLevel, str]]) -> tuple[PermissionLevel, str]:
-    if len(results) == 1:
-        return results[0][1], results[0][2]
-    final = _strictest(*(level for _, level, _ in results))
-    parts = sorted({f"{text}=>{label}" for text, level, label in results if level is final})
-    return final, f"{_PREFIX}:shell_subcommands:" + "+".join(parts)
-
-
 def _compile_wildcard(pattern: str) -> re.Pattern[str] | None:
     """Prepare the original restricted wildcard matcher once at configuration."""
     # Exclude only shell metacharacters, newlines and NUL to prevent command
@@ -211,9 +202,7 @@ def _rule_label(namespace: str, rule: Mapping[str, Any]) -> str:
 
 
 class TieredPolicyComponent:
-    """Command permission interface: baselines, rules, approvals and structure floors."""
-
-    interests: tuple[RouteInterest, ...] | None = (RouteInterest(SecurityTarget.COMMAND),)
+    """Judge one candidate: approvals, rules, tool baselines and defaults."""
 
     def __init__(self) -> None:
         self._tools: dict[str, tuple[PermissionLevel, str]] = {}
@@ -292,6 +281,17 @@ class TieredPolicyComponent:
         self._approval_overrides = prepared_overrides
         self._guard_actions = _guard_actions(prepared)
 
+    def match_approval(self, tool_name: str, command: str) -> PermissionResult | None:
+        """Return ALLOW when ``command`` hits an approval override; else ``None``.
+
+        Used by the engine for whole-call / per-candidate short-circuits.
+        """
+
+        hit = self._approval(tool_name, command)
+        if hit is None:
+            return None
+        return self._result(*hit)
+
     async def evaluate(
         self,
         tool_name: str,
@@ -299,81 +299,50 @@ class TieredPolicyComponent:
         *,
         route: RouteContext | None = None,
     ) -> PermissionResult | None:
-        """Judge one command invocation (R06-R12); non-command routes return ``None``."""
-        if route is None or route.target is not SecurityTarget.COMMAND:
-            return None
-        # All dialects share one parsing entrance; rule tools still match concrete names.
-        if route.command_dialect not in (
-            CommandDialect.POSIX_SHELL, CommandDialect.POWERSHELL,
-            CommandDialect.CMD, CommandDialect.UNKNOWN,
-        ):
-            return None
+        """Judge one candidate (rules / baseline / defaults / structure floors)."""
 
         baseline = self._tools.get(tool_name)
-        if baseline is not None and baseline[0] is PermissionLevel.DENY:
-            return self._result(*baseline)
+        command = _command_text(tool_args)
+        is_shell = bool(route is not None and route.is_shell) or tool_name in _SHELL_TOOLS
+        judged = self._judge(tool_name, command, baseline, is_shell=is_shell)
 
-        original = _command_text(tool_args)
-        canonical = canonicalize_shell_command_for_permission(original)
-        views = (original,) if canonical == original else (original, canonical)
-
-        approval = next(filter(None, (self._approval(tool_name, view) for view in views)), None)
-        if approval is not None:
-            return self._result(*approval)
-
-        parse = parse_shell_for_permission(canonical) if tool_name in _SHELL_TOOLS else None
-        if parse is not None and parse.kind == "simple" and any(s.text for s in parse.subcommands):
-            level, label = self._judge_compound(tool_name, parse, views, baseline)
-        else:
-            level, label = self._judge(tool_name, canonical, baseline)
-            if original != canonical:
-                level, label = self._merge(level, label, self._rules_only(tool_name, original))
-        if parse is not None:
-            for floor, floor_label in _structure_floors(parse, self._guard_actions):
-                tie_with_label = floor is level and "interpreter_sink" in floor_label
-                if _STRICTNESS[floor] < _STRICTNESS[level] or tie_with_label:
-                    level, label = floor, f"{floor_label}|{label}"
-        return self._result(level, label)
-
-    def _judge_compound(
-        self,
-        tool_name: str,
-        parse: ShellAstParseResult,
-        views: tuple[str, ...],
-        baseline: tuple[PermissionLevel, str] | None,
-    ) -> tuple[PermissionLevel, str]:
-        """Every sub-command gets a full judgement; whole views only match rules (R11)."""
-        results: list[tuple[str, PermissionLevel, str]] = []
-        for sub in parse.subcommands:
-            if not sub.text:
-                continue
-            level, label = self._judge(tool_name, sub.text, baseline)
-            results.append((sub.text, level, label))
-            if level is PermissionLevel.DENY:
-                break
-        level, label = _aggregate(results)
-        whole = [hit for hit in (self._rules_only(tool_name, view) for view in views) if hit]
-        if whole:
-            whole_level = _strictest(*(hit[0] for hit in whole))
-            whole_label = next(text for hit_level, text in whole if hit_level is whole_level)
-            level = _strictest(level, whole_level)
-            if level is whole_level:
-                label = whole_label
-        return level, label
-
-    @staticmethod
-    def _merge(
-        level: PermissionLevel, label: str, other: tuple[PermissionLevel, str] | None
-    ) -> tuple[PermissionLevel, str]:
-        """Keep the stricter of two candidates; a tie keeps the existing one."""
-        if other is not None and _STRICTNESS[other[0]] < _STRICTNESS[level]:
-            return other
-        return level, label
+        kind = route.kind if route is not None else CandidateKind.ORIGINAL
+        # Structure floors need the whole (or unwrapped) view, not a leaf.
+        apply_floors = (
+            is_shell
+            and kind in (CandidateKind.ORIGINAL, CandidateKind.UNWRAPPED)
+            and tool_name in _SHELL_TOOLS
+            and bool(command)
+        )
+        if apply_floors:
+            parse = parse_shell_for_permission(command)
+            floors = _structure_floors(parse, self._guard_actions)
+            if judged is None and floors:
+                level, label = floors[0]
+                for floor, floor_label in floors[1:]:
+                    if _STRICTNESS[floor] < _STRICTNESS[level]:
+                        level, label = floor, floor_label
+                return self._result(level, label)
+            if judged is not None:
+                level, label = judged
+                for floor, floor_label in floors:
+                    tie_with_label = floor is level and "interpreter_sink" in floor_label
+                    if _STRICTNESS[floor] < _STRICTNESS[level] or tie_with_label:
+                        level, label = floor, f"{floor_label}|{label}"
+                return self._result(level, label)
+        if judged is None:
+            return None
+        return self._result(*judged)
 
     def _judge(
-        self, tool_name: str, command: str, baseline: tuple[PermissionLevel, str] | None
-    ) -> tuple[PermissionLevel, str]:
-        """One complete judgement: overrides, rules, tool baseline, defaults, ASK."""
+        self,
+        tool_name: str,
+        command: str,
+        baseline: tuple[PermissionLevel, str] | None,
+        *,
+        is_shell: bool,
+    ) -> tuple[PermissionLevel, str] | None:
+        """One judgement: overrides, rules, tool baseline, defaults; shell ASK fallback."""
         approval = self._approval(tool_name, command)
         if approval is not None:
             return approval
@@ -384,7 +353,10 @@ class TieredPolicyComponent:
             return baseline
         if self._default is not None:
             return self._default, f"{_PREFIX}:defaults.*"
-        return PermissionLevel.ASK, f"{_PREFIX}:fallback(no_config)"
+        # Shell stays fail-closed; non-shell abstains so Net/File can speak alone.
+        if is_shell:
+            return PermissionLevel.ASK, f"{_PREFIX}:fallback(no_config)"
+        return None
 
     def _approval(self, tool_name: str, command: str) -> tuple[PermissionLevel, str] | None:
         labels = []

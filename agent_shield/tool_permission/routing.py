@@ -1,33 +1,32 @@
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
-"""Shared routing contracts for permission components.
+"""Candidate context shared with permission components.
 
-The router describes facts about one tool call.  It deliberately does not
-know concrete security components; components declare the facts they care
-about and the engine matches them.
+The engine expands one tool call into candidates (original / unwrapped /
+subcommands) and passes each candidate to every component.  Components decide
+themselves whether they have an opinion; the engine does not filter by
+security-object category.
 """
 
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, cast
+from typing import Any
 
 
-class SecurityTarget(StrEnum):
-    """Security object category; ALL is a subscription-only wildcard."""
+class CandidateKind(StrEnum):
+    """Which command view a candidate represents."""
 
-    ALL = "all"
-    COMMAND = "command"
-    FILE = "file"
-    NETWORK = "network"
-    OTHER = "other"
+    ORIGINAL = "original"
+    UNWRAPPED = "unwrapped"
+    SUBCOMMAND = "subcommand"
 
 
 class CommandDialect(StrEnum):
-    """Command language used by a command tool, when known."""
+    """Command language used by a shell tool, when known."""
 
     POSIX_SHELL = "posix_shell"
     POWERSHELL = "powershell"
@@ -37,38 +36,11 @@ class CommandDialect(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class RouteContext:
-    """Routing facts shared with matching permission components."""
+    """Facts about one candidate shared with permission components."""
 
-    target: SecurityTarget
+    kind: CandidateKind = CandidateKind.ORIGINAL
     command_dialect: CommandDialect | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class RouteInterest:
-    """A component's routing subscription.
-
-    ``command_dialect=None`` means any dialect for the given target.
-    ``target=SecurityTarget.ALL`` matches every category and requires no dialect.
-    """
-
-    target: SecurityTarget
-    command_dialect: CommandDialect | None = None
-
-    def __post_init__(self) -> None:
-        """Reject subscriptions that the router cannot meaningfully produce."""
-
-        if not isinstance(self.target, SecurityTarget):
-            raise TypeError("target must be a SecurityTarget")
-        if self.command_dialect is not None:
-            if not isinstance(self.command_dialect, CommandDialect):
-                raise TypeError("command_dialect must be a CommandDialect or None")
-            if self.target is not SecurityTarget.COMMAND:
-                raise ValueError("only COMMAND subscriptions may specify a dialect")
-
-    def matches(self, route: RouteContext) -> bool:
-        return (self.target is SecurityTarget.ALL or self.target is route.target) and (
-            self.command_dialect is None or self.command_dialect is route.command_dialect
-        )
+    is_shell: bool = False
 
 
 _POSIX_TOOLS = frozenset({"bash", "sh", "zsh", "ksh", "dash", "ash", "fish"})
@@ -120,8 +92,6 @@ def _tool_basename(value: object) -> str:
 
 
 def _dialect_from_args(tool_args: Mapping[str, Any]) -> CommandDialect | None:
-    """Read an optional explicit dialect without requiring it from callers."""
-
     for key in ("shell", "executable", "interpreter"):
         value = _tool_basename(tool_args.get(key))
         if value in _POSIX_TOOLS:
@@ -133,54 +103,92 @@ def _dialect_from_args(tool_args: Mapping[str, Any]) -> CommandDialect | None:
     return None
 
 
-def resolve_route(tool_name: str, tool_args: Mapping[str, Any]) -> RouteContext:
-    """Resolve shared routing facts for one tool call.
+def is_shell_tool(tool_name: str) -> bool:
+    """Return whether ``tool_name`` is a known shell / command tool."""
 
-    Named command tools get a known dialect where the name is sufficient.
-    Generic command tools remain ``UNKNOWN`` unless the call explicitly
-    supplies ``shell``, ``executable`` or ``interpreter``.
-    """
+    return _tool_basename(tool_name) in _COMMAND_TOOLS
+
+
+def resolve_dialect(tool_name: str, tool_args: Mapping[str, Any]) -> CommandDialect | None:
+    """Resolve shell dialect for a tool call; ``None`` when not a shell tool."""
 
     name = _tool_basename(tool_name)
     if name in _POSIX_TOOLS:
-        return RouteContext(SecurityTarget.COMMAND, CommandDialect.POSIX_SHELL)
+        return CommandDialect.POSIX_SHELL
     if name in _POWERSHELL_TOOLS or name == "core.powershell":
-        return RouteContext(SecurityTarget.COMMAND, CommandDialect.POWERSHELL)
+        return CommandDialect.POWERSHELL
     if name in _CMD_TOOLS:
-        return RouteContext(SecurityTarget.COMMAND, CommandDialect.CMD)
+        return CommandDialect.CMD
     if name in _COMMAND_TOOLS:
-        return RouteContext(
-            SecurityTarget.COMMAND, _dialect_from_args(tool_args) or CommandDialect.UNKNOWN
-        )
-    if name in _FILE_TOOLS:
-        return RouteContext(SecurityTarget.FILE)
-    if name in _NETWORK_TOOLS:
-        return RouteContext(SecurityTarget.NETWORK)
-    return RouteContext(SecurityTarget.OTHER)
+        return _dialect_from_args(tool_args) or CommandDialect.UNKNOWN
+    return None
+
+
+def resolve_route(tool_name: str, tool_args: Mapping[str, Any]) -> RouteContext:
+    """Build an ORIGINAL candidate context for one tool call.
+
+    Kept for components that fall back when the engine did not pass ``route``.
+    """
+
+    dialect = resolve_dialect(tool_name, tool_args)
+    return RouteContext(
+        kind=CandidateKind.ORIGINAL,
+        command_dialect=dialect,
+        is_shell=dialect is not None,
+    )
+
+
+def is_network_tool(tool_name: str) -> bool:
+    return _tool_basename(tool_name) in _NETWORK_TOOLS
+
+
+def is_file_tool(tool_name: str) -> bool:
+    return _tool_basename(tool_name) in _FILE_TOOLS
+
+
+# --- Compatibility aliases (deprecated; remove after callers migrate) ---
+
+
+class SecurityTarget(StrEnum):
+    """Deprecated: category routing has been removed."""
+
+    ALL = "all"
+    COMMAND = "command"
+    FILE = "file"
+    NETWORK = "network"
+    OTHER = "other"
+
+
+@dataclass(frozen=True, slots=True)
+class RouteInterest:
+    """Deprecated: components are no longer filtered by subscription."""
+
+    target: SecurityTarget
+    command_dialect: CommandDialect | None = None
+
+    @staticmethod
+    def matches(route: RouteContext) -> bool:
+        del route
+        return True
 
 
 def route_matches(route: RouteContext, interests: object) -> bool:
-    """Return whether a component subscription matches a route."""
+    """Deprecated: always True (engine invokes every component)."""
 
-    if interests is None:
-        return True
-    if isinstance(interests, RouteInterest):
-        interests = (interests,)
-    try:
-        interests_iter = cast(Iterable[object], interests)
-        return any(
-            isinstance(interest, RouteInterest) and interest.matches(route)
-            for interest in interests_iter
-        )
-    except TypeError:
-        return False
+    del route, interests
+    return True
 
 
 __all__ = [
+    "CandidateKind",
     "CommandDialect",
     "RouteContext",
     "RouteInterest",
     "SecurityTarget",
+    "is_file_tool",
+    "is_network_tool",
+    "is_shell_tool",
+    "resolve_dialect",
     "resolve_route",
     "route_matches",
 ]

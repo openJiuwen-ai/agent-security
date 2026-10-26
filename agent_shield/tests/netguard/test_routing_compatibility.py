@@ -14,7 +14,7 @@ from agent_shield.tool_permission import PermissionEngine, PermissionResult
 from agent_shield.tool_permission import PermissionLevel as L
 from agent_shield.tool_permission.netguard.component import NetGuardComponent
 from agent_shield.tool_permission.netguard.iptext import ipv4
-from agent_shield.tool_permission.routing import SecurityTarget, resolve_route
+from agent_shield.tool_permission.routing import is_network_tool
 
 _FETCH_TOOLS = ("mcp_fetch_webpage", "fetch_webpage", "web_fetch_webpage")
 
@@ -129,20 +129,19 @@ def test_tool_name_whitespace_cannot_skip_the_component(tool, padding):
         "prefix.fetch_webpage",
     ),
 )
-def test_routing_category_never_expands_url_inspection(tool):
+def test_non_fetch_tools_do_not_get_fetch_url_policy(tool):
     engine, component = _mount(_config(default="deny"))
-    component.interests = NetGuardComponent.interests
-    # NETWORK tools may get a baseline, but their arguments do not acquire
-    # fetch URL inspection merely by sharing the routing category.
+    # Only exact fetch helpers inspect URL args; other network names get baseline only.
     args = {"url": "file:///private", "resolved_addresses": [], "connect_address": "bad"}
     result = _check(engine, tool, args)
-    if resolve_route(tool, {}).target is SecurityTarget.NETWORK:
+    assert component.calls == [(tool, args)]
+    if is_network_tool(tool):
+        assert component.results[0] is not None
         assert component.results[0].permission is L.ASK
-        assert component.results[0].matched_rule == "tiered_policy:fallback(no_config)"
     else:
-        assert component.calls == component.results == []
-    assert result.permission is L.ASK
-    assert result.matched_rule in (None, "tiered_policy:fallback(no_config)")
+        assert component.results[0] is None
+        assert result.permission is L.ASK
+        assert result.matched_rule in (None, "tiered_policy:fallback(no_config)")
 
 
 @pytest.mark.parametrize("tool", _FETCH_TOOLS)

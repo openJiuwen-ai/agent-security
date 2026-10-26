@@ -11,17 +11,14 @@ from agent_shield.tool_permission import PermissionEngine, PermissionLevel, Perm
 from agent_shield.tool_permission.component import PermissionComponent
 from agent_shield.tool_permission.toolguard.injection import InjectionComponent
 from agent_shield.tool_permission.routing import (
+    CandidateKind,
     CommandDialect,
     RouteContext,
-    RouteInterest,
-    SecurityTarget,
     resolve_route,
 )
 
 
 class ResultComponent:
-    interests: tuple[RouteInterest, ...] | None = (RouteInterest(SecurityTarget.ALL),)
-
     def __init__(self, result: PermissionResult) -> None:
         self.result = result
         self.configured: list[dict[str, object]] = []
@@ -40,8 +37,6 @@ class ResultComponent:
 
 
 class RouteComponent(ResultComponent):
-    interests = (RouteInterest(SecurityTarget.COMMAND, CommandDialect.POSIX_SHELL),)
-
     def __init__(self, result: PermissionResult) -> None:
         super().__init__(result)
         self.routes = []
@@ -204,69 +199,34 @@ def test_invalid_input_is_rejected() -> None:
         asyncio_run(engine.check_permission("bash", []))  # type: ignore[arg-type]
 
 
-def test_route_aware_component_receives_matching_route() -> None:
+def test_route_aware_component_receives_candidate_context() -> None:
     component = RouteComponent(PermissionResult(permission=PermissionLevel.DENY))
     engine = ComponentEngine(component)
 
     result = asyncio_run(engine.check_permission("bash", {"command": "echo hi"}))
 
     assert result.permission is PermissionLevel.DENY
-    assert component.routes[0].target is SecurityTarget.COMMAND
+    assert component.routes[0].kind is CandidateKind.ORIGINAL
+    assert component.routes[0].is_shell is True
     assert component.routes[0].command_dialect is CommandDialect.POSIX_SHELL
 
 
-def test_route_interest_skips_non_matching_component() -> None:
+def test_every_component_is_invoked_for_non_shell_tools() -> None:
     component = RouteComponent(PermissionResult(permission=PermissionLevel.DENY))
-    engine = ComponentEngine(component)
-
-    result = asyncio_run(engine.check_permission("read_file", {"path": "a.txt"}))
-
-    assert result.permission is PermissionLevel.ASK
-    assert component.routes == []
-
-
-def test_all_route_interest_matches_every_resolved_route() -> None:
-    component = RouteComponent(PermissionResult(permission=PermissionLevel.DENY))
-    component.interests = (RouteInterest(SecurityTarget.ALL),)
     engine = ComponentEngine(component)
 
     result = asyncio_run(engine.check_permission("read_file", {"path": "a.txt"}))
 
     assert result.permission is PermissionLevel.DENY
-    assert component.routes[0].target is SecurityTarget.FILE
-
-
-@pytest.mark.parametrize("tool", ["bash", "powershell", "cmd", "mcp_exec_command", "read_file", "fetch", "unknown"])
-def test_all_subscription_matches_each_category(tool: str) -> None:
-    route = resolve_route(tool, {})
-    assert route.target is not SecurityTarget.ALL
-    assert RouteInterest(SecurityTarget.ALL).matches(route)
+    assert component.routes[0].kind is CandidateKind.ORIGINAL
+    assert component.routes[0].is_shell is False
 
 
 @pytest.mark.parametrize(
-    "target",
-    [
-        SecurityTarget.FILE,
-        SecurityTarget.NETWORK,
-        SecurityTarget.OTHER,
-        SecurityTarget.ALL,
-    ],
+    "tool",
+    ["bash", "powershell", "cmd", "mcp_exec_command", "read_file", "fetch", "unknown"],
 )
-def test_non_command_dialect_subscription_is_rejected(target: SecurityTarget) -> None:
-    with pytest.raises(ValueError):
-        RouteInterest(target, CommandDialect.POSIX_SHELL)
-
-
-def test_unrecognized_subscription_values_are_rejected() -> None:
-    with pytest.raises(TypeError):
-        RouteInterest("missing")  # type: ignore[arg-type]
-    with pytest.raises(TypeError):
-        RouteInterest(SecurityTarget.COMMAND, "missing")  # type: ignore[arg-type]
-
-
-def test_unknown_dialect_is_not_a_wildcard() -> None:
-    posix = resolve_route("bash", {})
-    unknown = resolve_route("mcp_exec_command", {})
-    assert RouteInterest(SecurityTarget.COMMAND).matches(posix)
-    assert not RouteInterest(SecurityTarget.COMMAND, CommandDialect.UNKNOWN).matches(posix)
-    assert RouteInterest(SecurityTarget.COMMAND, CommandDialect.UNKNOWN).matches(unknown)
+def test_resolve_route_sets_shell_flag(tool: str) -> None:
+    route = resolve_route(tool, {})
+    assert route.kind is CandidateKind.ORIGINAL
+    assert route.is_shell is (tool in {"bash", "powershell", "cmd", "mcp_exec_command"})

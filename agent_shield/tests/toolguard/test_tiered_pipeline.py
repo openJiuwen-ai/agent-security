@@ -7,9 +7,8 @@ from typing import Any
 
 import pytest
 
-from agent_shield.tool_permission import PermissionLevel
+from agent_shield.tool_permission import PermissionEngine, PermissionLevel
 from agent_shield.tool_permission.models import PermissionResult
-from agent_shield.tool_permission.routing import CommandDialect, RouteContext, SecurityTarget
 from agent_shield.tool_permission.toolguard import shell_ast, tiered
 from agent_shield.tool_permission.toolguard.builtin_rules import package_command_rules
 from agent_shield.tool_permission.toolguard.command_canonicalize import (
@@ -23,16 +22,15 @@ from agent_shield.tool_permission.toolguard.shell_ast import (
 )
 from agent_shield.tool_permission.toolguard.tiered import TieredPolicyComponent
 
-_ROUTE = RouteContext(SecurityTarget.COMMAND, CommandDialect.POSIX_SHELL)
-_ALLOW_BASH = {"tools": {"bash": "allow"}}
+_ALLOW_BASH = {"tools": {"bash": "allow"}, "shell_allowlist": None}
 
 
 def _run(config: dict[str, Any], command: str, tool: str = "bash") -> PermissionResult:
-    component = TieredPolicyComponent()
-    component.configure(config)
-    result = asyncio.run(component.evaluate(tool, {"command": command}, route=_ROUTE))
-    assert result is not None
-    assert result.matched_rule is not None
+    # Candidate expansion (unwrap / subcommands) lives on the engine now.
+    merged = {"shell_allowlist": None, **config}
+    engine = PermissionEngine(merged)
+    result = asyncio.run(engine.check_permission(tool, {"command": command}))
+    assert result.matched_rule is not None or result.permission is not None
     return result
 
 
@@ -46,6 +44,8 @@ def _fake_parse(
     monkeypatch: pytest.MonkeyPatch, texts: list[str], *, pipeline: bool = False
 ) -> None:
     """Stand in for the optional tree-sitter backend with a trustworthy parse."""
+    from agent_shield.tool_permission import engine as engine_mod
+
     flags = ShellStructureFlags(
         has_compound_operators=not pipeline,
         has_pipeline=pipeline,
@@ -57,7 +57,13 @@ def _fake_parse(
         flags=flags,
         backend="tree-sitter",
     )
-    monkeypatch.setattr(tiered, "parse_shell_for_permission", lambda _command: parse)
+
+    def stub(_command):
+        return parse
+
+    monkeypatch.setattr(shell_ast, "parse_shell_for_permission", stub)
+    monkeypatch.setattr(tiered, "parse_shell_for_permission", stub)
+    monkeypatch.setattr(engine_mod, "parse_shell_for_permission", stub)
 
 
 # --- R07 / R12: package rules ---------------------------------------------------------
@@ -287,13 +293,21 @@ def test_approval_override_on_whole_command_skips_floors(monkeypatch: pytest.Mon
     assert "approval_overrides" in result.matched_rule
 
 
-def test_whole_tool_deny_short_circuits_before_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
-    def boom(_command: str) -> None:
-        raise AssertionError("must not parse")
+def test_whole_tool_deny_is_baseline_not_parse_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """tools.bash deny no longer skips parsing; it still wins when nothing else hits."""
+    parsed = []
 
-    monkeypatch.setattr(tiered, "parse_shell_for_permission", boom)
+    def track(command: str):
+        parsed.append(command)
+        return parse_shell_for_permission(command)
+
+    from agent_shield.tool_permission import engine as engine_mod
+
+    monkeypatch.setattr(tiered, "parse_shell_for_permission", track)
+    monkeypatch.setattr(engine_mod, "parse_shell_for_permission", track)
     result = _run({"tools": {"bash": "deny"}}, "ls")
     assert result.permission is PermissionLevel.DENY
+    assert parsed  # engine may parse candidates; deny is not an early gate anymore
 
 
 def test_non_shell_tool_is_not_parsed() -> None:
@@ -302,14 +316,21 @@ def test_non_shell_tool_is_not_parsed() -> None:
 
 
 def test_reconfigure_refreshes_guard_actions(fallback_parser: None) -> None:
+    from agent_shield.tool_permission.routing import CandidateKind, CommandDialect, RouteContext
+
+    route = RouteContext(
+        kind=CandidateKind.ORIGINAL,
+        command_dialect=CommandDialect.POSIX_SHELL,
+        is_shell=True,
+    )
     component = TieredPolicyComponent()
     config = {**_ALLOW_BASH, "package_builtin_rules": False}
     component.configure(config)
-    first = asyncio.run(component.evaluate("bash", {"command": "a | b"}, route=_ROUTE))
+    first = asyncio.run(component.evaluate("bash", {"command": "a | b"}, route=route))
     assert first is not None
     component.configure({**config, "guard_actions": {"parse_unavailable": "allow",
                                                     "structure_guard": "allow"}})
-    second = asyncio.run(component.evaluate("bash", {"command": "a | b"}, route=_ROUTE))
+    second = asyncio.run(component.evaluate("bash", {"command": "a | b"}, route=route))
     assert second is not None
     assert (first.permission, second.permission) == (PermissionLevel.ASK, PermissionLevel.ALLOW)
 

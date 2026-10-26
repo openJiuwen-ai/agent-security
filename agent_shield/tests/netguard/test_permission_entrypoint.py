@@ -11,12 +11,12 @@ import socket
 
 import pytest
 
-from agent_shield.tool_permission import PermissionEngine, SecurityTarget
+from agent_shield.tool_permission import PermissionEngine
 from agent_shield.tool_permission import PermissionLevel as L
 from agent_shield.tool_permission.netguard.component import NetGuardComponent
 from agent_shield.tool_permission.netguard.iptext import ipv4, ipv6
 from agent_shield.tool_permission.netguard.tool_policy import NetworkToolPolicy
-from agent_shield.tool_permission.routing import resolve_route
+from agent_shield.tool_permission.routing import CandidateKind, is_network_tool, resolve_route
 
 FETCH_TOOLS = ("mcp_fetch_webpage", "fetch_webpage", "web_fetch_webpage")
 URL = "https://example.com/page"
@@ -58,9 +58,11 @@ def test_production_routing_calls_w3_once_with_network_facts(tool, padding, monk
 
     assert result.permission is L.DENY
     assert result.matched_rule == "net_guard:url:example.com"
-    assert resolve_route(name, {}).target is SecurityTarget.NETWORK
-    assert calls == [(name, resolve_route(name, {}))]
-    assert NetGuardComponent.interests[0].target is SecurityTarget.NETWORK
+    assert is_network_tool(name)
+    assert len(calls) == 1
+    assert calls[0][0] == name
+    assert calls[0][1].kind is CandidateKind.ORIGINAL
+    assert calls[0][1].is_shell is False
 
 
 @pytest.mark.parametrize("tool", FETCH_TOOLS)
@@ -111,15 +113,21 @@ def test_c_allow_does_not_replace_an_absent_a_policy_with_allow():
 
 
 @pytest.mark.parametrize("level", ("ask", "deny", "undetermined"))
-def test_connection_action_does_not_repeat_a_baseline_or_global_default(level):
+def test_connection_url_allow_merges_with_tiered_tool_baseline(level):
+    """NetGuard still skips its own tool baseline for network_connect; Tiered does not.
+
+    Both components speak independently; the engine keeps the stricter result.
+    """
     cfg = config()
     cfg["tools"]["network_connect"] = level
     cfg["defaults"] = {"*": level}
     cfg["tools"]["mcp_fetch_webpage"] = "deny"
     engine = PermissionEngine(cfg)
     assert check(engine).permission is L.DENY
-    assert check(engine, "network_connect", CONNECTION).permission is L.ALLOW
-    assert query(engine, "network_connect", CONNECTION) == (L.ALLOW, "net_guard:url:example.com")
+    result = check(engine, "network_connect", CONNECTION)
+    assert result.permission is L(level)
+    assert result.matched_rule == "tools.network_connect"
+    assert query(engine, "network_connect", CONNECTION) == (L(level), "tools.network_connect")
 
 
 def test_connection_action_never_invokes_network_a_policy(monkeypatch):
@@ -206,14 +214,23 @@ def test_network_baseline_preserves_raw_global_defaults(tool, level):
 
 
 @pytest.mark.parametrize("tool", ("read_file", "custom_tool", "bash"))
-def test_engine_does_not_dispatch_non_network_tools_to_netguard(tool, monkeypatch):
-    async def forbidden(*args, **kwargs):
-        raise AssertionError("Non-network tool reached NetGuard")
+def test_netguard_abstains_on_non_network_tools(tool, monkeypatch):
+    """NetGuard is invoked for every candidate but returns None for non-network tools."""
+    seen = []
+    original = NetGuardComponent.evaluate
 
-    monkeypatch.setattr(NetGuardComponent, "evaluate", forbidden)
-    engine = PermissionEngine({"tools": {tool: "deny"}, "defaults": {"*": "deny"}})
-    check(engine, tool, {})
-    query(engine, tool, {})
+    async def observe(self, name, args, *, route=None):
+        result = await original(self, name, args, route=route)
+        seen.append(result)
+        return result
+
+    monkeypatch.setattr(NetGuardComponent, "evaluate", observe)
+    engine = PermissionEngine(
+        {"tools": {tool: "deny"}, "defaults": {"*": "deny"}, "shell_allowlist": None}
+    )
+    check(engine, tool, {"command": "echo hi"} if tool == "bash" else {})
+    assert seen
+    assert all(item is None for item in seen)
 
 
 @pytest.mark.parametrize("tool", (*FETCH_TOOLS, "network_connect"))
@@ -255,21 +272,16 @@ def test_overlong_url_returns_deny_in_both_entrypoints(tool, url):
 
 
 @pytest.mark.parametrize("tool", ("read_file", "custom_tool"))
-def test_engine_does_not_install_a_general_non_command_baseline(tool):
+def test_non_shell_tools_honour_tools_and_defaults_via_tiered(tool):
     engine = PermissionEngine({"tools": {tool: "allow"}, "defaults": {"*": "allow"}})
-    assert check(engine, tool, {}).permission is L.ASK
-    assert query(engine, tool, {}) == (L.ASK, None)
+    assert check(engine, tool, {}).permission is L.ALLOW
+    assert query(engine, tool, {}) == (L.ALLOW, f"tools.{tool}")
 
 
 def test_engine_registers_exactly_one_network_component():
     engine = PermissionEngine(config())
-    network = [
-        c
-        for c in engine.components
-        if any(i.target is SecurityTarget.NETWORK for i in (c.interests or ()))
-    ]
+    network = [c for c in engine.components if isinstance(c, NetGuardComponent)]
     assert len(network) == 1
-    assert isinstance(network[0], NetGuardComponent)
 
 
 @pytest.mark.parametrize("method", ("check_permission", "evaluate_global_policy_directly"))

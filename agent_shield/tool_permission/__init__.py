@@ -12,6 +12,7 @@ from .engine import PermissionEngine
 from .manager import PermissionManager, get_permission_manager
 from .models import PermissionLevel, PermissionResult
 from .routing import (
+    CandidateKind,
     CommandDialect,
     RouteContext,
     RouteInterest,
@@ -29,6 +30,7 @@ __all__ = [
     "PermissionLevel",
     "PermissionManager",
     "PermissionResult",
+    "CandidateKind",
     "CommandDialect",
     "RouteContext",
     "RouteInterest",

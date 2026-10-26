@@ -11,10 +11,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import re
-from typing import ClassVar
 
 from ..models import PermissionLevel, PermissionResult
-from ..routing import CommandDialect, RouteContext, RouteInterest, SecurityTarget
+from ..routing import CandidateKind, CommandDialect, RouteContext
 
 Rule = tuple[re.Pattern[str], str]
 
@@ -41,11 +40,6 @@ _POWERSHELL_RULES: tuple[Rule, ...] = (
 class InjectionComponent:
     """Block shell syntax that hides a command from static inspection."""
 
-    interests: ClassVar[tuple[RouteInterest, ...]] = (
-        RouteInterest(SecurityTarget.COMMAND, CommandDialect.POSIX_SHELL),
-        RouteInterest(SecurityTarget.COMMAND, CommandDialect.POWERSHELL),
-    )
-
     @staticmethod
     def configure(config: Mapping[str, object]) -> None:
         """Accept the complete engine config; the patterns are code-defined."""
@@ -57,11 +51,14 @@ class InjectionComponent:
         tool_args: Mapping[str, object],
         *,
         route: RouteContext | None = None,
-    ) -> PermissionResult:
+    ) -> PermissionResult | None:
         """Evaluate the command with the pattern table selected by ``route``."""
         del tool_name
-        if route is None or route.target is not SecurityTarget.COMMAND:
-            return PermissionResult(permission=PermissionLevel.ALLOW)
+        if route is None or not route.is_shell:
+            return None
+        # Structure / injection is about the whole view, not each leaf.
+        if route.kind is CandidateKind.SUBCOMMAND:
+            return None
         raw = tool_args.get("command")
         command = raw if isinstance(raw, str) else ""
         if route.command_dialect is CommandDialect.POSIX_SHELL:
@@ -69,7 +66,7 @@ class InjectionComponent:
         elif route.command_dialect is CommandDialect.POWERSHELL:
             rules, kind = _POWERSHELL_RULES, "PowerShell"
         else:
-            return PermissionResult(permission=PermissionLevel.ALLOW)
+            return None
         for pattern, label in rules:
             if pattern.search(command):
                 return PermissionResult(

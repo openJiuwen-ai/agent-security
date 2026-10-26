@@ -7,11 +7,15 @@ import asyncio
 import pytest
 
 from agent_shield.tool_permission import PermissionEngine, PermissionLevel
-from agent_shield.tool_permission.routing import CommandDialect, RouteContext, SecurityTarget
+from agent_shield.tool_permission.routing import CandidateKind, CommandDialect, RouteContext
 from agent_shield.tool_permission.toolguard.tiered import TieredPolicyComponent
 
 
-_BASH_ROUTE = RouteContext(SecurityTarget.COMMAND, CommandDialect.POSIX_SHELL)
+_BASH_ROUTE = RouteContext(
+    kind=CandidateKind.ORIGINAL,
+    command_dialect=CommandDialect.POSIX_SHELL,
+    is_shell=True,
+)
 
 
 def test_rule_match_and_strictest_across_builtin_and_user() -> None:
@@ -96,7 +100,8 @@ def test_approval_override_precedes_non_deny_rule_and_baseline() -> None:
     assert "approval_overrides" in result.matched_rule
 
 
-def test_tool_deny_cannot_be_overridden_by_approval() -> None:
+def test_approval_overrides_tool_deny_baseline() -> None:
+    """tools.*.deny is a baseline only; approval wins (no early-exit special case)."""
     component = TieredPolicyComponent()
     component.configure(
         {
@@ -115,26 +120,29 @@ def test_tool_deny_cannot_be_overridden_by_approval() -> None:
     )
 
     assert result is not None
-    assert result.permission is PermissionLevel.DENY
-    assert result.matched_rule == "tools.bash"
+    assert result.permission is PermissionLevel.ALLOW
+    assert result.matched_rule is not None
+    assert "approval_overrides" in result.matched_rule
 
 
 def test_default_undetermined_and_engine_registration() -> None:
-    engine = PermissionEngine({"defaults": {"*": "undetermined"}})
+    engine = PermissionEngine({"defaults": {"*": "undetermined"}, "shell_allowlist": None})
 
     result = asyncio.run(engine.check_permission("bash", {"command": "echo hello"}))
 
     assert result.permission is PermissionLevel.UNDETERMINED
 
 
-def test_non_command_route_does_not_match_component() -> None:
+def test_non_shell_tools_use_tiered_defaults() -> None:
     component = TieredPolicyComponent()
     component.configure({"defaults": {"*": "deny"}})
-    route = RouteContext(SecurityTarget.FILE)
+    route = RouteContext(kind=CandidateKind.ORIGINAL, is_shell=False)
 
     result = asyncio.run(component.evaluate("read_file", {"path": "x"}, route=route))
 
-    assert result is None
+    assert result is not None
+    assert result.permission is PermissionLevel.DENY
+    assert result.matched_rule == "tiered_policy:defaults.*"
 
 
 def test_update_config_replaces_prepared_policy() -> None:

@@ -8,7 +8,7 @@ from collections.abc import Mapping
 import os
 
 from ..models import PermissionLevel, PermissionResult
-from ..routing import CommandDialect, RouteContext, RouteInterest, SecurityTarget
+from ..routing import CandidateKind, RouteContext
 
 
 _DEFAULT_ALLOWLIST = (
@@ -21,11 +21,6 @@ _MISSING = object()
 
 class CommandAllowlistComponent:
     """Check the first command token against the configured allowlist."""
-
-    interests: tuple[RouteInterest, ...] = tuple(
-        RouteInterest(SecurityTarget.COMMAND, dialect)
-        for dialect in CommandDialect
-    )
 
     def __init__(self) -> None:
         self._allowlist: tuple[str, ...] | None = _DEFAULT_ALLOWLIST
@@ -54,27 +49,24 @@ class CommandAllowlistComponent:
         *,
         route: RouteContext | None = None,
     ) -> PermissionResult | None:
-        """Dispatch by route dialect, then return the allowlist decision."""
+        """Return the allowlist decision for the current candidate command.
 
-        del tool_name  # The engine has already resolved the tool route.
-        if route is None or route.target is not SecurityTarget.COMMAND:
+        Align with the old executor: judge the whole permission view (original
+        or unwrapped), not individual subcommands.
+        """
+
+        del tool_name
+        if route is not None and not route.is_shell:
             return None
-
-        # R05 currently applies the same prefix rule to each shell dialect.
-        # Keep dialect dispatch explicit so future dialect-specific behavior
-        # does not leak into routing or the shared PermissionEngine.
-        if route.command_dialect not in (
-            CommandDialect.POSIX_SHELL,
-            CommandDialect.POWERSHELL,
-            CommandDialect.CMD,
-            CommandDialect.UNKNOWN,
-        ):
+        if route is not None and route.kind is CandidateKind.SUBCOMMAND:
             return None
 
         if self._allowlist is None:
             return self._result(PermissionLevel.ALLOW, "disabled", "Allowlist is disabled")
 
         command = tool_args.get("command")
+        if not isinstance(command, str):
+            command = tool_args.get("cmd")
         if not isinstance(command, str):
             return None
 

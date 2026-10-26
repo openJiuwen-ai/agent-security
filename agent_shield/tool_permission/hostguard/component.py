@@ -16,12 +16,7 @@ from ..config_access import (
     runtime_workspace_root,
 )
 from ..models import PermissionLevel, PermissionResult
-from ..routing import (
-    RouteContext,
-    RouteInterest,
-    SecurityTarget,
-    resolve_route,
-)
+from ..routing import RouteContext, resolve_route
 from .dev_stable import evaluate_dev_stable_host_guard
 from .safety import HostGuardOptions, compile_name_patterns, evaluate_host_guard
 from .shell_mismatch import shell_mismatch
@@ -81,8 +76,6 @@ def _tool_basename(tool_name: str) -> str:
 class HostGuardComponent:
     """Block host-killing shell commands and optional bash/PowerShell mismatches."""
 
-    interests = (RouteInterest(SecurityTarget.COMMAND),)
-
     def __init__(self) -> None:
         self._state: _State | None = None
 
@@ -134,7 +127,7 @@ class HostGuardComponent:
             return None
         name = _tool_basename(tool_name)
         route = route or resolve_route(tool_name, tool_args)
-        if route.target is not SecurityTarget.COMMAND:
+        if not route.is_shell:
             return None
         if name not in _HOST_GUARD_SAFETY_TOOLS:
             return None
