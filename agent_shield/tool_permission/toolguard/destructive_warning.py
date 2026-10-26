@@ -11,7 +11,7 @@ from collections.abc import Mapping
 import re
 
 from ..models import PermissionResult
-from ..routing import CommandDialect, RouteContext, RouteInterest, SecurityTarget
+from ..routing import CommandDialect, RouteContext
 
 
 _BASH_RULES = (
@@ -108,11 +108,6 @@ _POWERSHELL_RULES = (
 class DestructiveWarningComponent:
     """Attach a warning to matching shell calls without deciding permission."""
 
-    interests: tuple[RouteInterest, ...] | None = (
-        RouteInterest(SecurityTarget.COMMAND, CommandDialect.POSIX_SHELL),
-        RouteInterest(SecurityTarget.COMMAND, CommandDialect.POWERSHELL),
-    )
-
     @staticmethod
     def configure(config: Mapping[str, object]) -> None:
         """Patterns are code-owned; there are no configuration fields."""
@@ -126,8 +121,8 @@ class DestructiveWarningComponent:
         route: RouteContext | None = None,
     ) -> PermissionResult | None:
         """Return the first matching warning for a supported shell dialect."""
-        del tool_name  # The engine's resolved route is authoritative.
-        if route is None or route.target is not SecurityTarget.COMMAND:
+        del tool_name
+        if route is None or not route.is_shell:
             return None
 
         if route.command_dialect is CommandDialect.POSIX_SHELL:

@@ -20,13 +20,7 @@ from .file_guard import FileGuardChecker, build_file_guard_checker
 from .immutable_control_plane import ImmutableControlPlaneGuard
 from .sensitive_paths import merge_builtin_sensitive_paths
 from ..models import PermissionResult
-from ..routing import RouteContext, RouteInterest, SecurityTarget
-
-# Shell tools are routed as COMMAND, but path extraction still has to see them.
-_PATH_INTERESTS = (
-    RouteInterest(SecurityTarget.FILE),
-    RouteInterest(SecurityTarget.COMMAND),
-)
+from ..routing import CandidateKind, RouteContext
 
 
 def _permissions_for_file_guard(config: Mapping[str, Any]) -> dict[str, Any]:
@@ -43,8 +37,6 @@ def _permissions_for_file_guard(config: Mapping[str, Any]) -> dict[str, Any]:
 
 class FileGuardComponent:
     """Native / legacy file_guard path policy (Pipeline B)."""
-
-    interests = _PATH_INTERESTS
 
     def __init__(self) -> None:
         self._checker: FileGuardChecker | None = None
@@ -96,6 +88,9 @@ class FileGuardComponent:
         *,
         route: RouteContext | None = None,
     ) -> PermissionResult | None:
+        # Native extract already peels launchers and splits compound commands.
+        if route is not None and route.kind is CandidateKind.SUBCOMMAND:
+            return None
         if self._checker is None:
             return None
         return self._checker.evaluate(tool_name, tool_args)
@@ -103,8 +98,6 @@ class FileGuardComponent:
 
 class ImmutableControlPlaneComponent:
     """Host control-plane write protection (independent of file_guard.enabled)."""
-
-    interests = _PATH_INTERESTS
 
     def __init__(self) -> None:
         self._guard: ImmutableControlPlaneGuard | None = None
@@ -142,6 +135,8 @@ class ImmutableControlPlaneComponent:
         *,
         route: RouteContext | None = None,
     ) -> PermissionResult | None:
+        if route is not None and route.kind is CandidateKind.SUBCOMMAND:
+            return None
         if self._guard is None or not self._guard.enabled:
             return None
         return self._guard.evaluate(tool_name, tool_args)

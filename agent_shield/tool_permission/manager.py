@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Mapping
 from types import MappingProxyType
@@ -10,8 +11,11 @@ from typing import Any
 from .engine import PermissionEngine
 from .models import PermissionLevel, PermissionResult
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_KEY = "default"
 DEFAULT_MAX_KEYS = 1024
+ONE_OFF_LABEL = "(one-off)"
 
 
 class PermissionManager:
@@ -40,7 +44,9 @@ class PermissionManager:
             raise ValueError("max_keys must not be negative")
         self._max_keys = max_keys
         self._lock = threading.Lock()
-        self._engines: dict[str, PermissionEngine] = {DEFAULT_KEY: PermissionEngine({})}
+        self._engines: dict[str, PermissionEngine] = {
+            DEFAULT_KEY: PermissionEngine({}, label=DEFAULT_KEY)
+        }
 
     @staticmethod
     def _resolve_key(key: str | None) -> str:
@@ -56,6 +62,7 @@ class PermissionManager:
         resolved = self._resolve_key(key)
         engine = self._engines.get(resolved)
         if engine is None:
+            logger.warning("permission.manager.unregistered_key key=%s", resolved)
             raise KeyError(f"no permission config registered for key {resolved!r}")
         return engine
 
@@ -64,7 +71,7 @@ class PermissionManager:
             return self._engine(key)
         if not isinstance(config, Mapping):
             raise TypeError("config must be a mapping")
-        return PermissionEngine(config)
+        return PermissionEngine(config, label=ONE_OFF_LABEL)
 
     def update_config(self, config: Mapping[str, Any], key: str | None = None) -> None:
         """Register or wholly replace the configuration of ``key``.
@@ -76,14 +83,16 @@ class PermissionManager:
         resolved = self._resolve_key(key)
         if not isinstance(config, Mapping):
             raise TypeError("config must be a mapping")
-        engine = PermissionEngine(config)
+        engine = PermissionEngine(config, label=resolved)
         with self._lock:
             if resolved not in self._engines and len(self._engines) - 1 >= self._max_keys:
                 raise RuntimeError(
                     f"permission config limit reached ({self._max_keys}); "
                     f"cannot register key {resolved!r}"
                 )
+            replaced = resolved in self._engines
             self._engines[resolved] = engine
+        logger.info("permission.manager.update key=%s replaced=%s", resolved, replaced)
 
     def remove_config(self, key: str) -> bool:
         """Remove ``key``; return whether it was registered.  ``default`` cannot be removed."""
@@ -92,7 +101,9 @@ class PermissionManager:
         if resolved == DEFAULT_KEY:
             raise ValueError("the default config cannot be removed")
         with self._lock:
-            return self._engines.pop(resolved, None) is not None
+            removed = self._engines.pop(resolved, None) is not None
+        logger.info("permission.manager.remove key=%s removed=%s", resolved, removed)
+        return removed
 
     async def check_permission(
         self,

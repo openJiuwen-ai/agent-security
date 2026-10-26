@@ -12,7 +12,7 @@ from itertools import chain
 from types import MappingProxyType
 
 from ..models import PermissionLevel, PermissionResult
-from ..routing import RouteContext, RouteInterest, SecurityTarget
+from ..routing import RouteContext, is_network_tool
 from .address_policy import ConnectionPolicy, build_connection_policy, connection_rejection_reason
 from .builtin_rules import package_rules_enabled
 from .net_urls import NetUrlRule, build_net_urls, parse_action
@@ -77,13 +77,10 @@ def _check_rules(target: UrlTarget, state: _State) -> tuple[PermissionLevel, str
 class NetGuardComponent:
     """Internal component; applications keep using the PermissionEngine facade.
 
-    Network tool baselines and URL/address checks are internal steps. The router
-    selects NETWORK calls; exact tool checks keep that category from expanding
-    URL inspection to unrelated tools. Two-argument component adapters remain
-    supported.
+    Network tool baselines and URL/address checks are internal steps. Non-network
+    tools abstain (``None``); bash command-text URL extraction is out of scope
+    for this routing change. Two-argument component adapters remain supported.
     """
-
-    interests = (RouteInterest(SecurityTarget.NETWORK),)
 
     def __init__(self) -> None:
         self._state: _State | None = None
@@ -132,8 +129,13 @@ class NetGuardComponent:
         route: RouteContext | None = None,
     ) -> PermissionResult | None:
         """Judge a network tool; host connection actions skip its tool baseline."""
+        del route
         state = self._configured_state()
         name = tool_name.strip() if isinstance(tool_name, str) else ""
+        # Without category routing, abstain on non-network tools so bash is not
+        # raised to ASK by the network defaults fallback.
+        if not is_network_tool(name):
+            return None
         url_result = self._evaluate_url_policy(name, tool_args)
         if name == "network_connect":
             return url_result

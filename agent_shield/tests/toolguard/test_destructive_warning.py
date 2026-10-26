@@ -8,9 +8,9 @@ import pytest
 
 from agent_shield.tool_permission import PermissionEngine, PermissionLevel, PermissionResult
 from agent_shield.tool_permission.routing import (
+    CandidateKind,
     CommandDialect,
     RouteContext,
-    SecurityTarget,
 )
 from agent_shield.tool_permission.toolguard.destructive_warning import (
     DestructiveWarningComponent,
@@ -19,6 +19,12 @@ from agent_shield.tool_permission.toolguard.destructive_warning import (
 
 def run(awaitable):
     return asyncio.run(awaitable)
+
+
+def _shell_route(dialect: CommandDialect = CommandDialect.POSIX_SHELL) -> RouteContext:
+    return RouteContext(
+        kind=CandidateKind.ORIGINAL, command_dialect=dialect, is_shell=True
+    )
 
 
 @pytest.mark.parametrize(
@@ -33,7 +39,9 @@ def run(awaitable):
     ],
 )
 def test_warning_for_documented_destructive_command(tool_name, command, expected):
-    result = run(PermissionEngine().check_permission(tool_name, {"command": command}))
+    result = run(PermissionEngine({"shell_allowlist": None}).check_permission(
+        tool_name, {"command": command}
+    ))
 
     assert result.warnings == [expected]
 
@@ -50,7 +58,7 @@ def test_warning_does_not_change_permission_level():
 
 def test_component_uses_route_dialect_and_first_matching_rule():
     component = DestructiveWarningComponent()
-    route = RouteContext(SecurityTarget.COMMAND, CommandDialect.POSIX_SHELL)
+    route = _shell_route()
 
     component.configure({"unrelated": "ignored"})
     result = run(
@@ -85,15 +93,10 @@ def test_no_warning_for_nonmatching_or_unhandled_input(tool_name, tool_args):
     assert result.warnings == []
 
 
-def test_warning_component_has_only_shell_route_interests():
-    assert DestructiveWarningComponent.interests is not None
-    assert all(
-        interest.target is SecurityTarget.COMMAND
-        for interest in DestructiveWarningComponent.interests
+def test_warning_component_has_no_route_interests():
+    assert not hasattr(DestructiveWarningComponent, "interests") or (
+        getattr(DestructiveWarningComponent, "interests", None) is None
     )
-    assert {
-        interest.command_dialect for interest in DestructiveWarningComponent.interests
-    } == {CommandDialect.POSIX_SHELL, CommandDialect.POWERSHELL}
 
 
 @pytest.mark.parametrize(
@@ -135,7 +138,7 @@ def test_migrated_rule_behavior(dialect, command, expected):
     result = run(component.evaluate(
         "tool-name-is-not-used-for-dispatch",
         {"command": command},
-        route=RouteContext(SecurityTarget.COMMAND, dialect),
+        route=_shell_route(dialect),
     ))
 
     assert result == PermissionResult(warnings=expected)
@@ -143,10 +146,17 @@ def test_migrated_rule_behavior(dialect, command, expected):
 
 @pytest.mark.parametrize("route", [
     None,
-    RouteContext(SecurityTarget.FILE),
-    RouteContext(SecurityTarget.NETWORK),
-    RouteContext(SecurityTarget.COMMAND, CommandDialect.CMD),
-    RouteContext(SecurityTarget.COMMAND, CommandDialect.UNKNOWN),
+    RouteContext(kind=CandidateKind.ORIGINAL, is_shell=False),
+    RouteContext(
+        kind=CandidateKind.ORIGINAL,
+        command_dialect=CommandDialect.CMD,
+        is_shell=True,
+    ),
+    RouteContext(
+        kind=CandidateKind.ORIGINAL,
+        command_dialect=CommandDialect.UNKNOWN,
+        is_shell=True,
+    ),
 ])
 def test_unsupported_route_does_not_contribute_a_result(route):
     result = run(DestructiveWarningComponent().evaluate(
@@ -157,7 +167,7 @@ def test_unsupported_route_does_not_contribute_a_result(route):
 
 
 def test_generic_command_tool_uses_explicit_dialect():
-    engine = PermissionEngine()
+    engine = PermissionEngine({"shell_allowlist": None})
 
     unknown = run(engine.check_permission("mcp_exec_command", {"command": "git reset --hard"}))
     known = run(engine.check_permission("mcp_exec_command", {
@@ -169,7 +179,7 @@ def test_generic_command_tool_uses_explicit_dialect():
 
 
 def test_configuration_refresh_does_not_change_warning_rules():
-    engine = PermissionEngine()
+    engine = PermissionEngine({"shell_allowlist": None})
     args = {"command": "git reset --hard"}
     before = run(engine.check_permission("bash", args))
 
@@ -188,7 +198,7 @@ def test_configuration_refresh_does_not_change_warning_rules():
 def test_warning_partial_result_preserves_permission_fields(level):
     warning = run(DestructiveWarningComponent().evaluate(
         "bash", {"command": "git reset --hard"},
-        route=RouteContext(SecurityTarget.COMMAND, CommandDialect.POSIX_SHELL),
+        route=_shell_route(),
     ))
     assert warning is not None
     decision = PermissionResult(permission=level, matched_rule="rule", reason="reason")
