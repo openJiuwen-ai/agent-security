@@ -130,23 +130,35 @@ class EgressFilter:
         if port in self._blocked_ports:
             return False, f"port {port} blocked"
 
-        # 3. IP deny (域名先解析).
+        # 域名 allow 只看请求名. 没有 IP 规则时不解析 DNS, 避免不存在的
+        # 子域 (*.example.com) 在通配命中前被当成不可解析而拒绝.
+        domain_allowed = any(
+            self._domain_matches(pat, host) for pat in self._allowed_domains
+        )
+
+        # 3. IP deny. 只有 blocked/allowed IP 才需要解析.
         resolved_ips: list[str] = []
         ip_host: str | None = None
         try:
             ipaddress.ip_address(host)
             ip_host = host
         except ValueError:
-            try:
-                infos = socket.getaddrinfo(
-                    host, None, socket.AF_UNSPEC, socket.SOCK_STREAM,
-                )
-                for info in infos:
-                    resolved_ips.append(info[4][0])
-            except socket.gaierror:
-                if self._has_allow_rules():
-                    return False, f"unresolvable domain {host} with allow-rules present"
-                return self.egress.default != "deny", "unresolvable domain, default"
+            if self._blocked_ips or self._allowed_ips:
+                try:
+                    infos = socket.getaddrinfo(
+                        host, None, socket.AF_UNSPEC, socket.SOCK_STREAM,
+                    )
+                    for info in infos:
+                        resolved_ips.append(info[4][0])
+                except socket.gaierror:
+                    # 解析失败时无法核对 blocked_ips, 保持拒绝.
+                    if self._blocked_ips:
+                        return False, f"unresolvable domain {host} with blocked IPs present"
+                    if domain_allowed:
+                        return True, "explicitly allowed (domain)"
+                    if self._has_allow_rules():
+                        return False, f"unresolvable domain {host} with allow-rules present"
+                    return self.egress.default != "deny", "unresolvable domain, default"
 
         ips_to_check: list[str] = [ip_host] if ip_host else resolved_ips
 
@@ -159,9 +171,6 @@ class EgressFilter:
         has_ip_rules = bool(self._allowed_ips or self._allowed_domains)
         has_port_rules = bool(self._allowed_ports)
 
-        domain_allowed = any(
-            self._domain_matches(pat, host) for pat in self._allowed_domains
-        )
         ip_allowed = any(
             self._ip_in_networks(ip, self._allowed_ips) for ip in ips_to_check
         )

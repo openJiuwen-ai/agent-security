@@ -726,12 +726,13 @@ class FileGuardChecker:
         if not self._effective.enabled:
             return None
         pattern = tool_args.get("pattern")
-        if (
-            not self._effective.dev_stable
-            and tool_name == "glob"
+        # G.CTL.03: if 内布尔条件不超过 3 个，复合判断先收成变量
+        has_glob_pattern = (
+            tool_name == "glob"
             and isinstance(pattern, str)
-            and pattern
-        ):
+            and bool(pattern)
+        )
+        if not self._effective.dev_stable and has_glob_pattern:
             try:
                 validated_glob_patterns(pattern)
             except ValueError as exc:
