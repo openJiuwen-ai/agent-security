@@ -361,10 +361,29 @@ async def _start_windows_backend(policy_reader: PolicyReader) -> None:
             "Windows 出站代理启动失败; 沙箱网络隔离将不可用",
         )
 
+    try:
+        from jiuwenbox.supervisor.win_recycle_broker import (
+            permitted_loopback_ports,
+            start_broker,
+        )
+        from jiuwenbox.supervisor.win_softdelete import enabled_from_environ
+
+        if enabled_from_environ():
+            start_broker(permitted_loopback_ports(_proxy_start, _proxy_end))
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "回收站转发启动失败; 沙箱仍会启动, 删除会落到真实删除",
+        )
+
 
 async def _stop_windows_backend() -> None:
     """Stop the Windows egress proxy task (idempotent, win32 only)."""
     global _win_proxy_task, _win_proxy_stop_event
+    try:
+        from jiuwenbox.supervisor.win_recycle_broker import stop_broker
+        stop_broker()
+    except Exception:  # noqa: BLE001
+        logger.debug("回收站转发停止失败", exc_info=True)
     if _win_proxy_stop_event is not None:
         _win_proxy_stop_event.set()
     task = _win_proxy_task

@@ -3,7 +3,7 @@
 
 These tests exercise only the pure-logic, cross-platform surface of the
 Windows backend: platform guarding, capability advertisement (soft delete
-is intentionally excluded), egress filtering semantics, loopback-port
+is available), egress filtering semantics, loopback-port
 allocation, and the background-job downgrade path. No ``jbx-sandbox``
 account, WFP filter, Job Object, or NTFS DACL mutation is required.
 """
@@ -46,10 +46,10 @@ class TestPlatformGuard:
 
 class TestCapabilities:
     @staticmethod
-    def test_soft_delete_is_excluded():
+    def test_soft_delete_is_available():
         caps = WindowsRuntime().capabilities()
         assert caps.runtime_name == "windows"
-        assert caps.soft_delete is False
+        assert caps.soft_delete is True
         assert caps.filesystem_acl is True
         assert caps.process_tree_containment is True
         assert caps.egress_filter is True

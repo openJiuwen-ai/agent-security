@@ -101,6 +101,11 @@ def _parse_getace_tuple(ace_tuple: tuple) -> "tuple[int, int, int, object]":
     return int(ace_type), int(ace_flags), int(access_mask), sid
 
 
+def parse_getace_tuple(ace_tuple: tuple) -> "tuple[int, int, int, object]":
+    """同包公开入口, 解析 pywin32 GetAce 元组."""
+    return _parse_getace_tuple(ace_tuple)
+
+
 def _sid_dedup_key(sid) -> str:
     """把 pywin32 SID 对象转成稳定字符串, 供 ACE 去重比较 (SDDL 形式)."""
     if isinstance(sid, str) and sid.startswith("S-"):
@@ -110,6 +115,11 @@ def _sid_dedup_key(sid) -> str:
         return win32security.ConvertSidToStringSid(sid)
     except Exception:  # noqa: BLE001 - 回退 repr, 去重降级 best-effort
         return repr(sid)
+
+
+def sid_dedup_key(sid) -> str:
+    """同包公开入口, 把 SID 转成可比较的字符串."""
+    return _sid_dedup_key(sid)
 
 
 def _is_volume_root(path: str | Path) -> bool:
