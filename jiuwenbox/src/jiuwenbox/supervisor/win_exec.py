@@ -120,6 +120,39 @@ def _local_log(level: str, msg: str, exc: str | None = None) -> None:
         pass
 
 
+_soft_trace_offset = 0
+_soft_trace_lock = _threading.Lock()
+
+
+def _drain_soft_trace() -> None:
+    """把 DLL 写在沙箱跟踪文件里的行转发到 runner 日志。"""
+    global _soft_trace_offset
+    path = os.environ.get("JIUWENBOX_SOFT_DELETE_TRACE")
+    if not path or not os.path.isfile(path) or not _log_subscribers:
+        return
+    try:
+        with _soft_trace_lock:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                handle.seek(_soft_trace_offset)
+                chunk = handle.read()
+                if not chunk:
+                    return
+                _soft_trace_offset = handle.tell()
+        for line in chunk.splitlines():
+            text = line.strip()
+            if text:
+                _push_log("INFO", f"softdelete-trace: {text}")
+    except OSError:
+        return
+
+
+def _soft_trace_loop() -> None:
+    import time as _time
+    while True:
+        _drain_soft_trace()
+        _time.sleep(0.3)
+
+
 def _push_log(level: str, msg: str, exc: str | None = None) -> None:
     """往所有日志订阅连接 push 一个 log 帧 (best-effort, 不抛). 同时落盘+本地 logger."""
     import json as _json  # noqa: A004
@@ -712,8 +745,27 @@ def two_hop_spawn_and_authorize(
             raise RuntimeError(
                 f"control_token 写入 pipe 失败, runner 未启动 (sandbox_id={sandbox_id})"
             )
-        # 阶段 5 软删除 (jiuwen_softdelete.dll 注入) 已整体排除, 不在此处做
-        # 任何挂起进程注入. runner 直接进入 resume 流程.
+        from jiuwenbox.supervisor import win_softdelete
+        if win_softdelete.enabled_from_environ():
+            try:
+                dll = win_softdelete.prepare_dll_for_sandbox_user()
+                win_softdelete.inject_suspended(int(proc_handle))
+                logger.info(
+                    "软删除导入表注入完成 sandbox=%s pid=%s dll=%s",
+                    sandbox_id, runner_pid, dll,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "软删除 DLL 注入失败, runner 仍按原方式启动 (sandbox=%s, pid=%s): %s",
+                    sandbox_id, runner_pid, exc,
+                    exc_info=True,
+                )
+        else:
+            logger.info(
+                "软删除注入跳过 sandbox=%s pid=%s: JIUWENBOX_SOFT_DELETE=%s",
+                sandbox_id, runner_pid,
+                os.environ.get("JIUWENBOX_SOFT_DELETE", "(missing)"),
+            )
         # 2. resume runner 主线程 (CREATE_SUSPENDED 必须被唤醒).
         try:
             win_job.resume_process(thread_handle)
@@ -954,7 +1006,8 @@ def _create_process_as_user(  # pylint: disable=huawei-too-many-arguments
         _val = os.environ.get(_var)
         if _val:
             env.setdefault(_var, _val)
-    # 阶段 5 软删除已排除: 不注入任何 recycle/archive 环境变量.
+    from jiuwenbox.supervisor.win_softdelete import merge_soft_delete_env
+    merge_soft_delete_env(env)
     # 沙箱可写临时区 + profile 变量补全: child env 来自 header 不带 profile 变量,
     # 用 runner token 拿 jbx-sandbox profile 目录, TEMP 指向每沙箱隔离子目录
     # (<profile>\AppData\Local\Temp\jiuwenbox\<sandbox_id>\). ms-playwright 安装目录跨沙箱共用不重下.
@@ -1343,6 +1396,12 @@ def runner_main(argv: list[str]) -> int:
     )
     # 初始化本地落盘日志, 必须在 _push_log 之前 (之后 _push_log 自动落盘一份).
     _init_local_log(args.sandbox_id)
+    if os.environ.get("JIUWENBOX_SOFT_DELETE") == "1":
+        _threading.Thread(
+            target=_soft_trace_loop,
+            name="softdelete-trace",
+            daemon=True,
+        ).start()
     _push_log("INFO", f"runner 启动: sandbox_id={args.sandbox_id} "
                f"workspace={args.workspace} control_port={args.control_port}"
                f" local_log={_local_log_path}")

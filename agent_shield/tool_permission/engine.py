@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from .component import PermissionComponent
+from .delguard.component import DeletionGuardComponent
 from .fileguard.component import FileGuardComponent, ImmutableControlPlaneComponent
 from .hostguard import HostGuardComponent
 from .models import PermissionLevel, PermissionResult
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 _COMPONENT_BY_NAME: dict[str, type[Any]] = {
     "host_guard": HostGuardComponent,
     "file_guard": FileGuardComponent,
+    "deletion_guard": DeletionGuardComponent,
 }
 
 
@@ -90,6 +92,7 @@ class PermissionEngine:
             TieredPolicyComponent(),
             HostGuardComponent(),
             FileGuardComponent(),
+            DeletionGuardComponent(),
             ImmutableControlPlaneComponent(),
             NetGuardComponent(),
         ]
@@ -158,8 +161,9 @@ class PermissionEngine:
         """Run one configured component and ignore every other component.
 
         ``check_permission`` still merges injection, allowlist, tiered policy,
-        host guard, file guard, and net guard. Callers that own only one of
-        those decisions use this method so the other components cannot vote.
+        host guard, file guard, deletion guard, and net guard. Callers that
+        own only one of those decisions use this method so the other
+        components cannot vote.
         """
 
         component = self._named_component(name)

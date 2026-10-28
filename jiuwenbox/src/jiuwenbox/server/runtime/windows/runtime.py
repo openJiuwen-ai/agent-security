@@ -15,9 +15,9 @@ plan. This file implements the complete phase-4 surface:
 - WFP + loopback proxy egress filter  (``supervisor.win_wfp`` / ``win_proxy``)
 - Restricted-token two-hop exec       (``supervisor.win_exec`` / ``win_setup``)
 
-Phase 5 soft-delete (``jiuwen_softdelete.dll``, recycle broker injection) is
-intentionally excluded: its capabilities are ``False`` and no soft-delete
-module is ever imported.
+Phase 5 soft-delete (``jiuwen_softdelete.dll``, recycle broker injection)
+runs when ``JIUWENBOX_SOFT_DELETE=1``. The capability flag stays true on
+Windows; a missing broker falls through to a real delete.
 """
 
 from __future__ import annotations
@@ -136,8 +136,8 @@ def _summarize_command(command: list[str], max_length: int = 180) -> str:
 class WindowsRuntime(RuntimeAdapter):
     """Windows sandbox backend (ACL / Job Object / WFP / restricted token).
 
-    Soft delete is intentionally excluded (phase 5 has systemic issues and is
-    not shipped), so ``capabilities().soft_delete`` is ``False``.
+    Soft delete is available. Hooks install only when
+    ``JIUWENBOX_SOFT_DELETE`` is the literal ``1``.
     """
 
     runtime_name = "windows"
@@ -162,6 +162,7 @@ class WindowsRuntime(RuntimeAdapter):
         # Runner log long-connection reader threads + stop signals.
         self._win_log_threads: dict[str, threading.Thread] = {}
         self._win_log_stops: dict[str, threading.Event] = {}
+        self._win_recycle_tokens: dict[str, str | None] = {}
         # Background jobs (exec_background downgrades to sync exec on Windows).
         self._background_jobs: dict[str, dict[str, BackgroundJob]] = {}
 
@@ -176,11 +177,10 @@ class WindowsRuntime(RuntimeAdapter):
             filesystem_acl=True,
             process_tree_containment=True,
             egress_filter=True,
-            soft_delete=False,
+            soft_delete=True,
             notes=(
-                "restricted token + Job Object + WFP + ACL (phase 4); "
-                "soft delete intentionally excluded (phase 5 has systemic "
-                "issues and is not shipped)",
+                "restricted token + Job Object + WFP + ACL; "
+                "soft delete hooks when JIUWENBOX_SOFT_DELETE=1",
             ),
         )
 
@@ -406,8 +406,33 @@ class WindowsRuntime(RuntimeAdapter):
         env.setdefault("LOCALAPPDATA", os.path.join(under_profile, "AppData", "Local"))
         env.setdefault("APPDATA", os.path.join(under_profile, "AppData", "Roaming"))
         from jiuwenbox.server.environment import inherited_environment
+        from jiuwenbox.supervisor.win_recycle_broker import prepare_runner_recycle
+        from jiuwenbox.supervisor.win_softdelete import merge_soft_delete_spawn_env
+
         for _k, _v in inherited_environment(for_runner=True).items():
             env.setdefault(_k, _v)
+        merge_soft_delete_spawn_env(env)
+        if env.get("JIUWENBOX_SOFT_DELETE") == "1":
+            _drive = (os.environ.get("SystemDrive") or "C:").rstrip("\\")
+            env["JIUWENBOX_SOFT_DELETE_TRACE"] = os.path.join(
+                _drive + "\\",
+                "Users",
+                "jbx-sandbox",
+                "jiuwenbox-logs",
+                sandbox_id,
+                "softdelete-trace.log",
+            )
+        try:
+            recycle_token = prepare_runner_recycle(
+                env, [workspace, *allow_write_paths],
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "软删除回收登记失败, 沙箱仍会启动 sandbox=%s", sandbox_id,
+            )
+            recycle_token = None
+        merge_soft_delete_spawn_env(env)
+        self._win_recycle_tokens[sandbox_id] = recycle_token
 
         def _apply_acl():
             sandbox_user_sid = win_setup.get_sandbox_user_sid()
@@ -672,6 +697,18 @@ class WindowsRuntime(RuntimeAdapter):
             job = self._win_job_handles.pop(sandbox_id, None)
             if job is not None:
                 win_job.teardown(job)
+
+        recycle_token = self._win_recycle_tokens.pop(sandbox_id, None)
+        if recycle_token:
+            try:
+                from jiuwenbox.supervisor.win_recycle_broker import (
+                    detach_runner_recycle,
+                )
+                detach_runner_recycle(recycle_token)
+            except Exception:  # noqa: BLE001
+                logger.debug(
+                    "回收站转发注销失败 sandbox=%s", sandbox_id, exc_info=True,
+                )
 
         acl_paths = self._win_acl_paths.get(sandbox_id)
         sandbox_user_sid = self._win_sandbox_sids.get(sandbox_id)
