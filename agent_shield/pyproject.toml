@@ -30,6 +30,7 @@ packages = [
     "agent_shield",
     "agent_shield.detection",
     "agent_shield.tool_permission",
+    "agent_shield.tool_permission.delguard",
     "agent_shield.tool_permission.fileguard",
     "agent_shield.tool_permission.hostguard",
     "agent_shield.tool_permission.netguard",
