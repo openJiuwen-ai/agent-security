@@ -1,10 +1,9 @@
-"""dev-stable host checks.
+"""Whole-line regex host checks.
 
-The default :func:`evaluate_host_guard` path stays the later-branch guard.
-This module runs only when ``host_guard.dev_stable`` is true, and it follows
-the jiuwenclaw dev-stable checks: host kill regexes, the current process and
-parent process, and the older worktree parser. Destructive ``rm`` / shutdown
-patterns stay with the caller.
+Runs only when ``host_guard.whole_line_regex`` is true. Kill commands are
+matched against the whole line. A pid is blocked only when it is the current
+process or its parent. ``worktree add`` is checked by its first path.
+Destructive ``rm`` / shutdown patterns stay with the caller.
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ import re
 import shlex
 from pathlib import Path
 
-_DEV_STABLE_HOST_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+_WHOLE_LINE_REGEX_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
         re.compile(r"\bpkill\b[^\n\r;|&]*jiuwenswarm", re.IGNORECASE),
         "blocked pattern: pkill targeting jiuwenswarm (includes user TUI)",
@@ -157,7 +156,7 @@ def _is_relative_to(path: Path, root: Path) -> bool:
         return False
 
 
-def _check_dev_stable_worktree(command: str, project_root: Path) -> str | None:
+def _check_first_worktree_add_path(command: str, project_root: Path) -> str | None:
     target = _parse_worktree_add_target(command)
     if target is None:
         return None
@@ -182,22 +181,22 @@ def _check_dev_stable_worktree(command: str, project_root: Path) -> str | None:
     )
 
 
-def check_dev_stable_worktree(command: str, project_root: Path | None) -> str | None:
-    """Older worktree parser. A missing project root allows the command."""
+def check_first_worktree_add_path(command: str, project_root: Path | None) -> str | None:
+    """First path after ``worktree add``. A missing project root allows the command."""
 
     if project_root is None:
         return None
-    return _check_dev_stable_worktree(command, project_root)
+    return _check_first_worktree_add_path(command, project_root)
 
 
-def evaluate_dev_stable_host_guard(
+def evaluate_whole_line_regex(
     command: str,
     *,
     project_root: Path | None,
     worktree_guard: bool,
     protected_pids: set[str] | None = None,
 ) -> str | None:
-    """Host kill regexes, self PID, and the older worktree parser.
+    """Whole-line kill regexes, current and parent pid, and the first worktree path.
 
     ``protected_pids`` lets the caller supply the current process and parent
     process. When omitted, those ids are read here.
@@ -205,15 +204,15 @@ def evaluate_dev_stable_host_guard(
 
     if not command:
         return None
-    for pattern, message in _DEV_STABLE_HOST_PATTERNS:
+    for pattern, message in _WHOLE_LINE_REGEX_PATTERNS:
         if pattern.search(command):
             return message
     pid_reason = _check_self_pid_kill(command, protected_pids)
     if pid_reason is not None:
         return pid_reason
     if worktree_guard and project_root is not None:
-        return _check_dev_stable_worktree(command, project_root)
+        return _check_first_worktree_add_path(command, project_root)
     return None
 
 
-__all__ = ["check_dev_stable_worktree", "evaluate_dev_stable_host_guard"]
+__all__ = ["check_first_worktree_add_path", "evaluate_whole_line_regex"]

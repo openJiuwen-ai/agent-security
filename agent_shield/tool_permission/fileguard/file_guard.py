@@ -86,7 +86,7 @@ class EffectiveFileGuardConfig:
     workspace_root: Path | None
     source_order: tuple[str, ...] = ()
     composed: bool = False
-    dev_stable: bool = False
+    read_deny_only: bool = False
 
 
 def _parse_level(raw: Any, default: PermissionLevel = PermissionLevel.ASK) -> PermissionLevel:
@@ -121,10 +121,10 @@ def _apply_implications(
     exec_: PermissionLevel,
     *,
     path_label: str,
-    dev_stable: bool = False,
+    read_deny_only: bool = False,
 ) -> tuple[PermissionLevel, PermissionLevel, PermissionLevel]:
-    """Read deny forbids all axes, unless the dev-stable caller keeps an explicit deny."""
-    if dev_stable:
+    """A read deny also denies write and exec, unless read_deny_only keeps it on read."""
+    if read_deny_only:
         if write == PermissionLevel.ALLOW or exec_ == PermissionLevel.ALLOW:
             if read == PermissionLevel.DENY:
                 logger.warning(
@@ -154,7 +154,7 @@ def _compile_path_entry(
     default_level: PermissionLevel = PermissionLevel.ASK,
     source: str = "",
     explicit_axes: frozenset[str] = frozenset(),
-    dev_stable: bool = False,
+    read_deny_only: bool = False,
 ) -> FileGuardPathRule | None:
     path_s = str(path_raw).strip()
     if not path_s or path_s == "*":
@@ -162,7 +162,7 @@ def _compile_path_entry(
     r = _parse_level(read, default_level) if read is not None else default_level
     w = _parse_level(write, default_level) if write is not None else default_level
     e = _parse_level(exec_, default_level) if exec_ is not None else default_level
-    r, w, e = _apply_implications(r, w, e, path_label=path_s, dev_stable=dev_stable)
+    r, w, e = _apply_implications(r, w, e, path_label=path_s, read_deny_only=read_deny_only)
     if match == "prefix":
         # 过短前缀（无 /）跳过，避免 "C:" 误匹配整盘（对齐 ExternalDirectory）
         norm = path_s.replace("\\", "/").rstrip("/")
@@ -211,7 +211,7 @@ def _compile_workspace_axis_rule(
     workspace_cfg: Any,
     *,
     workspace_root: Path | None,
-    dev_stable: bool = False,
+    read_deny_only: bool = False,
 ) -> FileGuardPathRule | None:
     """把 ``file_guard.workspace`` 编译为绑定 ``workspace_root`` 的前缀规则。
 
@@ -235,7 +235,7 @@ def _compile_workspace_axis_rule(
         exec_=workspace_cfg.get("exec"),
         match="prefix",
         default_level=PermissionLevel.ASK,
-        dev_stable=dev_stable,
+        read_deny_only=read_deny_only,
     )
 
 
@@ -255,7 +255,7 @@ def normalize_path_guard_config(
     perms = permissions if isinstance(permissions, Mapping) else {}
     fg_raw = perms.get("file_guard")
     fg: dict[str, Any] = dict(fg_raw) if isinstance(fg_raw, dict) else {}
-    dev_stable = fg.get("dev_stable") is True
+    read_deny_only = fg.get("read_deny_only") is True
     trusted = list(trusted_dirs or [])
     ext = perms.get("external_directory")
     composition = perms.get("composition")
@@ -291,13 +291,13 @@ def normalize_path_guard_config(
             workspace_root=ws,
             source_order=source_order,
             composed=composed,
-            dev_stable=dev_stable,
+            read_deny_only=read_deny_only,
         )
 
     if native:
         return _normalize_native(
             fg, ext=ext, workspace_root=ws, trusted_dirs=trusted,
-            source_order=source_order, composed=composed, dev_stable=dev_stable,
+            source_order=source_order, composed=composed, read_deny_only=read_deny_only,
         )
 
     return _normalize_legacy(
@@ -305,7 +305,7 @@ def normalize_path_guard_config(
         workspace_root=ws,
         trusted_dirs=trusted,
         file_guard_paths=fg.get("paths") if isinstance(fg.get("paths"), list) else None,
-        dev_stable=dev_stable,
+        read_deny_only=read_deny_only,
     )
 
 
@@ -315,7 +315,7 @@ def _normalize_legacy(
     workspace_root: Path | None,
     trusted_dirs: Sequence[Path],
     file_guard_paths: list[Any] | None = None,
-    dev_stable: bool = False,
+    read_deny_only: bool = False,
 ) -> EffectiveFileGuardConfig:
     star_action: Any = "ask"
     allow_prefixes: list[tuple[str, str]] = []  # (path, action)
@@ -341,7 +341,7 @@ def _normalize_legacy(
             write="allow",
             exec_="allow",
             match="prefix",
-            dev_stable=dev_stable,
+            read_deny_only=read_deny_only,
         )
         if ws_rule is not None:
             rules.append(ws_rule)
@@ -353,7 +353,7 @@ def _normalize_legacy(
             write="allow",
             exec_="ask",
             match="prefix",
-            dev_stable=dev_stable,
+            read_deny_only=read_deny_only,
         )
         if rule is not None:
             rules.append(rule)
@@ -362,12 +362,12 @@ def _normalize_legacy(
         if action == "allow":
             rule = _compile_path_entry(
                 key, read="allow", write="allow", exec_="ask", match="prefix",
-                dev_stable=dev_stable,
+                read_deny_only=read_deny_only,
             )
         else:
             rule = _compile_path_entry(
                 key, read=action, write=action, exec_=action, match="prefix",
-                dev_stable=dev_stable,
+                read_deny_only=read_deny_only,
             )
         if rule is not None:
             rules.append(rule)
@@ -388,7 +388,7 @@ def _normalize_legacy(
                 write=item.get("write", "allow"),
                 exec_=item.get("exec", "ask"),
                 match="prefix",
-                dev_stable=dev_stable,
+                read_deny_only=read_deny_only,
             )
             if rule is not None:
                 rules.append(rule)
@@ -399,7 +399,7 @@ def _normalize_legacy(
         defaults=defaults,
         paths=tuple(rules),
         workspace_root=workspace_root,
-        dev_stable=dev_stable,
+        read_deny_only=read_deny_only,
     )
 
 
@@ -411,7 +411,7 @@ def _normalize_native(
     trusted_dirs: Sequence[Path],
     source_order: tuple[str, ...] = (),
     composed: bool = False,
-    dev_stable: bool = False,
+    read_deny_only: bool = False,
 ) -> EffectiveFileGuardConfig:
     raw_defaults = fg.get("defaults") if isinstance(fg.get("defaults"), dict) else {}
     # 若未写 defaults，可从 external_directory["*"] 迁移
@@ -437,11 +437,11 @@ def _normalize_native(
                 continue
             match_v = item.get("match", "prefix")
             match: FileGuardMatch = "glob" if match_v == "glob" else "prefix"
-            use_dev_stable = dev_stable and not composed
+            use_read_deny_only = read_deny_only and not composed
             explicit_axes = frozenset(axis for axis in ("read", "write", "exec") if axis in item)
-            if item.get("read") == "deny" and not use_dev_stable:
+            if item.get("read") == "deny" and not use_read_deny_only:
                 explicit_axes |= {"write", "exec"}
-            if composed or use_dev_stable:
+            if composed or use_read_deny_only:
                 read_level = item.get("read")
                 write_level = item.get("write")
                 exec_level = item.get("exec")
@@ -458,7 +458,7 @@ def _normalize_native(
                 default_level=PermissionLevel.ASK,
                 source=str(item.get("layer") or "") if composed else "",
                 explicit_axes=explicit_axes,
-                dev_stable=use_dev_stable,
+                read_deny_only=use_read_deny_only,
             )
             if rule is not None:
                 rules.append(rule)
@@ -467,7 +467,7 @@ def _normalize_native(
     ws_rule = _compile_workspace_axis_rule(
         fg.get("workspace"),
         workspace_root=workspace_root,
-        dev_stable=dev_stable and not composed,
+        read_deny_only=read_deny_only and not composed,
     )
     if ws_rule is not None:
         if composed:
@@ -478,7 +478,7 @@ def _normalize_native(
     for td in trusted_dirs:
         rule = _compile_path_entry(
             str(td), read="allow", write="allow", exec_="ask", match="prefix",
-            dev_stable=dev_stable and not composed,
+            read_deny_only=read_deny_only and not composed,
         )
         if rule is not None:
             if composed:
@@ -500,12 +500,12 @@ def _normalize_native(
             if action == "allow":
                 rule = _compile_path_entry(
                     key, read="allow", write="allow", exec_="ask", match="prefix",
-                    dev_stable=dev_stable and not composed,
+                    read_deny_only=read_deny_only and not composed,
                 )
             else:
                 rule = _compile_path_entry(
                     key, read=action, write=action, exec_=action, match="prefix",
-                    dev_stable=dev_stable and not composed,
+                    read_deny_only=read_deny_only and not composed,
                 )
             if rule is not None:
                 if composed:
@@ -525,7 +525,7 @@ def _normalize_native(
         workspace_root=workspace_root,
         source_order=source_order,
         composed=composed,
-        dev_stable=dev_stable,
+        read_deny_only=read_deny_only,
     )
 
 
@@ -692,13 +692,13 @@ class FileGuardChecker:
         tool_args: Mapping[str, Any],
         workspace: Path,
     ) -> list[tuple[Path, FileGuardAction]]:
-        if self._effective.dev_stable:
+        if self._effective.read_deny_only:
             if self._effective.mode == "native":
-                from .dev_stable_extract import extract_accesses_native as extract_native
+                from .listed_commands import extract_accesses_native as extract_native
 
                 raw = extract_native(tool_name, dict(tool_args), workspace)
                 return [(path, action) for path, action, _source in raw]
-            from .dev_stable_extract import extract_paths_legacy as extract_legacy
+            from .listed_commands import extract_paths_legacy as extract_legacy
 
             paths = extract_legacy(tool_name, dict(tool_args), workspace)
             action = _tool_default_action(tool_name, self._permission_config)
@@ -732,7 +732,7 @@ class FileGuardChecker:
             and isinstance(pattern, str)
             and bool(pattern)
         )
-        if not self._effective.dev_stable and has_glob_pattern:
+        if not self._effective.read_deny_only and has_glob_pattern:
             try:
                 validated_glob_patterns(pattern)
             except ValueError as exc:

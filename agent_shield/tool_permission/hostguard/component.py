@@ -17,9 +17,9 @@ from ..config_access import (
 )
 from ..models import PermissionLevel, PermissionResult
 from ..routing import RouteContext, resolve_route
-from .dev_stable import evaluate_dev_stable_host_guard
 from .safety import HostGuardOptions, compile_name_patterns, evaluate_host_guard
 from .shell_mismatch import shell_mismatch
+from .whole_line_regex import evaluate_whole_line_regex
 
 # Original hooks are the bash tool, the powershell tool, and mcp_exec_command.
 # core.powershell is the engine name of that powershell tool. sh, zsh, cmd and
@@ -36,7 +36,7 @@ class _State:
     project_root: Path | None
     options: HostGuardOptions
     shell_mismatch: bool
-    dev_stable: bool
+    whole_line_regex: bool
     protected_pids: frozenset[str] | None
 
 
@@ -111,7 +111,7 @@ class HostGuardComponent:
             project_root=project_root,
             options=options,
             shell_mismatch=host_guard_flag(section, "shell_mismatch", True),
-            dev_stable=host_guard_flag(section, "dev_stable", False),
+            whole_line_regex=host_guard_flag(section, "whole_line_regex", False),
             protected_pids=runtime_protected_pids(config),
         )
 
@@ -134,10 +134,10 @@ class HostGuardComponent:
         command = _command_text(tool_args)
         if command is None:
             return None
-        if state.dev_stable:
-            # Later-branch checks stay off: shell mismatch, segment rules,
-            # python-name kill, backend PID scan, and the strict worktree parser.
-            block = evaluate_dev_stable_host_guard(
+        if state.whole_line_regex:
+            # Match the whole line. Segment checks, shell mismatch, process-tree
+            # scans, and the stricter worktree parser stay on the other path.
+            block = evaluate_whole_line_regex(
                 command,
                 project_root=state.project_root,
                 worktree_guard=state.options.worktree_guard and name in _HOST_GUARD_SHELL_TOOLS,
@@ -149,7 +149,7 @@ class HostGuardComponent:
                 return None
             return PermissionResult(
                 permission=PermissionLevel.DENY,
-                matched_rule="host_guard:dev_stable",
+                matched_rule="host_guard:whole_line_regex",
                 reason=block,
             )
         if state.shell_mismatch and name == "bash":

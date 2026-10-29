@@ -42,7 +42,7 @@ def _path_engine(workspace: str, file_guard: dict, tools: dict | None = None) ->
     })
 
 
-def test_dev_stable_keeps_explicit_read_deny_from_forcing_write_deny() -> None:
+def test_read_deny_only_keeps_explicit_read_deny_from_forcing_write_deny() -> None:
     with tempfile.TemporaryDirectory() as workspace:
         secret = Path(workspace) / "secret"
         secret.mkdir()
@@ -59,7 +59,7 @@ def test_dev_stable_keeps_explicit_read_deny_from_forcing_write_deny() -> None:
             }],
         }
         stable = build_file_guard_checker(
-            {"file_guard": {**common, "dev_stable": True}},
+            {"file_guard": {**common, "read_deny_only": True}},
             workspace_root=Path(workspace),
         )
         assert stable is not None
@@ -74,7 +74,7 @@ def test_dev_stable_keeps_explicit_read_deny_from_forcing_write_deny() -> None:
         assert denied.permission is PermissionLevel.DENY
 
 
-def test_dev_stable_missing_axis_stays_ask() -> None:
+def test_read_deny_only_missing_axis_stays_ask() -> None:
     with tempfile.TemporaryDirectory() as workspace:
         secret = Path(workspace) / "secret"
         secret.mkdir()
@@ -85,7 +85,7 @@ def test_dev_stable_missing_axis_stays_ask() -> None:
             "workspace": {"read": "allow", "write": "allow", "exec": "allow"},
             "paths": [{"path": str(secret), "read": "allow"}],
         }
-        stable = _path_engine(workspace, {**common, "dev_stable": True})
+        stable = _path_engine(workspace, {**common, "read_deny_only": True})
         asked = _run(stable.check_permission("write_file", {"path": target}))
         assert asked.permission is PermissionLevel.ASK
         current = _path_engine(workspace, common)
@@ -93,7 +93,7 @@ def test_dev_stable_missing_axis_stays_ask() -> None:
         assert denied.permission is PermissionLevel.DENY
 
 
-def test_dev_stable_glob_uses_pattern_as_path() -> None:
+def test_read_deny_only_glob_uses_pattern_as_path() -> None:
     with tempfile.TemporaryDirectory() as workspace:
         outside = str(Path(workspace).parent / "outside-glob.txt")
         common = {
@@ -101,7 +101,7 @@ def test_dev_stable_glob_uses_pattern_as_path() -> None:
             "defaults": {"read": "deny", "write": "deny", "exec": "deny"},
             "workspace": {"read": "allow", "write": "allow", "exec": "allow"},
         }
-        stable = _path_engine(workspace, {**common, "dev_stable": True})
+        stable = _path_engine(workspace, {**common, "read_deny_only": True})
         judged = _run(stable.check_permission("glob", {"pattern": outside, "path": workspace}))
         assert judged.permission is PermissionLevel.DENY
         assert judged.matched_rule != "file_guard:glob_pattern"
@@ -110,7 +110,7 @@ def test_dev_stable_glob_uses_pattern_as_path() -> None:
         assert rejected.matched_rule == "file_guard:glob_pattern"
 
 
-def test_evaluate_component_reaches_dev_stable_file_guard() -> None:
+def test_evaluate_component_reaches_read_deny_only_file_guard() -> None:
     with tempfile.TemporaryDirectory() as workspace:
         secret = Path(workspace) / "secret"
         secret.mkdir()
@@ -118,7 +118,7 @@ def test_evaluate_component_reaches_dev_stable_file_guard() -> None:
         engine = PermissionEngine({
             "file_guard": {
                 "enabled": True,
-                "dev_stable": True,
+                "read_deny_only": True,
                 "defaults": {"read": "ask", "write": "ask", "exec": "ask"},
                 "workspace": {"read": "allow", "write": "allow", "exec": "allow"},
                 "paths": [{
@@ -136,7 +136,7 @@ def test_evaluate_component_reaches_dev_stable_file_guard() -> None:
         assert result is None
 
 
-def test_dev_stable_powershell_is_not_a_path_shell() -> None:
+def test_read_deny_only_powershell_is_not_a_path_shell() -> None:
     with tempfile.TemporaryDirectory() as workspace:
         outside = str(Path(workspace).parent / "outside-ps.txt")
         common = {
@@ -145,7 +145,7 @@ def test_dev_stable_powershell_is_not_a_path_shell() -> None:
             "workspace": {"read": "allow", "write": "allow", "exec": "allow"},
         }
         command = f"type {outside}"
-        stable = _path_engine(workspace, {**common, "dev_stable": True})
+        stable = _path_engine(workspace, {**common, "read_deny_only": True})
         skipped = _run(stable.check_permission("powershell", {"command": command}))
         assert skipped.permission is PermissionLevel.ALLOW
         current = _path_engine(workspace, common)
