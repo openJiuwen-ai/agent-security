@@ -54,10 +54,10 @@ def test_develop_profile_python_name_kill() -> None:
     assert result.permission is PermissionLevel.DENY
 
 
-def _dev_stable_engine(root: Path | None = None) -> PermissionEngine:
+def _whole_line_regex_engine(root: Path | None = None) -> PermissionEngine:
     runtime = {"workspace_root": str(root or Path.cwd())}
     return PermissionEngine({
-        "host_guard": {"enabled": True, "dev_stable": True, "python_name_kill": True},
+        "host_guard": {"enabled": True, "whole_line_regex": True, "python_name_kill": True},
         "runtime": runtime,
         "tools": {"bash": "allow", "powershell": "allow", "mcp_exec_command": "allow"},
         "package_builtin_rules": False,
@@ -65,39 +65,39 @@ def _dev_stable_engine(root: Path | None = None) -> PermissionEngine:
     })
 
 
-def test_dev_stable_blocks_node_and_python_name_kills() -> None:
-    engine = _dev_stable_engine()
+def test_whole_line_regex_blocks_node_and_python_name_kills() -> None:
+    engine = _whole_line_regex_engine()
     node = _run(engine.check_permission("bash", {"command": "taskkill /IM node.exe /F"}))
     assert node.permission is PermissionLevel.DENY
-    assert node.matched_rule == "host_guard:dev_stable"
+    assert node.matched_rule == "host_guard:whole_line_regex"
     python_name = _run(engine.check_permission("powershell", {"command": "Stop-Process -Name python"}))
     assert python_name.permission is PermissionLevel.DENY
     assert "Stop-Process -Name" in (python_name.reason or "")
 
 
-def test_dev_stable_blocks_current_pid_only(monkeypatch) -> None:
+def test_whole_line_regex_blocks_current_pid_only(monkeypatch) -> None:
     monkeypatch.setattr(
-        "agent_shield.tool_permission.hostguard.dev_stable.os.getpid", lambda: 4242,
+        "agent_shield.tool_permission.hostguard.whole_line_regex.os.getpid", lambda: 4242,
     )
     monkeypatch.setattr(
-        "agent_shield.tool_permission.hostguard.dev_stable.os.getppid", lambda: 1,
+        "agent_shield.tool_permission.hostguard.whole_line_regex.os.getppid", lambda: 1,
     )
-    engine = _dev_stable_engine()
+    engine = _whole_line_regex_engine()
     blocked = _run(engine.check_permission("bash", {"command": "taskkill /PID 4242 /F"}))
     assert blocked.permission is PermissionLevel.DENY
-    assert blocked.matched_rule == "host_guard:dev_stable"
+    assert blocked.matched_rule == "host_guard:whole_line_regex"
     other = _run(engine.check_permission("bash", {"command": "taskkill /PID 99999 /F"}))
-    assert other.matched_rule != "host_guard:dev_stable"
+    assert other.matched_rule != "host_guard:whole_line_regex"
 
 
-def test_dev_stable_skips_later_branch_checks() -> None:
-    engine = _dev_stable_engine()
+def test_whole_line_regex_skips_later_branch_checks() -> None:
+    engine = _whole_line_regex_engine()
     kill_other_name = _run(engine.check_permission("bash", {"command": "kill jiuwenclaw"}))
-    assert kill_other_name.matched_rule != "host_guard:dev_stable"
+    assert kill_other_name.matched_rule != "host_guard:whole_line_regex"
     mismatch = _run(engine.check_permission("bash", {"command": "Get-ChildItem"}))
     assert mismatch.matched_rule != "host_guard:shell_mismatch"
     destructive = _run(engine.check_permission("bash", {"command": "rm -rf /tmp/example"}))
-    assert destructive.matched_rule != "host_guard:dev_stable"
+    assert destructive.matched_rule != "host_guard:whole_line_regex"
 
 
 def test_default_host_guard_still_blocks_kill_jiuwenclaw() -> None:
@@ -113,30 +113,30 @@ def test_default_host_guard_still_blocks_kill_jiuwenclaw() -> None:
     assert result.matched_rule == "host_guard:safety"
 
 
-def test_dev_stable_worktree_uses_loose_parser() -> None:
+def test_whole_line_regex_worktree_uses_loose_parser() -> None:
     with tempfile.TemporaryDirectory() as project:
-        engine = _dev_stable_engine(Path(project))
+        engine = _whole_line_regex_engine(Path(project))
         blocked = _run(engine.check_permission(
             "bash", {"command": "echo worktree add ../outside-worktree"},
         ))
         assert blocked.permission is PermissionLevel.DENY
-        assert blocked.matched_rule == "host_guard:dev_stable"
+        assert blocked.matched_rule == "host_guard:whole_line_regex"
         assert "refused path outside the project" in (blocked.reason or "")
         inside = _run(engine.check_permission(
             "bash", {"command": "git worktree add .worktrees/feature -b feature HEAD"},
         ))
-        assert inside.matched_rule != "host_guard:dev_stable"
+        assert inside.matched_rule != "host_guard:whole_line_regex"
         mcp = _run(engine.check_permission(
             "mcp_exec_command", {"command": "git worktree add ../outside-worktree"},
         ))
-        assert mcp.matched_rule != "host_guard:dev_stable"
+        assert mcp.matched_rule != "host_guard:whole_line_regex"
 
 
-def test_evaluate_component_uses_dev_stable_host_only() -> None:
+def test_evaluate_component_uses_whole_line_regex_host_only() -> None:
     engine = PermissionEngine({
         "host_guard": {
             "enabled": True,
-            "dev_stable": True,
+            "whole_line_regex": True,
             "worktree_guard": False,
         },
         "runtime": {"protected_pids": ["30472"]},
@@ -150,7 +150,7 @@ def test_evaluate_component_uses_dev_stable_host_only() -> None:
     )
     assert blocked is not None
     assert blocked.permission is PermissionLevel.DENY
-    assert blocked.matched_rule == "host_guard:dev_stable"
+    assert blocked.matched_rule == "host_guard:whole_line_regex"
     other = engine.evaluate_component(
         "host_guard", "bash", {"command": "Stop-Process -Id 1 -Force"},
     )

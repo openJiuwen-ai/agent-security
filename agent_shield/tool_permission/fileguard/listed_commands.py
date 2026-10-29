@@ -1,7 +1,8 @@
-"""Path extraction that matches the dev-stable file guard.
+"""Path extraction for bash, mcp_exec_command and create_terminal.
 
 The default extractor in ``path_extract`` stays unchanged. This module is
-used only when ``file_guard.dev_stable`` is true.
+used only when ``file_guard.read_deny_only`` is true. Paths come from a fixed
+list of command names.
 """
 
 from __future__ import annotations
@@ -20,15 +21,15 @@ from ..toolguard.shell_ast import (
     _parse_with_conservative_fallback,
     _parse_with_tree_sitter,
 )
-from .dev_stable_literal_shell import is_script_interpreter, parse_literal_shell
 from .path_policy import _PATH_TOOLS, _iter_path_strings
+from .unix_bash_literal import is_script_interpreter, parse_literal_shell
 
 logger = logging.getLogger(__name__)
 
 FileAction = Literal["read", "write", "exec"]
 
 _CHAIN_SPLIT_RE = re.compile(r"\s+(?:&&|\|\|)\s+")
-_DEV_STABLE_SHELL_TOOLS = frozenset({"mcp_exec_command", "bash", "create_terminal"})
+_LISTED_SHELL_TOOLS = frozenset({"mcp_exec_command", "bash", "create_terminal"})
 _PATH_AWARE_COMMANDS = frozenset({
     "cd", "rm", "cp", "mv", "mkdir", "touch", "chmod", "chown", "cat",
     "ls", "dir", "type", "del", "rd", "copy", "move", "md",
@@ -286,10 +287,10 @@ def extract_accesses_native(
     tool_args: Mapping[str, Any],
     workspace: Path,
 ) -> list[tuple[Path, FileAction, str]]:
-    """Native accesses for the dev-stable shell set and ``glob`` pattern arg."""
+    """Native accesses for the listed shell tools and the ``glob`` pattern arg."""
 
     out: list[tuple[Path, FileAction, str]] = []
-    if tool_name in _DEV_STABLE_SHELL_TOOLS:
+    if tool_name in _LISTED_SHELL_TOOLS:
         workdir = tool_args.get("workdir", "")
         try:
             workdir_resolved = (workspace / str(workdir)).resolve() if workdir else workspace
@@ -363,9 +364,9 @@ def extract_paths_legacy(
     tool_args: Mapping[str, Any],
     workspace: Path,
 ) -> list[Path]:
-    """Legacy path list for the dev-stable shell set."""
+    """Legacy path list for the listed shell tools."""
 
-    if tool_name in _DEV_STABLE_SHELL_TOOLS:
+    if tool_name in _LISTED_SHELL_TOOLS:
         workdir = tool_args.get("workdir", "")
         try:
             workdir_resolved = (workspace / str(workdir)).resolve()

@@ -1,6 +1,6 @@
-"""Literal bash recognition used only by the dev-stable path extractor.
+"""Literal bash recognition used only by the listed-command path extractor.
 
-On Windows this returns no evidence, matching the dev-stable caller.
+On Windows this returns no paths.
 """
 
 from __future__ import annotations
