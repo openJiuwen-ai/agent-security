@@ -22,8 +22,8 @@ from .routing import (
     RouteContext,
     is_shell_tool,
     resolve_dialect,
+    supports_posix_subcommand_split,
 )
-from .toolguard.builtin_rules import SHELL_TOOLS
 from .toolguard.command_allowlist import CommandAllowlistComponent
 from .toolguard.command_canonicalize import canonicalize_shell_command_for_permission
 from .toolguard.destructive_warning import DestructiveWarningComponent
@@ -38,10 +38,6 @@ _COMPONENT_BY_NAME: dict[str, type[Any]] = {
     "file_guard": FileGuardComponent,
     "deletion_guard": DeletionGuardComponent,
 }
-
-
-# Same set Tiered used before candidate expansion moved to the engine.
-_SHELL_PARSE_TOOLS = frozenset(SHELL_TOOLS)
 
 
 def _level_text(result: PermissionResult, *, with_rule: bool = True) -> str:
@@ -169,7 +165,7 @@ class PermissionEngine:
         component = self._named_component(name)
         self._validate_call(tool_name, tool_args)
         # Isolation API: ORIGINAL candidate only (no interests filtering).
-        route, cand_args = self._build_candidates(tool_name, tool_args)[0]
+        route, cand_args = self.build_candidates(tool_name, tool_args)[0]
         outcome = self._evaluate_component(component, tool_name, cand_args, route)
         try:
             outcome.send(None)
@@ -217,11 +213,11 @@ class PermissionEngine:
             raise TypeError("tool_args must be a mapping")
 
     @staticmethod
-    def _build_candidates(
+    def build_candidates(
         tool_name: str,
         tool_args: Mapping[str, Any],
     ) -> list[tuple[RouteContext, Mapping[str, Any]]]:
-        """Expand one call into (route, args) candidates."""
+        """Expand one call into (route, args) candidates for permission views."""
 
         dialect = resolve_dialect(tool_name, tool_args)
         shell = dialect is not None or is_shell_tool(tool_name)
@@ -254,10 +250,10 @@ class PermissionEngine:
                 )
             )
 
-        # Subcommands come from the permission view (peeled when available).
+        # Subcommands: peel first (canonical view), then split by dialect.
+        # No SHELL_TOOLS five-tuple gate. Phase 1: bash AST for POSIX / UNKNOWN only.
         parse_text = canonical
-        base = tool_name.strip().replace("\\", "/").rsplit("/", 1)[-1].lower()
-        if base in _SHELL_PARSE_TOOLS or tool_name in _SHELL_PARSE_TOOLS:
+        if supports_posix_subcommand_split(dialect):
             parse = parse_shell_for_permission(parse_text)
             if parse is not None and parse.kind == "simple" and any(s.text for s in parse.subcommands):
                 # Multi-leaf only: a single leaf identical to the whole view is redundant.
@@ -283,7 +279,7 @@ class PermissionEngine:
     ) -> PermissionResult:
         """Expand candidates, honour approval short-circuit, merge strictest."""
 
-        candidates = self._build_candidates(tool_name, tool_args)
+        candidates = self.build_candidates(tool_name, tool_args)
         tiered = self._tiered
 
         # Whole-call short-circuit: original or unwrapped hits approval.

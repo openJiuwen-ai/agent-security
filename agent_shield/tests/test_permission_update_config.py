@@ -75,16 +75,17 @@ def test_update_guard_actions_takes_effect_and_removal_restores_ask(
     from agent_shield.tool_permission.toolguard import shell_ast
 
     monkeypatch.setattr(shell_ast, "_get_tree_sitter_bash_parser", lambda: None)
+    # Compound (not redirection-only); redirection alone is left to FileGuard.
     engine = PermissionEngine(_BASE)
-    assert _level(engine, "echo hi > f.txt") is PermissionLevel.ASK
+    assert _level(engine, "a; b") is PermissionLevel.ASK
 
     engine.update_config(
         {**_BASE, "guard_actions": {"parse_unavailable": "allow"}}
     )
-    assert _level(engine, "echo hi > f.txt") is PermissionLevel.ALLOW
+    assert _level(engine, "a; b") is PermissionLevel.ALLOW
 
     engine.update_config(_BASE)
-    assert _level(engine, "echo hi > f.txt") is PermissionLevel.ASK
+    assert _level(engine, "a; b") is PermissionLevel.ASK
 
 
 def test_update_package_builtin_rules_switch() -> None:

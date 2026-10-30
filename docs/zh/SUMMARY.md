@@ -6,3 +6,4 @@
   - [Agent SSAS](2.开发指南/Agent%20SSAS.md)
   - [JiuwenBox](2.开发指南/JiuwenBox.md)
   - [Agent Shield](2.开发指南/Agent%20Shield.md)
+  - [Agent Shield组件与配置参考](2.开发指南/Agent%20Shield组件与配置参考.html)

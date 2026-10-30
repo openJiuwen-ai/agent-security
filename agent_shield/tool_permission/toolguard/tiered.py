@@ -128,9 +128,22 @@ def _structure_floors(
         reason = parse.reason or "unsupported_complex_structure"
         floors.append((actions["too_complex"], f"{_PREFIX}:shell_ast:too_complex:{reason}"))
     elif parse.kind == "parse_unavailable" and flags.has_risky_structure():
-        reason = parse.reason or "conservative_fallback"
-        label = f"{_PREFIX}:shell_ast:parse_unavailable:{reason}"
-        floors.append((actions["parse_unavailable"], label))
+        # Redirection alone is a file-path concern (FileGuard); do not raise a
+        # command structure floor for `>` / `<` without other risk flags.
+        non_redir_risk = any((
+            flags.has_compound_operators,
+            flags.has_pipeline,
+            flags.has_subshell,
+            flags.has_command_group,
+            flags.has_command_substitution,
+            flags.has_process_substitution,
+            flags.has_parameter_expansion,
+            flags.has_heredoc,
+        ))
+        if non_redir_risk:
+            reason = parse.reason or "conservative_fallback"
+            label = f"{_PREFIX}:shell_ast:parse_unavailable:{reason}"
+            floors.append((actions["parse_unavailable"], label))
     # Redirection targets are file-path concerns (file guard), not judged here.
     if any((flags.has_command_substitution, flags.has_process_substitution, flags.has_heredoc)):
         floors.append((actions["structure_guard"], f"{_PREFIX}:shell_ast:structure_guard"))
@@ -304,8 +317,6 @@ class TieredPolicyComponent:
         baseline = self._tools.get(tool_name)
         command = _command_text(tool_args)
         is_shell = bool(route is not None and route.is_shell) or tool_name in _SHELL_TOOLS
-        judged = self._judge(tool_name, command, baseline, is_shell=is_shell)
-
         kind = route.kind if route is not None else CandidateKind.ORIGINAL
         # Structure floors need the whole (or unwrapped) view, not a leaf.
         apply_floors = (
@@ -314,8 +325,33 @@ class TieredPolicyComponent:
             and tool_name in _SHELL_TOOLS
             and bool(command)
         )
-        if apply_floors:
-            parse = parse_shell_for_permission(command)
+        parse = parse_shell_for_permission(command) if apply_floors else None
+        # 裁决 #9: quoted operators are not compound. Only the tree-sitter backend
+        # can prove that; the conservative fallback does not understand quotes and
+        # must not suppress shell_compound_chain (e.g. `sleep 1 &` stays ASK).
+        skip_ids: frozenset[str] = frozenset()
+        # Named predicate keeps the if below under G.CTL.03's boolean-expr budget.
+        is_simple_tree_sitter = (
+            parse is not None
+            and parse.backend == "tree-sitter"
+            and parse.kind == "simple"
+            and len(parse.subcommands) <= 1
+        )
+        if is_simple_tree_sitter and parse is not None:
+            flags = parse.flags
+            structural = (
+                flags.has_compound_operators
+                or flags.has_pipeline
+                or flags.has_parameter_expansion
+            )
+            if not structural:
+                skip_ids = frozenset({"shell_compound_chain"})
+
+        judged = self._judge(
+            tool_name, command, baseline, is_shell=is_shell, skip_rule_ids=skip_ids
+        )
+
+        if apply_floors and parse is not None:
             floors = _structure_floors(parse, self._guard_actions)
             if judged is None and floors:
                 level, label = floors[0]
@@ -341,12 +377,13 @@ class TieredPolicyComponent:
         baseline: tuple[PermissionLevel, str] | None,
         *,
         is_shell: bool,
+        skip_rule_ids: frozenset[str] = frozenset(),
     ) -> tuple[PermissionLevel, str] | None:
         """One judgement: overrides, rules, tool baseline, defaults; shell ASK fallback."""
         approval = self._approval(tool_name, command)
         if approval is not None:
             return approval
-        hit = self._rules_only(tool_name, command)
+        hit = self._rules_only(tool_name, command, skip_rule_ids=skip_rule_ids)
         if hit is not None:
             return hit
         if baseline is not None:
@@ -373,10 +410,19 @@ class TieredPolicyComponent:
             return None
         return PermissionLevel.ALLOW, f"{_PREFIX}:approval_overrides:" + "+".join(labels)
 
-    def _rules_only(self, tool_name: str, command: str) -> tuple[PermissionLevel, str] | None:
+    def _rules_only(
+        self,
+        tool_name: str,
+        command: str,
+        *,
+        skip_rule_ids: frozenset[str] = frozenset(),
+    ) -> tuple[PermissionLevel, str] | None:
         hits: list[tuple[PermissionLevel, str, str]] = []
         for namespace, rules in (("builtin", self._builtin_rules), ("rules", self._user_rules)):
             for rule in rules:
+                rid = rule.get("id")
+                if isinstance(rid, str) and rid in skip_rule_ids:
+                    continue
                 if _rule_targets_tool(rule, tool_name) and _rule_matches(rule, command):
                     decision = rule["_by_tool"].get(tool_name, rule["_decision"])
                     hits.append((decision, namespace, _rule_label(namespace, rule)))
