@@ -253,7 +253,7 @@ def test_subcommand_split_no_longer_gated_by_shell_tools_five_tuple(
         )
 
     monkeypatch.setattr(engine_mod, "parse_shell_for_permission", stub)
-    candidates = PermissionEngine._build_candidates("sh", {"command": "ls; rm x"})
+    candidates = PermissionEngine.build_candidates("sh", {"command": "ls; rm x"})
     kinds = [route.kind for route, _ in candidates]
     assert CandidateKind.ORIGINAL in kinds
     assert kinds.count(CandidateKind.SUBCOMMAND) == 2
@@ -271,7 +271,7 @@ def test_powershell_and_cmd_skip_posix_ast_split(monkeypatch: pytest.MonkeyPatch
         ("cmd", {"command": "dir & echo hi"}),
         ("mcp_exec_command", {"command": "Get-Date; echo hi", "shell_type": "powershell"}),
     ):
-        candidates = PermissionEngine._build_candidates(tool, args)
+        candidates = PermissionEngine.build_candidates(tool, args)
         assert all(route.kind is not CandidateKind.SUBCOMMAND for route, _ in candidates), tool
 
 
@@ -294,7 +294,7 @@ def test_mcp_unknown_dialect_still_attempts_posix_split(
         )
 
     monkeypatch.setattr(engine_mod, "parse_shell_for_permission", stub)
-    candidates = PermissionEngine._build_candidates(
+    candidates = PermissionEngine.build_candidates(
         "mcp_exec_command",
         {"command": "ls; pwd"},
     )

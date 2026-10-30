@@ -128,9 +128,22 @@ def _structure_floors(
         reason = parse.reason or "unsupported_complex_structure"
         floors.append((actions["too_complex"], f"{_PREFIX}:shell_ast:too_complex:{reason}"))
     elif parse.kind == "parse_unavailable" and flags.has_risky_structure():
-        reason = parse.reason or "conservative_fallback"
-        label = f"{_PREFIX}:shell_ast:parse_unavailable:{reason}"
-        floors.append((actions["parse_unavailable"], label))
+        # Redirection alone is a file-path concern (FileGuard); do not raise a
+        # command structure floor for `>` / `<` without other risk flags.
+        non_redir_risk = any((
+            flags.has_compound_operators,
+            flags.has_pipeline,
+            flags.has_subshell,
+            flags.has_command_group,
+            flags.has_command_substitution,
+            flags.has_process_substitution,
+            flags.has_parameter_expansion,
+            flags.has_heredoc,
+        ))
+        if non_redir_risk:
+            reason = parse.reason or "conservative_fallback"
+            label = f"{_PREFIX}:shell_ast:parse_unavailable:{reason}"
+            floors.append((actions["parse_unavailable"], label))
     # Redirection targets are file-path concerns (file guard), not judged here.
     if any((flags.has_command_substitution, flags.has_process_substitution, flags.has_heredoc)):
         floors.append((actions["structure_guard"], f"{_PREFIX}:shell_ast:structure_guard"))
@@ -313,17 +326,25 @@ class TieredPolicyComponent:
             and bool(command)
         )
         parse = parse_shell_for_permission(command) if apply_floors else None
-        # 裁决 #9: quoted operators are not compound. When AST proves a single simple
-        # leaf with no real operators, skip the naive shell_compound_chain regex
-        # (otherwise `echo 'a && b'` false-positives). Multi-leaf (e.g. `a\nb`) keeps it.
+        # 裁决 #9: quoted operators are not compound. Only the tree-sitter backend
+        # can prove that; the conservative fallback does not understand quotes and
+        # must not suppress shell_compound_chain (e.g. `sleep 1 &` stays ASK).
         skip_ids: frozenset[str] = frozenset()
-        if parse is not None and parse.kind == "simple" and len(parse.subcommands) <= 1:
+        # Named predicate keeps the if below under G.CTL.03's boolean-expr budget.
+        is_simple_tree_sitter = (
+            parse is not None
+            and parse.backend == "tree-sitter"
+            and parse.kind == "simple"
+            and len(parse.subcommands) <= 1
+        )
+        if is_simple_tree_sitter and parse is not None:
             flags = parse.flags
-            if not (
+            structural = (
                 flags.has_compound_operators
                 or flags.has_pipeline
                 or flags.has_parameter_expansion
-            ):
+            )
+            if not structural:
                 skip_ids = frozenset({"shell_compound_chain"})
 
         judged = self._judge(

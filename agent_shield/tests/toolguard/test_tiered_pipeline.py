@@ -214,8 +214,9 @@ def test_fallback_parser_is_conservative_for_structure(fallback_parser: None) ->
 
 
 def test_structure_floor_raises_allow_to_ask(fallback_parser: None) -> None:
+    # Use real compound (not redirection-only; that stays with FileGuard).
     config = {**_ALLOW_BASH, "package_builtin_rules": False}
-    result = _run(config, "echo hi > f.txt")
+    result = _run(config, "a; b")
     assert result.permission is PermissionLevel.ASK
     assert "shell_ast" in result.matched_rule
 
@@ -223,9 +224,9 @@ def test_structure_floor_raises_allow_to_ask(fallback_parser: None) -> None:
 def test_guard_actions_choose_the_response_per_check(fallback_parser: None) -> None:
     config = {**_ALLOW_BASH, "package_builtin_rules": False,
               "guard_actions": {"parse_unavailable": "deny"}}
-    assert _run(config, "echo hi > f.txt").permission is PermissionLevel.DENY
+    assert _run(config, "a; b").permission is PermissionLevel.DENY
     config["guard_actions"]["parse_unavailable"] = "allow"
-    assert _run(config, "echo hi > f.txt").permission is PermissionLevel.ALLOW
+    assert _run(config, "a; b").permission is PermissionLevel.ALLOW
 
 
 def test_legacy_shell_guard_switch_maps_to_guard_actions() -> None:

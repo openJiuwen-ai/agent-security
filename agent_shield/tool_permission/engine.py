@@ -165,7 +165,7 @@ class PermissionEngine:
         component = self._named_component(name)
         self._validate_call(tool_name, tool_args)
         # Isolation API: ORIGINAL candidate only (no interests filtering).
-        route, cand_args = self._build_candidates(tool_name, tool_args)[0]
+        route, cand_args = self.build_candidates(tool_name, tool_args)[0]
         outcome = self._evaluate_component(component, tool_name, cand_args, route)
         try:
             outcome.send(None)
@@ -213,11 +213,11 @@ class PermissionEngine:
             raise TypeError("tool_args must be a mapping")
 
     @staticmethod
-    def _build_candidates(
+    def build_candidates(
         tool_name: str,
         tool_args: Mapping[str, Any],
     ) -> list[tuple[RouteContext, Mapping[str, Any]]]:
-        """Expand one call into (route, args) candidates."""
+        """Expand one call into (route, args) candidates for permission views."""
 
         dialect = resolve_dialect(tool_name, tool_args)
         shell = dialect is not None or is_shell_tool(tool_name)
@@ -279,7 +279,7 @@ class PermissionEngine:
     ) -> PermissionResult:
         """Expand candidates, honour approval short-circuit, merge strictest."""
 
-        candidates = self._build_candidates(tool_name, tool_args)
+        candidates = self.build_candidates(tool_name, tool_args)
         tiered = self._tiered
 
         # Whole-call short-circuit: original or unwrapped hits approval.
