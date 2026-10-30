@@ -43,15 +43,23 @@ class RouteContext:
     is_shell: bool = False
 
 
+# Dialect names: used to resolve CommandDialect from tool_name or args
+# (shell / executable / interpreter). Not the peel-launcher table.
 _POSIX_TOOLS = frozenset({"bash", "sh", "zsh", "ksh", "dash", "ash", "fish"})
 _POWERSHELL_TOOLS = frozenset({"powershell", "powershell.exe", "pwsh", "pwsh.exe"})
 _CMD_TOOLS = frozenset({"cmd", "cmd.exe"})
-_COMMAND_TOOLS = (
+
+# Table A — command *entry* tool_name values that enter peel/expand.
+# Product cards plus dialect-named cards that may appear as tool_name.
+# Peel launchers (bash -c / cmd /c / …) live in command_canonicalize, not here.
+_COMMAND_ENTRY_TOOLS = (
     _POSIX_TOOLS
     | _POWERSHELL_TOOLS
     | _CMD_TOOLS
     | frozenset({"core.powershell", "mcp_exec_command", "create_terminal"})
 )
+# Back-compat alias for older imports / tests.
+_COMMAND_TOOLS = _COMMAND_ENTRY_TOOLS
 _FILE_TOOLS = frozenset(
     {
         "read_file",
@@ -92,7 +100,7 @@ def _tool_basename(value: object) -> str:
 
 
 def _dialect_from_args(tool_args: Mapping[str, Any]) -> CommandDialect | None:
-    for key in ("shell", "executable", "interpreter"):
+    for key in ("shell", "shell_type", "executable", "interpreter"):
         value = _tool_basename(tool_args.get(key))
         if value in _POSIX_TOOLS:
             return CommandDialect.POSIX_SHELL
@@ -104,13 +112,23 @@ def _dialect_from_args(tool_args: Mapping[str, Any]) -> CommandDialect | None:
 
 
 def is_shell_tool(tool_name: str) -> bool:
-    """Return whether ``tool_name`` is a known shell / command tool."""
+    """Return whether ``tool_name`` is a known command-entry tool (Table A)."""
 
-    return _tool_basename(tool_name) in _COMMAND_TOOLS
+    return _tool_basename(tool_name) in _COMMAND_ENTRY_TOOLS
+
+
+def supports_posix_subcommand_split(dialect: CommandDialect | None) -> bool:
+    """Phase-1 subcommand split uses the bash AST only.
+
+    POSIX is in scope. UNKNOWN (e.g. mcp_exec_command without shell args) also
+    uses the bash AST as a best-effort view. PowerShell / CMD wait for Phase 2.
+    """
+
+    return dialect in (CommandDialect.POSIX_SHELL, CommandDialect.UNKNOWN)
 
 
 def resolve_dialect(tool_name: str, tool_args: Mapping[str, Any]) -> CommandDialect | None:
-    """Resolve shell dialect for a tool call; ``None`` when not a shell tool."""
+    """Resolve shell dialect for a tool call; ``None`` when not a command entry."""
 
     name = _tool_basename(tool_name)
     if name in _POSIX_TOOLS:
@@ -119,7 +137,7 @@ def resolve_dialect(tool_name: str, tool_args: Mapping[str, Any]) -> CommandDial
         return CommandDialect.POWERSHELL
     if name in _CMD_TOOLS:
         return CommandDialect.CMD
-    if name in _COMMAND_TOOLS:
+    if name in _COMMAND_ENTRY_TOOLS:
         return _dialect_from_args(tool_args) or CommandDialect.UNKNOWN
     return None
 
@@ -191,4 +209,5 @@ __all__ = [
     "resolve_dialect",
     "resolve_route",
     "route_matches",
+    "supports_posix_subcommand_split",
 ]

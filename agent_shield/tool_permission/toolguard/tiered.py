@@ -304,8 +304,6 @@ class TieredPolicyComponent:
         baseline = self._tools.get(tool_name)
         command = _command_text(tool_args)
         is_shell = bool(route is not None and route.is_shell) or tool_name in _SHELL_TOOLS
-        judged = self._judge(tool_name, command, baseline, is_shell=is_shell)
-
         kind = route.kind if route is not None else CandidateKind.ORIGINAL
         # Structure floors need the whole (or unwrapped) view, not a leaf.
         apply_floors = (
@@ -314,8 +312,25 @@ class TieredPolicyComponent:
             and tool_name in _SHELL_TOOLS
             and bool(command)
         )
-        if apply_floors:
-            parse = parse_shell_for_permission(command)
+        parse = parse_shell_for_permission(command) if apply_floors else None
+        # 裁决 #9: quoted operators are not compound. When AST proves a single simple
+        # leaf with no real operators, skip the naive shell_compound_chain regex
+        # (otherwise `echo 'a && b'` false-positives). Multi-leaf (e.g. `a\nb`) keeps it.
+        skip_ids: frozenset[str] = frozenset()
+        if parse is not None and parse.kind == "simple" and len(parse.subcommands) <= 1:
+            flags = parse.flags
+            if not (
+                flags.has_compound_operators
+                or flags.has_pipeline
+                or flags.has_parameter_expansion
+            ):
+                skip_ids = frozenset({"shell_compound_chain"})
+
+        judged = self._judge(
+            tool_name, command, baseline, is_shell=is_shell, skip_rule_ids=skip_ids
+        )
+
+        if apply_floors and parse is not None:
             floors = _structure_floors(parse, self._guard_actions)
             if judged is None and floors:
                 level, label = floors[0]
@@ -341,12 +356,13 @@ class TieredPolicyComponent:
         baseline: tuple[PermissionLevel, str] | None,
         *,
         is_shell: bool,
+        skip_rule_ids: frozenset[str] = frozenset(),
     ) -> tuple[PermissionLevel, str] | None:
         """One judgement: overrides, rules, tool baseline, defaults; shell ASK fallback."""
         approval = self._approval(tool_name, command)
         if approval is not None:
             return approval
-        hit = self._rules_only(tool_name, command)
+        hit = self._rules_only(tool_name, command, skip_rule_ids=skip_rule_ids)
         if hit is not None:
             return hit
         if baseline is not None:
@@ -373,10 +389,19 @@ class TieredPolicyComponent:
             return None
         return PermissionLevel.ALLOW, f"{_PREFIX}:approval_overrides:" + "+".join(labels)
 
-    def _rules_only(self, tool_name: str, command: str) -> tuple[PermissionLevel, str] | None:
+    def _rules_only(
+        self,
+        tool_name: str,
+        command: str,
+        *,
+        skip_rule_ids: frozenset[str] = frozenset(),
+    ) -> tuple[PermissionLevel, str] | None:
         hits: list[tuple[PermissionLevel, str, str]] = []
         for namespace, rules in (("builtin", self._builtin_rules), ("rules", self._user_rules)):
             for rule in rules:
+                rid = rule.get("id")
+                if isinstance(rid, str) and rid in skip_rule_ids:
+                    continue
                 if _rule_targets_tool(rule, tool_name) and _rule_matches(rule, command):
                     decision = rule["_by_tool"].get(tool_name, rule["_decision"])
                     hits.append((decision, namespace, _rule_label(namespace, rule)))

@@ -230,3 +230,72 @@ def test_resolve_route_sets_shell_flag(tool: str) -> None:
     route = resolve_route(tool, {})
     assert route.kind is CandidateKind.ORIGINAL
     assert route.is_shell is (tool in {"bash", "powershell", "cmd", "mcp_exec_command"})
+
+
+def test_subcommand_split_no_longer_gated_by_shell_tools_five_tuple(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """sh is a command entry but not in SHELL_TOOLS; Phase 1 still splits via bash AST."""
+
+    import agent_shield.tool_permission.engine as engine_mod
+    from agent_shield.tool_permission.toolguard.shell_ast import (
+        ShellAstParseResult,
+        ShellSubcommand,
+    )
+
+    def stub(_command: str) -> ShellAstParseResult:
+        return ShellAstParseResult(
+            kind="simple",
+            subcommands=(
+                ShellSubcommand(text="ls", argv=("ls",)),
+                ShellSubcommand(text="rm x", argv=("rm", "x")),
+            ),
+        )
+
+    monkeypatch.setattr(engine_mod, "parse_shell_for_permission", stub)
+    candidates = PermissionEngine._build_candidates("sh", {"command": "ls; rm x"})
+    kinds = [route.kind for route, _ in candidates]
+    assert CandidateKind.ORIGINAL in kinds
+    assert kinds.count(CandidateKind.SUBCOMMAND) == 2
+
+
+def test_powershell_and_cmd_skip_posix_ast_split(monkeypatch: pytest.MonkeyPatch) -> None:
+    import agent_shield.tool_permission.engine as engine_mod
+
+    def boom(_command: str):
+        raise AssertionError("PowerShell/CMD must not use bash AST in Phase 1")
+
+    monkeypatch.setattr(engine_mod, "parse_shell_for_permission", boom)
+    for tool, args in (
+        ("powershell", {"command": "Get-Date; Stop-Process -Name x"}),
+        ("cmd", {"command": "dir & echo hi"}),
+        ("mcp_exec_command", {"command": "Get-Date; echo hi", "shell_type": "powershell"}),
+    ):
+        candidates = PermissionEngine._build_candidates(tool, args)
+        assert all(route.kind is not CandidateKind.SUBCOMMAND for route, _ in candidates), tool
+
+
+def test_mcp_unknown_dialect_still_attempts_posix_split(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import agent_shield.tool_permission.engine as engine_mod
+    from agent_shield.tool_permission.toolguard.shell_ast import (
+        ShellAstParseResult,
+        ShellSubcommand,
+    )
+
+    def stub(_command: str) -> ShellAstParseResult:
+        return ShellAstParseResult(
+            kind="simple",
+            subcommands=(
+                ShellSubcommand(text="ls", argv=("ls",)),
+                ShellSubcommand(text="pwd", argv=("pwd",)),
+            ),
+        )
+
+    monkeypatch.setattr(engine_mod, "parse_shell_for_permission", stub)
+    candidates = PermissionEngine._build_candidates(
+        "mcp_exec_command",
+        {"command": "ls; pwd"},
+    )
+    assert sum(1 for route, _ in candidates if route.kind is CandidateKind.SUBCOMMAND) == 2

