@@ -33,3 +33,7 @@ pytest
 ```
 
 未安装 tree-sitter 时，命令解析使用保守扫描。
+
+## 4. 组件与配置参考
+
+更细的组件职责、配置项、剥壳/拆子命令与 `check_permission` 流程，见同目录 [Agent Shield组件与配置参考](Agent%20Shield组件与配置参考.html)（单页 HTML）。
