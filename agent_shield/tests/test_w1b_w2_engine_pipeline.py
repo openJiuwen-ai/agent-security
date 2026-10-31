@@ -30,7 +30,7 @@ _QUIET = {
     },
     "package_builtin_rules": False,
     "shell_allowlist": None,
-    "guard_actions": {"parse_unavailable": "allow", "structure_guard": "allow"},
+    "guard_actions": {"parse_unavailable": "allow"},
 }
 
 

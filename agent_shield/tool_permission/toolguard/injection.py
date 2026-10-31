@@ -20,11 +20,13 @@ Rule = tuple[re.Pattern[str], str]
 _BACKTICK_RE = re.compile(r"(?<!')`[^`]+`")
 _DOLLAR_PAREN_RE = re.compile(r"\$\(")
 _PROC_SUBST_RE = re.compile(r"[<>]\(")
+_HEREDOC_RE = re.compile(r"<<<?")
 
 _POSIX_RULES: tuple[Rule, ...] = (
     (_BACKTICK_RE, "backtick command substitution"),
     (_DOLLAR_PAREN_RE, "$() command substitution"),
     (_PROC_SUBST_RE, "process substitution <() or >()"),
+    (_HEREDOC_RE, "heredoc"),
 )
 _POWERSHELL_RULES: tuple[Rule, ...] = (
     (re.compile(r"(?i)\b(?:invoke-expression|iex)\b"), "Invoke-Expression"),
