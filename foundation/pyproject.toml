@@ -23,6 +23,7 @@ packages = ["security_mask"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
