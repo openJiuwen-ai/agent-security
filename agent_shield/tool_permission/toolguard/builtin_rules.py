@@ -246,8 +246,7 @@ _RULES: tuple[dict[str, Any], ...] = (
         "description": "链式、管道或变量展开（; & | ${ 换行），命令可能串联多段",
         "tools": SHELL_TOOLS,
         "match_type": "command",
-        # dev-stable ``_SHELL_OPERATORS_RE`` minus ``< > $( ` `` (command substitution is covered by structure_guard;
-        # redirection by the file guard).
+        # Operators minus ``< > $( ` `` (substitution / heredoc → Injection; redirection → FileGuard).
         "pattern": r"re:[;&|]|\$\{|\r?\n",
         "severity": "HIGH",
         "action": "ask",

@@ -106,7 +106,7 @@ def test_undetermined_is_masked_by_ask_or_deny_subcommand_and_structure_floor() 
     config = {"defaults": {"*": "undetermined"}}
     assert _check(config, "ls && sudo ls").permission is PermissionLevel.ASK
     assert _check(config, "ls && shutdown now").permission is PermissionLevel.DENY
-    assert _check(config, "cat <<EOF").permission is PermissionLevel.ASK
+    assert _check(config, "cat <<EOF").permission is PermissionLevel.DENY
 
 
 # --- aggregation details ----------------------------------------------------------------

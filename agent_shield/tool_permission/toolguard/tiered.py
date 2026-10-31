@@ -31,7 +31,7 @@ _STRICTNESS = {
     PermissionLevel.ALLOW: 3,
 }
 _SHELL_TOOLS = frozenset(SHELL_TOOLS)
-_GUARD_IDS = ("too_complex", "parse_unavailable", "structure_guard", "interpreter_sink")
+_GUARD_IDS = ("too_complex", "parse_unavailable", "interpreter_sink")
 _INTERPRETER_SINK_NAMES = frozenset({
     "bash", "sh", "zsh", "dash", "ash", "fish",
     "python", "python3", "pythonw", "py",
@@ -144,9 +144,7 @@ def _structure_floors(
             reason = parse.reason or "conservative_fallback"
             label = f"{_PREFIX}:shell_ast:parse_unavailable:{reason}"
             floors.append((actions["parse_unavailable"], label))
-    # Redirection targets are file-path concerns (file guard), not judged here.
-    if any((flags.has_command_substitution, flags.has_process_substitution, flags.has_heredoc)):
-        floors.append((actions["structure_guard"], f"{_PREFIX}:shell_ast:structure_guard"))
+    # Command / process substitution and heredoc are denied by InjectionComponent.
     if parse.kind == "simple" and _has_interpreter_sink(parse):
         floors.append((actions["interpreter_sink"], f"{_PREFIX}:shell_guard:interpreter_sink"))
     return floors

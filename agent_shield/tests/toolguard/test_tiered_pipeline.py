@@ -126,7 +126,7 @@ def test_user_action_override_changes_package_rule_action() -> None:
 )
 def test_compound_chain_rule(command: str, chained: bool) -> None:
     guard_actions = {}
-    for key in ("too_complex", "parse_unavailable", "structure_guard", "interpreter_sink"):
+    for key in ("too_complex", "parse_unavailable", "interpreter_sink"):
         guard_actions[key] = "allow"
     config = {**_ALLOW_BASH, "guard_actions": guard_actions}
     result = _run(config, command)
@@ -231,8 +231,7 @@ def test_guard_actions_choose_the_response_per_check(fallback_parser: None) -> N
 
 def test_legacy_shell_guard_switch_maps_to_guard_actions() -> None:
     config = {**_ALLOW_BASH, "package_builtin_rules": False,
-              "shell_guard": {"unknown_structure": False},
-              "guard_actions": {"structure_guard": "allow"}}
+              "shell_guard": {"unknown_structure": False}}
     assert _run(config, "a | b").permission is PermissionLevel.ALLOW
 
 
@@ -258,8 +257,7 @@ def test_pipeline_into_non_interpreter_is_not_a_sink(monkeypatch: pytest.MonkeyP
 
 def test_each_subcommand_is_judged_and_strictest_wins(monkeypatch: pytest.MonkeyPatch) -> None:
     _fake_parse(monkeypatch, ["ls", "sudo rm x"])
-    config = {**_ALLOW_BASH, "guard_actions": {"structure_guard": "allow"}}
-    result = _run(config, "ls && sudo rm x")
+    result = _run(_ALLOW_BASH, "ls && sudo rm x")
     assert result.permission is PermissionLevel.ASK
     # A whole-command rule hit at the same level replaces the sub-command label.
     assert "shell_privilege_escalation" in result.matched_rule
@@ -329,8 +327,7 @@ def test_reconfigure_refreshes_guard_actions(fallback_parser: None) -> None:
     component.configure(config)
     first = asyncio.run(component.evaluate("bash", {"command": "a | b"}, route=route))
     assert first is not None
-    component.configure({**config, "guard_actions": {"parse_unavailable": "allow",
-                                                    "structure_guard": "allow"}})
+    component.configure({**config, "guard_actions": {"parse_unavailable": "allow"}})
     second = asyncio.run(component.evaluate("bash", {"command": "a | b"}, route=route))
     assert second is not None
     assert (first.permission, second.permission) == (PermissionLevel.ASK, PermissionLevel.ALLOW)
