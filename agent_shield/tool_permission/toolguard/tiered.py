@@ -144,8 +144,8 @@ def _structure_floors(
             reason = parse.reason or "conservative_fallback"
             label = f"{_PREFIX}:shell_ast:parse_unavailable:{reason}"
             floors.append((actions["parse_unavailable"], label))
-    # Redirection targets are file-path concerns (file guard), not judged here.
-    if any((flags.has_command_substitution, flags.has_process_substitution, flags.has_heredoc)):
+    # Heredoc only; command/process substitution are handled by InjectionComponent.
+    if flags.has_heredoc:
         floors.append((actions["structure_guard"], f"{_PREFIX}:shell_ast:structure_guard"))
     if parse.kind == "simple" and _has_interpreter_sink(parse):
         floors.append((actions["interpreter_sink"], f"{_PREFIX}:shell_guard:interpreter_sink"))
