@@ -24,11 +24,16 @@ from .routing import (
     resolve_dialect,
     supports_posix_subcommand_split,
 )
+from .shell_structure import (
+    ShellStructureOutcome,
+    analyze_shell_for_permission,
+    guard_actions_from_config,
+    package_structure_rules_enabled,
+)
 from .toolguard.command_allowlist import CommandAllowlistComponent
 from .toolguard.command_canonicalize import canonicalize_shell_command_for_permission
 from .toolguard.destructive_warning import DestructiveWarningComponent
 from .toolguard.injection import InjectionComponent
-from .toolguard.shell_ast import parse_shell_for_permission
 from .toolguard.tiered import TieredPolicyComponent
 
 logger = logging.getLogger(__name__)
@@ -75,6 +80,8 @@ class PermissionEngine:
         self._config: dict[str, Any] = {}
         self._enabled = True
         self._tiered: TieredPolicyComponent | None = None
+        self._guard_actions = guard_actions_from_config({})
+        self._compound_chain_enabled = True
         self._install(config or {})
 
     @staticmethod
@@ -117,6 +124,10 @@ class PermissionEngine:
         self._tiered = tiered
         self._config = snapshot
         self._enabled = enabled
+        self._guard_actions = guard_actions_from_config(snapshot)
+        self._compound_chain_enabled = package_structure_rules_enabled(
+            snapshot.get("package_builtin_rules")
+        )
 
     async def check_permission(
         self,
@@ -219,14 +230,44 @@ class PermissionEngine:
     ) -> list[tuple[RouteContext, Mapping[str, Any]]]:
         """Expand one call into (route, args) candidates for permission views."""
 
+        candidates, _ = PermissionEngine._expand(tool_name, tool_args)
+        return candidates
+
+    def _analyze(
+        self,
+        tool_name: str,
+        command: str,
+        *,
+        dialect: CommandDialect | None,
+        is_shell: bool,
+    ) -> ShellStructureOutcome:
+        return analyze_shell_for_permission(
+            tool_name,
+            command,
+            dialect=dialect,
+            is_shell=is_shell,
+            guard_actions=self._guard_actions,
+            compound_chain_enabled=self._compound_chain_enabled,
+        )
+
+    @staticmethod
+    def _expand(
+        tool_name: str,
+        tool_args: Mapping[str, Any],
+        *,
+        analyze: Any | None = None,
+    ) -> tuple[list[tuple[RouteContext, Mapping[str, Any]]], list[PermissionResult]]:
+        """Build candidates; optionally collect structure verdicts via ``analyze``."""
+
         dialect = resolve_dialect(tool_name, tool_args)
         shell = dialect is not None or is_shell_tool(tool_name)
         if not shell:
             route = RouteContext(kind=CandidateKind.ORIGINAL, is_shell=False)
-            return [(route, tool_args)]
+            return [(route, tool_args)], []
 
         dialect = dialect or CommandDialect.UNKNOWN
         original = _command_text(tool_args)
+        canonical = canonicalize_shell_command_for_permission(original)
         candidates: list[tuple[RouteContext, Mapping[str, Any]]] = [
             (
                 RouteContext(
@@ -237,7 +278,6 @@ class PermissionEngine:
                 tool_args,
             )
         ]
-        canonical = canonicalize_shell_command_for_permission(original)
         if canonical != original:
             candidates.append(
                 (
@@ -250,16 +290,23 @@ class PermissionEngine:
                 )
             )
 
-        # Subcommands: peel first (canonical view), then split by dialect.
-        # No SHELL_TOOLS five-tuple gate. Phase 1: bash AST for POSIX / UNKNOWN only.
-        parse_text = canonical
-        if supports_posix_subcommand_split(dialect):
-            parse = parse_shell_for_permission(parse_text)
-            if parse is not None and parse.kind == "simple" and any(s.text for s in parse.subcommands):
-                # Multi-leaf only: a single leaf identical to the whole view is redundant.
-                texts = [s.text for s in parse.subcommands if s.text]
-                if len(texts) > 1 or (len(texts) == 1 and texts[0] != parse_text):
-                    for text in texts:
+        structure_verdicts: list[PermissionResult] = []
+        # Phase 1: only posix/unknown call analyze during expand (leaves + verdict).
+        # PowerShell/CMD: no bash AST here; verdicts collected lazily in _evaluate.
+        if supports_posix_subcommand_split(dialect) and analyze is not None:
+            seen_text: set[str] = set()
+            for route, cand_args in list(candidates):
+                if route.kind not in (CandidateKind.ORIGINAL, CandidateKind.UNWRAPPED):
+                    continue
+                text = _command_text(cand_args)
+                if not text or text in seen_text:
+                    continue
+                seen_text.add(text)
+                outcome = analyze(tool_name, text, dialect=dialect, is_shell=True)
+                if outcome.verdict is not None:
+                    structure_verdicts.append(outcome.verdict)
+                if text == canonical:
+                    for leaf in outcome.leaf_texts:
                         candidates.append(
                             (
                                 RouteContext(
@@ -267,10 +314,31 @@ class PermissionEngine:
                                     command_dialect=dialect,
                                     is_shell=True,
                                 ),
-                                _with_command(tool_args, text),
+                                _with_command(tool_args, leaf),
                             )
                         )
-        return candidates
+        elif supports_posix_subcommand_split(dialect) and analyze is None:
+            # Class-level build_candidates: leaves only, default structure config.
+            outcome = analyze_shell_for_permission(
+                tool_name,
+                canonical,
+                dialect=dialect,
+                is_shell=True,
+                guard_actions=guard_actions_from_config({}),
+                compound_chain_enabled=True,
+            )
+            for leaf in outcome.leaf_texts:
+                candidates.append(
+                    (
+                        RouteContext(
+                            kind=CandidateKind.SUBCOMMAND,
+                            command_dialect=dialect,
+                            is_shell=True,
+                        ),
+                        _with_command(tool_args, leaf),
+                    )
+                )
+        return candidates, structure_verdicts
 
     async def _evaluate(
         self,
@@ -279,7 +347,11 @@ class PermissionEngine:
     ) -> PermissionResult:
         """Expand candidates, honour approval short-circuit, merge strictest."""
 
-        candidates = self.build_candidates(tool_name, tool_args)
+        candidates, structure_verdicts = self._expand(
+            tool_name,
+            tool_args,
+            analyze=self._analyze,
+        )
         tiered = self._tiered
 
         # Whole-call short-circuit: original or unwrapped hits approval.
@@ -297,6 +369,22 @@ class PermissionEngine:
                         [(type(tiered).__name__, approval)],
                     )
                     return approval
+
+        # PowerShell/CMD: structure verdicts not collected during expand.
+        if not structure_verdicts:
+            dialect = resolve_dialect(tool_name, tool_args) or CommandDialect.UNKNOWN
+            if not supports_posix_subcommand_split(dialect):
+                for route, cand_args in candidates:
+                    if route.kind not in (CandidateKind.ORIGINAL, CandidateKind.UNWRAPPED):
+                        continue
+                    outcome = self._analyze(
+                        tool_name,
+                        _command_text(cand_args),
+                        dialect=route.command_dialect,
+                        is_shell=route.is_shell,
+                    )
+                    if outcome.verdict is not None:
+                        structure_verdicts.append(outcome.verdict)
 
         candidate_verdicts: list[PermissionResult] = []
         all_subscribed: list[tuple[str, PermissionResult | None]] = []
@@ -337,7 +425,11 @@ class PermissionEngine:
             verdicts = [result for _, result in subscribed if result is not None]
             candidate_verdicts.append(self._merge_results(verdicts))
 
-        merged = self._merge_results(candidate_verdicts)
+        for verdict in structure_verdicts:
+            all_subscribed.append(("ShellStructure", verdict))
+
+        # Structure first so equal-rank ties keep structure labels (e.g. interpreter_sink).
+        merged = self._merge_results([*structure_verdicts, *candidate_verdicts])
         final_verdicts = [
             (name, result) for name, result in all_subscribed if result is not None
         ]
