@@ -80,7 +80,10 @@ def test_update_guard_actions_takes_effect_and_removal_restores_ask(
     assert _level(engine, "a; b") is PermissionLevel.ASK
 
     engine.update_config(
-        {**_BASE, "guard_actions": {"parse_unavailable": "allow"}}
+        {
+            **_BASE,
+            "guard_actions": {"parse_unavailable": "allow", "compound_chain": "allow"},
+        }
     )
     assert _level(engine, "a; b") is PermissionLevel.ALLOW
 
