@@ -12,6 +12,7 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 try:
     import psutil
@@ -117,21 +118,83 @@ _GIT_GLOBAL_VALUE_OPTS = frozenset({
 })
 _SHELL_SEPARATORS = frozenset({"&&", "||", ";", "|"})
 
+# Image-name kills and an unnamed Get-Process | Stop-Process pipeline.
+# Python-by-name stays on python_name_kill, so a caller can block ``kill python``
+# without also blocking node or a pipeline that names no process.
+_PROCESS_IMAGE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(
+            r"(?:Get-Process[\s\S]{0,400}Stop-Process|Stop-Process[\s\S]{0,400}Get-Process)",
+            re.IGNORECASE,
+        ),
+        "blocked pattern: Get-Process combined with Stop-Process",
+    ),
+    (
+        re.compile(
+            r"\bStop-Process\b[\s\S]{0,200}-Name\s+['\"]?(?:pythonw?(?:\d+(?:\.\d+)*)?(?:\.exe)?"
+            r"|node(?:\.exe)?|jiuwenswarm|jiuwenclaw)\b",
+            re.IGNORECASE,
+        ),
+        "blocked pattern: Stop-Process -Name targeting agent/host runtime",
+    ),
+    (
+        re.compile(
+            r"\btaskkill\b[\s\S]*?/{1,2}im\b[\s\S]*?\b(?:pythonw?(?:\d+(?:\.\d+)*)?(?:\.exe)?"
+            r"|node(?:\.exe)?|jiuwenswarm|jiuwenclaw)\b",
+            re.IGNORECASE,
+        ),
+        "blocked pattern: taskkill /im targeting agent/host runtime",
+    ),
+    (
+        re.compile(
+            r"\b(?:pkill|killall)\b[^\n\r;|&]*\bpythonw?(?:\d+(?:\.\d+)*)?(?:\.exe)?\b",
+            re.IGNORECASE,
+        ),
+        "blocked pattern: pkill/killall targeting python runtime",
+    ),
+)
+
+_SELF_PARENT_TASKKILL_PID_RE = re.compile(
+    r"\btaskkill\b[\s\S]*?/{1,2}pid\b[\s:=]*(\d+)",
+    re.IGNORECASE,
+)
+_SELF_PARENT_STOP_PROCESS_ID_RE = re.compile(
+    r"\bStop-Process\b[\s\S]{0,300}-Id\s*\(?([\d\s,]+)\)?",
+    re.IGNORECASE,
+)
+_TASKKILL_SELF_PID_REASON = "blocked pattern: taskkill targeting current agent/host process"
+_STOP_PROCESS_SELF_PID_REASON = (
+    "blocked pattern: Stop-Process targeting current agent/host process"
+)
+_LOOSE_WORKTREE_REASON = (
+    "worktree target must live under the project dir at "
+    ".worktrees/<name> (e.g. `git worktree add .worktrees/<name> "
+    "-b <branch> HEAD`); refused path outside the project: {target}. "
+    "Do NOT use `../` or sibling directories."
+)
+
+PidKillMode = Literal["off", "self_parent", "backend"]
+WorktreeParser = Literal["strict", "loose"]
+
 
 @dataclass(frozen=True, slots=True)
 class HostGuardOptions:
     """Feature flags for :func:`evaluate_host_guard`.
 
     ``name_patterns`` replaces only the whole-text regex floor. Rule 1 still
-    blocks a kill primitive that names jiuwenswarm or jiuwenclaw; those
-    literals stay fixed, as in the original guard. Python-name and
-    backend-PID checks stay off unless the caller turns them on.
+    blocks a kill primitive that names jiuwenswarm or jiuwenclaw when
+    ``segment_guard`` is on. Caller combinations are on ``HostGuardComponent``.
     """
 
     python_name_kill: bool = False
-    backend_pid_kill: bool = False
+    process_image_kill: bool = False
+    segment_guard: bool = True
+    join_continuations: bool = True
+    pid_kill: PidKillMode = "off"
     worktree_guard: bool = True
+    worktree_parser: WorktreeParser = "strict"
     name_patterns: tuple[tuple[re.Pattern[str], str], ...] | None = None
+    protected_pids: frozenset[str] | None = None
 
 
 def compile_name_patterns(raw: object) -> tuple[tuple[re.Pattern[str], str], ...]:
@@ -337,7 +400,11 @@ def evaluate_host_guard(
     if not command:
         return None
     opts = options or HostGuardOptions()
-    text = _normalize_continuations(command, shell_type)
+    text = (
+        _normalize_continuations(command, shell_type)
+        if opts.join_continuations
+        else command
+    )
     name_patterns = (
         _BASE_DANGEROUS_COMMAND_PATTERNS
         if opts.name_patterns is None
@@ -346,19 +413,31 @@ def evaluate_host_guard(
     for pattern, message in name_patterns:
         if pattern.search(text):
             return message
-    segment_reason = _check_segment_safety(
-        text,
-        name_patterns,
-        python_name_kill=opts.python_name_kill,
-    )
-    if segment_reason is not None:
-        return segment_reason
-    if opts.backend_pid_kill:
+    if opts.process_image_kill:
+        for pattern, message in _PROCESS_IMAGE_PATTERNS:
+            if pattern.search(text):
+                return message
+    if opts.segment_guard:
+        segment_reason = _check_segment_safety(
+            text,
+            name_patterns,
+            python_name_kill=opts.python_name_kill,
+        )
+        if segment_reason is not None:
+            return segment_reason
+    if opts.pid_kill == "self_parent":
+        self_reason = _check_self_parent_pid_kill(text, opts.protected_pids)
+        if self_reason is not None:
+            return self_reason
+    elif opts.pid_kill == "backend":
         backend_reason = _check_backend_pid_kill(text)
         if backend_reason is not None:
             return backend_reason
     if opts.worktree_guard and project_root is not None:
-        worktree_reason = _check_worktree_path_safety(command, project_root)
+        if opts.worktree_parser == "loose":
+            worktree_reason = _check_loose_worktree_path(command, project_root)
+        else:
+            worktree_reason = _check_worktree_path_safety(command, project_root)
         if worktree_reason is not None:
             return worktree_reason
     return None
@@ -453,6 +532,41 @@ def _backend_pids() -> set[int]:
         if _is_backend_cmdline(proc.info.get("cmdline") or ()):
             pids.add(proc.info["pid"])
     return pids
+
+
+def _self_parent_pids(protected_pids: frozenset[str] | None) -> set[str]:
+    """Current process and its parent, unless the caller supplied the set."""
+
+    if protected_pids is not None:
+        return set(protected_pids)
+    pids = {str(os.getpid())}
+    try:
+        ppid = os.getppid()
+    except OSError:
+        return pids
+    if ppid > 1:
+        pids.add(str(ppid))
+    return pids
+
+
+def _check_self_parent_pid_kill(
+    command: str,
+    protected_pids: frozenset[str] | None,
+) -> str | None:
+    """Block taskkill /pid and Stop-Process -Id aimed at this process or its parent.
+
+    Other spellings, including ``kill <pid>``, stay with ``pid_kill=backend``.
+    """
+
+    protected = _self_parent_pids(protected_pids)
+    for match in _SELF_PARENT_TASKKILL_PID_RE.finditer(command):
+        if match.group(1) in protected:
+            return _TASKKILL_SELF_PID_REASON
+    for match in _SELF_PARENT_STOP_PROCESS_ID_RE.finditer(command):
+        for pid in re.findall(r"\d+", match.group(1)):
+            if pid in protected:
+                return _STOP_PROCESS_SELF_PID_REASON
+    return None
 
 
 def _check_backend_pid_kill(command: str) -> str | None:
@@ -627,4 +741,70 @@ def _check_worktree_path_safety(command: str, project_root: Path) -> str | None:
     )
 
 
-__all__ = ["HostGuardOptions", "evaluate_host_guard"]
+def _loose_find_worktree_add_index(tokens: list[str]) -> int:
+    lowered = [token.lower() for token in tokens]
+    for index in range(len(lowered) - 1):
+        if lowered[index] == "worktree" and lowered[index + 1] == "add":
+            return index + 1
+    raise ValueError("not a git worktree add command")
+
+
+def _loose_parse_worktree_target(command: str) -> str | None:
+    """First positional after ``worktree add``. Failure and non-commands allow."""
+
+    if not _WORKTREE_ADD_PRESCREEN.search(command):
+        return None
+    try:
+        # posix=False keeps Windows ``\`` paths. posix=True treats ``\`` as an
+        # escape, so ``..\..\outside`` collapses and the guard allows it.
+        tokens = _split_shell_tokens(command)
+    except ValueError:
+        return None
+    try:
+        add_index = _loose_find_worktree_add_index(tokens)
+    except ValueError:
+        return None
+    index = add_index + 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token.startswith("--") and "=" in token:
+            index += 1
+            continue
+        if token in _WORKTREE_ADD_VALUE_OPTS:
+            index += 2
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        return token
+    return None
+
+
+def _check_loose_worktree_path(command: str, project_root: Path) -> str | None:
+    """Old whole-line worktree check. Parse failure allows the command."""
+
+    target = _loose_parse_worktree_target(command)
+    if target is None:
+        return None
+    try:
+        root = project_root.resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+    try:
+        target_path = Path(target)
+        if not target_path.is_absolute():
+            target_path = root / target_path
+        target_path = target_path.resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+    if _is_relative_to(target_path, root):
+        return None
+    return _LOOSE_WORKTREE_REASON.format(target=target)
+
+
+__all__ = [
+    "HostGuardOptions",
+    "PidKillMode",
+    "WorktreeParser",
+    "evaluate_host_guard",
+]
