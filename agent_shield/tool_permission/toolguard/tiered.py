@@ -17,9 +17,8 @@ import sys
 from typing import Any
 
 from ..models import PermissionLevel, PermissionResult
-from ..routing import CandidateKind, RouteContext
+from ..routing import RouteContext
 from .builtin_rules import SHELL_TOOLS, package_command_rules
-from .shell_ast import ShellAstParseResult, ShellSubcommand, parse_shell_for_permission
 
 logger = logging.getLogger(__name__)
 
@@ -31,14 +30,6 @@ _STRICTNESS = {
     PermissionLevel.ALLOW: 3,
 }
 _SHELL_TOOLS = frozenset(SHELL_TOOLS)
-_GUARD_IDS = ("too_complex", "parse_unavailable", "structure_guard", "interpreter_sink")
-_INTERPRETER_SINK_NAMES = frozenset({
-    "bash", "sh", "zsh", "dash", "ash", "fish",
-    "python", "python3", "pythonw", "py",
-    "node", "nodejs", "ruby", "perl",
-    "pwsh", "powershell", "cmd",
-    "iex", "invoke-expression", "invoke-command",
-})
 _FALSE_STRINGS = frozenset({"false", "0", "no", "off"})
 
 
@@ -83,73 +74,6 @@ def _package_rules_enabled(value: object) -> bool:
     if isinstance(value, bool):
         return value
     return not (isinstance(value, str) and value.strip().lower() in _FALSE_STRINGS)
-
-
-def _guard_actions(config: Mapping[str, object]) -> dict[str, PermissionLevel]:
-    """Response per structure check (R09); every check defaults to ASK."""
-    actions = {guard: PermissionLevel.ASK for guard in _GUARD_IDS}
-    legacy = config.get("shell_guard")
-    if isinstance(legacy, Mapping):
-        if legacy.get("unknown_structure") is False:
-            actions["too_complex"] = actions["parse_unavailable"] = PermissionLevel.ALLOW
-        if legacy.get("interpreter_sink") is False:
-            actions["interpreter_sink"] = PermissionLevel.ALLOW
-    configured = config.get("guard_actions")
-    if isinstance(configured, Mapping):
-        for guard in _GUARD_IDS:
-            level = _level(configured.get(guard))
-            if level is not None:
-                actions[guard] = level
-    return actions
-
-
-def _sink_basename(subcommand: ShellSubcommand) -> str:
-    token = subcommand.argv[0] if subcommand.argv else (subcommand.text.split() or [""])[0]
-    base = token.replace("\\", "/").rsplit("/", 1)[-1].lower()
-    return base[:-4] if base.endswith(".exe") else base
-
-
-def _has_interpreter_sink(parse: ShellAstParseResult) -> bool:
-    piped = parse.flags.has_pipeline or any(
-        "|" in sub.parent_operators for sub in parse.subcommands
-    )
-    return piped and any(
-        _sink_basename(sub) in _INTERPRETER_SINK_NAMES for sub in parse.subcommands[1:]
-    )
-
-
-def _structure_floors(
-    parse: ShellAstParseResult, actions: Mapping[str, PermissionLevel]
-) -> list[tuple[PermissionLevel, str]]:
-    """Structure-level checks only a parse can see (R09)."""
-    flags = parse.flags
-    floors: list[tuple[PermissionLevel, str]] = []
-    if parse.kind == "too_complex":
-        reason = parse.reason or "unsupported_complex_structure"
-        floors.append((actions["too_complex"], f"{_PREFIX}:shell_ast:too_complex:{reason}"))
-    elif parse.kind == "parse_unavailable" and flags.has_risky_structure():
-        # Redirection alone is a file-path concern (FileGuard); do not raise a
-        # command structure floor for `>` / `<` without other risk flags.
-        non_redir_risk = any((
-            flags.has_compound_operators,
-            flags.has_pipeline,
-            flags.has_subshell,
-            flags.has_command_group,
-            flags.has_command_substitution,
-            flags.has_process_substitution,
-            flags.has_parameter_expansion,
-            flags.has_heredoc,
-        ))
-        if non_redir_risk:
-            reason = parse.reason or "conservative_fallback"
-            label = f"{_PREFIX}:shell_ast:parse_unavailable:{reason}"
-            floors.append((actions["parse_unavailable"], label))
-    # Heredoc only; command/process substitution are handled by InjectionComponent.
-    if flags.has_heredoc:
-        floors.append((actions["structure_guard"], f"{_PREFIX}:shell_ast:structure_guard"))
-    if parse.kind == "simple" and _has_interpreter_sink(parse):
-        floors.append((actions["interpreter_sink"], f"{_PREFIX}:shell_guard:interpreter_sink"))
-    return floors
 
 
 def _compile_wildcard(pattern: str) -> re.Pattern[str] | None:
@@ -223,7 +147,6 @@ class TieredPolicyComponent:
         self._builtin_rules: list[dict[str, Any]] = []
         self._user_rules: list[dict[str, Any]] = []
         self._approval_overrides: list[dict[str, Any]] = []
-        self._guard_actions: dict[str, PermissionLevel] = _guard_actions({})
 
     def configure(self, config: Mapping[str, object]) -> None:
         """Prepare this component's rule state from the complete engine config."""
@@ -292,7 +215,6 @@ class TieredPolicyComponent:
         self._builtin_rules = configured_builtins
         self._user_rules = configured_users
         self._approval_overrides = prepared_overrides
-        self._guard_actions = _guard_actions(prepared)
 
     def match_approval(self, tool_name: str, command: str) -> PermissionResult | None:
         """Return ALLOW when ``command`` hits an approval override; else ``None``.
@@ -312,60 +234,12 @@ class TieredPolicyComponent:
         *,
         route: RouteContext | None = None,
     ) -> PermissionResult | None:
-        """Judge one candidate (rules / baseline / defaults / structure floors)."""
+        """Judge one candidate (approval / rules / baseline / defaults)."""
 
         baseline = self._tools.get(tool_name)
         command = _command_text(tool_args)
         is_shell = bool(route is not None and route.is_shell) or tool_name in _SHELL_TOOLS
-        kind = route.kind if route is not None else CandidateKind.ORIGINAL
-        # Structure floors need the whole (or unwrapped) view, not a leaf.
-        apply_floors = (
-            is_shell
-            and kind in (CandidateKind.ORIGINAL, CandidateKind.UNWRAPPED)
-            and tool_name in _SHELL_TOOLS
-            and bool(command)
-        )
-        parse = parse_shell_for_permission(command) if apply_floors else None
-        # 裁决 #9: quoted operators are not compound. Only the tree-sitter backend
-        # can prove that; the conservative fallback does not understand quotes and
-        # must not suppress shell_compound_chain (e.g. `sleep 1 &` stays ASK).
-        skip_ids: frozenset[str] = frozenset()
-        # Named predicate keeps the if below under G.CTL.03's boolean-expr budget.
-        is_simple_tree_sitter = (
-            parse is not None
-            and parse.backend == "tree-sitter"
-            and parse.kind == "simple"
-            and len(parse.subcommands) <= 1
-        )
-        if is_simple_tree_sitter and parse is not None:
-            flags = parse.flags
-            structural = (
-                flags.has_compound_operators
-                or flags.has_pipeline
-                or flags.has_parameter_expansion
-            )
-            if not structural:
-                skip_ids = frozenset({"shell_compound_chain"})
-
-        judged = self._judge(
-            tool_name, command, baseline, is_shell=is_shell, skip_rule_ids=skip_ids
-        )
-
-        if apply_floors and parse is not None:
-            floors = _structure_floors(parse, self._guard_actions)
-            if judged is None and floors:
-                level, label = floors[0]
-                for floor, floor_label in floors[1:]:
-                    if _STRICTNESS[floor] < _STRICTNESS[level]:
-                        level, label = floor, floor_label
-                return self._result(level, label)
-            if judged is not None:
-                level, label = judged
-                for floor, floor_label in floors:
-                    tie_with_label = floor is level and "interpreter_sink" in floor_label
-                    if _STRICTNESS[floor] < _STRICTNESS[level] or tie_with_label:
-                        level, label = floor, f"{floor_label}|{label}"
-                return self._result(level, label)
+        judged = self._judge(tool_name, command, baseline, is_shell=is_shell)
         if judged is None:
             return None
         return self._result(*judged)
@@ -377,13 +251,12 @@ class TieredPolicyComponent:
         baseline: tuple[PermissionLevel, str] | None,
         *,
         is_shell: bool,
-        skip_rule_ids: frozenset[str] = frozenset(),
     ) -> tuple[PermissionLevel, str] | None:
         """One judgement: overrides, rules, tool baseline, defaults; shell ASK fallback."""
         approval = self._approval(tool_name, command)
         if approval is not None:
             return approval
-        hit = self._rules_only(tool_name, command, skip_rule_ids=skip_rule_ids)
+        hit = self._rules_only(tool_name, command)
         if hit is not None:
             return hit
         if baseline is not None:
@@ -414,15 +287,10 @@ class TieredPolicyComponent:
         self,
         tool_name: str,
         command: str,
-        *,
-        skip_rule_ids: frozenset[str] = frozenset(),
     ) -> tuple[PermissionLevel, str] | None:
         hits: list[tuple[PermissionLevel, str, str]] = []
         for namespace, rules in (("builtin", self._builtin_rules), ("rules", self._user_rules)):
             for rule in rules:
-                rid = rule.get("id")
-                if isinstance(rid, str) and rid in skip_rule_ids:
-                    continue
                 if _rule_targets_tool(rule, tool_name) and _rule_matches(rule, command):
                     decision = rule["_by_tool"].get(tool_name, rule["_decision"])
                     hits.append((decision, namespace, _rule_label(namespace, rule)))

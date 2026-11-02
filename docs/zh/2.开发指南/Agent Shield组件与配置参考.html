@@ -211,6 +211,20 @@
   }
   .flow-legend .chip { font-size: 11px; padding: 2px 8px; }
 
+  /* Structure floors · Mermaid */
+  .mermaid-wrap {
+    margin-top: 8px; padding: 14px 12px 6px;
+    background: #fff; border: 1px solid #f0d0b0; border-radius: 8px;
+    overflow-x: auto;
+  }
+  .mermaid-wrap + .mermaid-title,
+  .mermaid-title { margin: 14px 0 0; font-size: 12.5px; font-weight: 700; color: #9a3412; }
+  .mermaid-wrap .mermaid {
+    display: flex; justify-content: center;
+    font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+  }
+  .mermaid-wrap svg { max-width: none; height: auto; }
+
   .top-link {
     display: inline-block; margin-top: 8px; font-size: 12px; color: var(--blue); font-weight: 600;
   }
@@ -343,8 +357,9 @@
   <a class="sub" href="#candidate-scope">各组件看哪些候选</a>
   <a class="sub" href="#command-expand">剥壳与拆子命令</a>
   <a class="sub" href="#check-permission-flow">check_permission 流程</a>
+  <a class="sub" href="#structure-floors">结构底线（框架）</a>
   <a href="#tiered">2. TieredPolicy</a>
-  <a class="sub" href="#tiered-order">判定顺序 / 结构底线</a>
+  <a class="sub" href="#tiered-order">判定顺序</a>
   <a class="sub" href="#tiered-keys">配置项</a>
   <a class="sub" href="#tiered-rules">规则字段与示例</a>
   <a href="#toolguard">3. Allowlist / Injection / Warning</a>
@@ -456,7 +471,7 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
           <div class="pill p1">UNDETERMINED</div>
           <div class="pill p0">ALLOW</div>
           <div class="strict">宽松 ↓</div>
-          <div class="note">对各候选结论再取严<br>全部弃权 → ASK</div>
+          <div class="note">候选结论 + 结构底线<br>一并取严 · 全部弃权 → ASK</div>
         </div>
       </div>
       <div class="flow-down">▼</div>
@@ -466,7 +481,7 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
         <span><span class="chip off">虚线</span> 默认关闭 / 需配置后生效</span>
       </div>
     </div>
-    <p class="note-line">框架配置 enabled / runtime.* 见各消费组件节</p>
+    <p class="note-line">框架配置 enabled / runtime.* 见各消费组件节；结构底线见「剥壳与拆子命令」之后一节</p>
 
     <h3 id="candidate-scope" style="margin-top:18px">各组件看哪些候选</h3>
     <p class="sub" style="margin-top:0">引擎对 shell 可展开为原文 / 剥壳 / 子命令；非 shell 通常只有原文。下表按源码弃权条件整理（✓ 参与 · — 弃权）。</p>
@@ -499,7 +514,7 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
         <tr>
           <td class="k">TieredPolicy</td>
           <td>✓</td><td>✓</td><td>✓</td>
-          <td>规则/基线/defaults 三种都跑；<b>结构底线仅原文+剥壳</b></td>
+          <td>规则/基线/defaults；<b>不含结构底线</b>（底线在框架）</td>
         </tr>
         <tr>
           <td class="k">HostGuard</td>
@@ -691,10 +706,10 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
       <div class="box hi-orange"><div class="n">③ 表 A：命令入口？</div><div class="d"><code>_COMMAND_ENTRY_TOOLS</code>。<b>否</b> → 仅 ORIGINAL，跳到 ⑦。<b>是</b> → 继续（不改写 tool_name）。</div></div>
       <div class="box"><div class="n">④ ORIGINAL</div><div class="d">原文 + 方言</div></div>
       <div class="box hi-green"><div class="n">⑤ 表 B：剥壳</div><div class="d"><code>canonicalize</code> 扫串内启动器；有则追加 UNWRAPPED</div></div>
-      <div class="box hi-orange"><div class="n">⑥ 按方言拆子命令</div><div class="d"><code>posix_shell</code> / <code>unknown</code> → bash AST；PowerShell / CMD → Phase 1 跳过。多叶子 → SUBCOMMAND×N</div></div>
-      <div class="box"><div class="n">⑦ approval 短路</div><div class="d">ORIGINAL / UNWRAPPED 命中 approval → 整次 ALLOW</div></div>
-      <div class="box"><div class="n">⑧ 逐候选跑组件</div><div class="d">取各组件意见</div></div>
-      <div class="box hi-gray"><div class="n">⑨ 合并最严 → 日志 → 返回</div><div class="d"><code>PermissionResult</code></div></div>
+      <div class="box hi-orange"><div class="n">⑥ 同一次解析：拆叶 + 结构底线</div><div class="d"><code>posix_shell</code> / <code>unknown</code> → 解析；simple 才追加 SUBCOMMAND；kind+flags 算五键底线（原文/剥壳）。PowerShell / CMD Phase 1 不拆叶，底线延迟到求值。</div></div>
+      <div class="box"><div class="n">⑦ approval 短路</div><div class="d">ORIGINAL / UNWRAPPED 命中 approval → 整次 ALLOW（结构底线亦不跑）</div></div>
+      <div class="box"><div class="n">⑧ 逐候选跑组件</div><div class="d">Tiered 等；不含结构底线</div></div>
+      <div class="box hi-gray"><div class="n">⑨ 合并最严 → 日志 → 返回</div><div class="d">各候选结论 + 结构底线一并取严</div></div>
     </div>
 
     <div class="explain" style="margin-top:14px">
@@ -708,49 +723,154 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
     </div>
   </section>
 
+  <section class="sec" id="structure-floors">
+    <h2>结构底线（框架 · shell_structure）</h2>
+    <p class="sub" style="margin-top:0">与拆子命令共用解析 · 非 Component · 由引擎与候选结论取严</p>
+    <div class="explain">
+      <p>对原文/剥壳视图做 AST 解析（优先 tree-sitter bash，否则保守扫描）；子命令叶子不算。命中等级由 <code>guard_actions</code> 配置，缺省均为 ask。approval 整调用短路时不跑。</p>
+      <ul>
+        <li><b>too_complex</b> — 结构不可信，不宜按普通命令拆分（以 AST 为准）。</li>
+        <li><b>parse_unavailable</b> — 无可用 AST，且存在非纯重定向的风险特征。单独的 <code>&gt;</code> / <code>&lt;</code> 不触发（归 FileGuard）。</li>
+        <li><b>structure_guard</b> — heredoc / here-string。</li>
+        <li><b>interpreter_sink</b> — 管道下游为解释器。例：<code>curl http://x | bash</code>；<code>ls | wc -l</code> 不命中。</li>
+        <li><b>compound_chain</b> — 原 builtin <code>shell_compound_chain</code>（已迁出规则包）。文本含 <code>;</code> <code>&amp;</code> <code>|</code> <code>${</code> 或换行等链式特征时抬档；tree-sitter 证明简单句则不抬。<strong>不能</strong>再用「同 tools+pattern 覆盖内置 action」；仅配 <code>guard_actions.compound_chain</code>（<code>allow</code> = 不抬）。</li>
+      </ul>
+      <p>命令替换、进程替换由 Injection DENY，见第 3 节。</p>
+
+      <h4 style="margin-top:12px">结构底线流程</h4>
+      <p class="sub" style="margin:0 0 4px">框架层 · 对原文/剥壳整串 · 拆叶见上一节「剥壳与拆子命令」</p>
+
+      <div class="mermaid-title">图 1 · 总流程</div>
+      <div class="mermaid-wrap">
+        <pre class="mermaid">
+flowchart TD
+  Start([开始]) -->|输入：剥壳后 command<br/>或原文| Gate{跑结构底线？}
+  Gate -->|否：SUBCOMMAND 叶子| Skip[不算结构底线]
+  Skip --> End1([继续组件判定])
+  Gate -->|是：is_shell · 原文/剥壳 · 非空| TS{tree-sitter 可用？}
+  TS -->|否：正常行为| FB[兜底扫描<br/>见 图 2]
+  TS -->|是| AST[AST 扫描<br/>见 图 3]
+  AST -->|解析抛错| FB
+  AST -->|输出：kind + flags| G0
+  FB -->|输出：kind + flags| G0
+  G0["五键并列 · guard_actions 缺省 ask · 可叠加"]
+  G0 --> G1["too_complex<br/>条件：kind = too_complex"]
+  G0 --> G2["parse_unavailable<br/>条件：kind = parse_unavailable<br/>且不只是 &gt; / &lt; 重定向<br/>（仅重定向交给 FileGuard）"]
+  G0 --> G3["structure_guard<br/>条件：has_heredoc"]
+  G0 --> G4["interpreter_sink<br/>条件：kind = simple<br/>且管道下游是 bash / sh / python / node 等解释器"]
+  G0 --> G5["compound_chain<br/>条件：文本含 ; &amp; | ${ 换行等<br/>且非 tree-sitter 已证简单句"]
+  G1 --> Merge
+  G2 --> Merge
+  G3 --> Merge
+  G4 --> Merge
+  G5 --> Merge
+  Merge["与各候选组件结论取最严<br/>只抬不降"]
+  Merge -->|输出：写入最终 PermissionResult| End2([结束])
+        </pre>
+      </div>
+
+      <div class="mermaid-title">图 2 · 兜底扫描</div>
+      <div class="mermaid-wrap">
+        <pre class="mermaid">
+flowchart TD
+  In([输入：command]) --> Scan["保守扫描<br/>子串：| , &amp;&amp; , || , ; , 换行 , 回车 , &lt; , &gt;<br/>正则：命令替换 , 进程替换 , heredoc , 参数展开"]
+  Scan -->|输出：flags| Risk{"flags 任一为真？<br/>链式 / 管道<br/>命令替换 / 进程替换<br/>参数展开 / heredoc<br/>输入重定向 / 输出重定向"}
+  Risk -->|是：含命令替换、进程替换| PU1["输出：kind = parse_unavailable<br/>flags = 扫描结果"]
+  Risk -->|否：flags 全假| Shlex{按引号规则拆成参数列表}
+  Shlex -->|成功：正常| S["输出：kind = simple<br/>flags = 全假"]
+  Shlex -->|失败| PU2["输出：kind = parse_unavailable<br/>flags = 全假"]
+  PU1 --> Out([回到图 1 · 五键])
+  S --> Out
+  PU2 --> Out
+        </pre>
+      </div>
+
+      <div class="mermaid-title">图 3 · AST 扫描</div>
+      <div class="mermaid-wrap">
+        <pre class="mermaid">
+flowchart TD
+  In([输入：command]) --> AST[AST 解析]
+  AST --> A0{解析抛错？}
+  A0 -->|是| FB([改走图 2 · 兜底扫描])
+  A0 -->|否| A1{有根节点？}
+  A1 -->|否| PU["输出：kind = parse_unavailable<br/>flags = 空"]
+  A1 -->|是| A2{语法错误？}
+  A2 -->|是| TC1["输出：kind = too_complex<br/>flags = 空"]
+  A2 -->|否| A3["收集 flags<br/>管道 / 链式 / 子shell / 命令组<br/>命令替换 / 进程替换<br/>参数展开 / heredoc / 重定向"]
+  A3 --> A4{"flags 含：命令替换 / 进程替换<br/>参数展开 / heredoc<br/>子shell / 命令组？"}
+  A4 -->|是| TC2["输出：kind = too_complex<br/>flags = 已收集"]
+  A4 -->|否| A5{抽到有效命令文本？}
+  A5 -->|否：无节点或全空| TC3["输出：kind = too_complex<br/>flags = 已收集"]
+  A5 -->|是：正常| S["输出：kind = simple<br/>flags = 已收集<br/>可含管道 / 链式 / 重定向"]
+  PU --> Out([回到图 1 · 五键])
+  TC1 --> Out
+  TC2 --> Out
+  TC3 --> Out
+  S --> Out
+        </pre>
+      </div>
+    </div>
+    <table class="ref" style="margin-top:10px">
+      <thead>
+        <tr><th>配置项</th><th>类型</th><th>可取值</th><th>默认</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="k">guard_actions</td>
+          <td>object</td>
+          <td>五键 → allow/ask/deny</td>
+          <td>键缺省 ask</td>
+          <td>
+            too_complex / parse_unavailable / structure_guard / interpreter_sink / <b>compound_chain</b>。<br>
+            <code>structure_guard</code> 仅 heredoc；<code>compound_chain: allow</code> 只放宽链式抬档。
+          </td>
+        </tr>
+        <tr>
+          <td class="k">shell_guard</td>
+          <td>object</td>
+          <td>旧版布尔</td>
+          <td>见右</td>
+          <td>
+            <code>unknown_structure: false</code> → too_complex、parse_unavailable 为 allow；
+            <code>interpreter_sink: false</code> → 该键 allow。与 guard_actions 并存时以 guard_actions 为准。
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <pre class="ex" style="margin-top:10px"><span class="c"># 框架读取。不写整段 = 五键均为 ask</span>
+<span class="k">guard_actions</span>:
+  <span class="k">too_complex</span>: <span class="s">ask</span>
+  <span class="k">parse_unavailable</span>: <span class="s">ask</span>
+  <span class="k">structure_guard</span>: <span class="s">ask</span>       <span class="c"># heredoc</span>
+  <span class="k">interpreter_sink</span>: <span class="s">ask</span>
+  <span class="k">compound_chain</span>: <span class="s">ask</span>         <span class="c"># 原 shell_compound_chain；allow=不抬链式</span>
+<span class="c"># shell_guard: 旧版布尔；与 guard_actions 并存时以 guard_actions 为准</span></pre>
+  </section>
+
   <!-- Tiered (merged) -->
   <section class="sec" id="tiered">
     <h2>2. TieredPolicyComponent</h2>
-    <p class="sub">命令 / 工具分层策略 · 默认参与 · shell 工具含结构底线</p>
+    <p class="sub">命令 / 工具分层策略 · 默认参与</p>
     <div class="box hi-green" style="margin-bottom:12px">
       <div class="n">看哪些候选</div>
       <div class="d">原文 / 剥壳 / 子命令<strong>都会</strong>跑 approval→rules→tools→defaults（及 shell 零配置兜底）。
-        <b>结构底线</b>只在原文与剥壳上跑，子命令不跑。非 shell 工具也可走本组件（无结构底线，无规则时可弃权）。</div>
+        非 shell 工具也可走本组件（无规则时可弃权）。</div>
     </div>
 
-    <h3 id="tiered-order">2.1 判定顺序与结构底线</h3>
-    <div class="grid cols-2">
-      <div class="panel">
-        <div class="ph green">组件内顺序（未短路时）</div>
-        <div class="stack">
-          <div class="box hi-green"><div class="n">1. approval_overrides</div><div class="d">命中 → ALLOW（仅 action=allow 生效；引擎层还可对整条/剥壳整调用短路）</div></div>
-          <div class="box"><div class="n">2. rules（builtin + 用户）</div><div class="d">扫完全部命中，按 action 取最严（deny &gt; ask &gt; undetermined &gt; allow）。全等 / 通配 / <code>re:</code> 正则无优先级差。可用同 pattern 覆盖内置 action</div></div>
-          <div class="box"><div class="n">3. tools.&lt;name&gt;</div><div class="d">整工具基线（含 deny，无早退）</div></div>
-          <div class="box"><div class="n">4. defaults.*</div><div class="d">全局默认</div></div>
-          <div class="box"><div class="n">5. shell 兜底 ASK</div><div class="d">非 shell 可弃权（None）</div></div>
-        </div>
+    <h3 id="tiered-order">2.1 判定顺序</h3>
+    <div class="panel" style="max-width:520px">
+      <div class="ph green">组件内顺序（未短路时）</div>
+      <div class="stack">
+        <div class="box hi-green"><div class="n">1. approval_overrides</div><div class="d">命中 → ALLOW（仅 action=allow 生效；引擎层还可对整条/剥壳整调用短路）</div></div>
+        <div class="box"><div class="n">2. rules（builtin + 用户）</div><div class="d">扫完全部命中，按 action 取最严（deny &gt; ask &gt; undetermined &gt; allow）。全等 / 通配 / <code>re:</code> 正则无优先级差。可用同 tools+pattern 覆盖内置 action</div></div>
+        <div class="box"><div class="n">3. tools.&lt;name&gt;</div><div class="d">整工具基线（含 deny，无早退）</div></div>
+        <div class="box"><div class="n">4. defaults.*</div><div class="d">全局默认</div></div>
+        <div class="box"><div class="n">5. shell 兜底 ASK</div><div class="d">非 shell 可弃权（None）</div></div>
       </div>
-      <div class="panel">
-        <div class="ph orange">结构底线（仅 shell · 原文/剥壳）</div>
-        <div class="box hi-orange"><div class="n">作用</div><div class="d">规则比的是看得见的文本；底线拦「解析看不清 / 运行时才长出文本」的结构风险。先走左侧判定，再只抬不降。</div></div>
-        <div class="box"><div class="n">何时跑</div><div class="d">shell 工具名 + 原文/剥壳候选 + 命令非空；子命令候选不跑；approval 整调用短路时整段不跑。</div></div>
-      </div>
-    </div>
-
-    <div class="explain">
-      <h4>结构底线</h4>
-      <p>对原文/剥壳视图做 AST 解析（优先 tree-sitter bash，否则保守扫描）后的结构检查；不按子命令重复执行。命中后的等级由 <code>guard_actions</code> 配置，缺省均为 ask。</p>
-      <ul>
-        <li><b>too_complex</b> — 结构不可信，不宜按普通命令拆分（如语法破损、子 shell、命令组等，以 AST 为准）。</li>
-        <li><b>parse_unavailable</b> — 无可用 AST，且存在非纯重定向的风险特征。单独的 <code>&gt;</code> / <code>&lt;</code> 重定向不触发本项（路径由 FileGuard 处理）。</li>
-        <li><b>structure_guard</b> — 检出 heredoc / here-string（正文对规则不透明）。缺省 ask，可由本键改 allow/deny。</li>
-        <li><b>interpreter_sink</b> — 管道下游为解释器（bash / sh / python / node / pwsh 等）。例：<code>curl http://x | bash</code> 命中；<code>ls | wc -l</code> 不命中。</li>
-      </ul>
-      <p>命令替换、进程替换由 Injection 组件 DENY，见第 3 节。</p>
     </div>
 
     <h3 id="tiered-keys">2.2 配置项</h3>
-    <p class="sub" style="margin-top:0">顶层公共段，主要由本组件读取；部分字段亦被 NetGuard / FileGuard 共用</p>
+    <p class="sub" style="margin-top:0">本组件读取的顶层段；部分字段亦被 NetGuard / FileGuard 共用。结构底线配置见 <a href="#structure-floors">1.1 结构底线</a></p>
     <table class="ref">
       <thead>
         <tr><th>配置项</th><th>类型</th><th>可取值</th><th>默认（缺省时）</th><th>说明</th></tr>
@@ -796,29 +916,7 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
           <td>bool / string</td>
           <td>bool；或字符串 <code>false/0/no/off</code> 视为关</td>
           <td>开（缺省为真）</td>
-          <td>关则清空包内置命令规则；亦影响 FileGuard 敏感路径与 NetGuard 包规则</td>
-        </tr>
-        <tr>
-          <td class="k">guard_actions</td>
-          <td>object</td>
-          <td>四键 → allow/ask/deny</td>
-          <td>不写整段，或某键不写 → 该键 <code>ask</code></td>
-          <td>
-            键：too_complex / parse_unavailable / structure_guard / interpreter_sink。<br>
-            <code>structure_guard</code> 仅对应 heredoc。<br>
-            <code>allow</code> → allow；<code>ask</code> → ask；<code>deny</code> → deny。
-          </td>
-        </tr>
-        <tr>
-          <td class="k">shell_guard</td>
-          <td>object</td>
-          <td>旧版兼容（布尔）</td>
-          <td>见右栏</td>
-          <td>
-            <b>unknown_structure</b>：不写 / <code>true</code> → too_complex、parse_unavailable 为 <b>ask</b>；<code>false</code> → 这两项为 <b>allow</b>。<br>
-            <b>interpreter_sink</b>：不写 / <code>true</code> → interpreter_sink 为 <b>ask</b>；<code>false</code> → 为 <b>allow</b>。<br>
-            若同时写了 <code>guard_actions</code>，以 <code>guard_actions</code> 为准。
-          </td>
+          <td>关则清空包内置命令规则；亦影响 FileGuard 敏感路径、NetGuard 包规则。框架 <code>compound_chain</code> 只看 <code>guard_actions</code>，不受本键控制</td>
         </tr>
       </tbody>
     </table>
@@ -841,7 +939,7 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
           <tr><td class="k">（空 / 未写）</td><td>ask</td><td>ask</td></tr>
         </tbody>
       </table>
-      <p class="note-line">有 <code>action</code> 的规则不走本表；<code>tools</code> / <code>defaults</code> / <code>approval_overrides</code> / <code>guard_actions</code> 也不受 <code>permission_mode</code> 影响。</p>
+      <p class="note-line">有 <code>action</code> 的规则不走本表；<code>tools</code> / <code>defaults</code> / <code>approval_overrides</code> 也不受 <code>permission_mode</code> 影响。</p>
     </div>
 
     <h3 id="tiered-rules">2.3 规则字段与示例</h3>
@@ -925,21 +1023,7 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
     <span class="k">tools</span>: [<span class="s">bash</span>]
     <span class="k">pattern</span>: <span class="s">"rm -rf /tmp/ok"</span>
     <span class="k">match_type</span>: <span class="s">command</span>
-    <span class="k">action</span>: <span class="s">allow</span>
-
-<span class="c"># 结构底线。不写整段 = 四键均为 ask</span>
-<span class="k">guard_actions</span>:
-  <span class="k">too_complex</span>: <span class="s">ask</span>            <span class="c"># allow | ask | deny</span>
-  <span class="k">parse_unavailable</span>: <span class="s">ask</span>
-  <span class="k">structure_guard</span>: <span class="s">ask</span>       <span class="c"># heredoc</span>
-  <span class="k">interpreter_sink</span>: <span class="s">ask</span>
-
-<span class="c"># 旧版 shell_guard（与 guard_actions 并存时以 guard_actions 为准）</span>
-<span class="c"># unknown_structure: 不写/true → ask；false → allow（作用于 too_complex、parse_unavailable）</span>
-<span class="c"># interpreter_sink:  不写/true → ask；false → allow</span>
-<span class="c"># shell_guard:</span>
-<span class="c">#   unknown_structure: false</span>
-<span class="c">#   interpreter_sink: false</span></pre>
+    <span class="k">action</span>: <span class="s">allow</span></pre>
       </div>
     </div>
   </section>
@@ -1561,16 +1645,13 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
       match_type: command
       action: allow
 
-  # 不写 = 四键均为 ask；structure_guard = heredoc
+  # 框架结构底线（见 1.1）；不写 = 五键 ask
   guard_actions:
     too_complex: ask
     parse_unavailable: ask
     structure_guard: ask
     interpreter_sink: ask
-  # shell_guard（旧版）：不写/true → ask；false → allow
-  # shell_guard:
-  #   unknown_structure: false
-  #   interpreter_sink: false
+    compound_chain: ask
 
   file_guard:
     enabled: true
@@ -2094,6 +2175,17 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
   window.addEventListener('scroll', setActive, { passive: true });
   setActive();
 })();
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'neutral',
+    flowchart: { htmlLabels: true, curve: 'basis' },
+    securityLevel: 'loose',
+    themeVariables: { fontFamily: 'Consolas, "Courier New", monospace' },
+    themeCSS: '.nodeLabel,.edgeLabel { font-family: Consolas, "Courier New", monospace !important; font-size: 13px !important; }',
+  });
 </script>
 </body>
 </html>

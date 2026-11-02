@@ -237,7 +237,7 @@ def test_subcommand_split_no_longer_gated_by_shell_tools_five_tuple(
 ) -> None:
     """sh is a command entry but not in SHELL_TOOLS; Phase 1 still splits via bash AST."""
 
-    import agent_shield.tool_permission.engine as engine_mod
+    from agent_shield.tool_permission import shell_structure
     from agent_shield.tool_permission.toolguard.shell_ast import (
         ShellAstParseResult,
         ShellSubcommand,
@@ -252,7 +252,7 @@ def test_subcommand_split_no_longer_gated_by_shell_tools_five_tuple(
             ),
         )
 
-    monkeypatch.setattr(engine_mod, "parse_shell_for_permission", stub)
+    monkeypatch.setattr(shell_structure, "parse_shell_for_permission", stub)
     candidates = PermissionEngine.build_candidates("sh", {"command": "ls; rm x"})
     kinds = [route.kind for route, _ in candidates]
     assert CandidateKind.ORIGINAL in kinds
@@ -260,12 +260,12 @@ def test_subcommand_split_no_longer_gated_by_shell_tools_five_tuple(
 
 
 def test_powershell_and_cmd_skip_posix_ast_split(monkeypatch: pytest.MonkeyPatch) -> None:
-    import agent_shield.tool_permission.engine as engine_mod
+    from agent_shield.tool_permission import shell_structure
 
     def boom(_command: str):
         raise AssertionError("PowerShell/CMD must not use bash AST in Phase 1")
 
-    monkeypatch.setattr(engine_mod, "parse_shell_for_permission", boom)
+    monkeypatch.setattr(shell_structure, "parse_shell_for_permission", boom)
     for tool, args in (
         ("powershell", {"command": "Get-Date; Stop-Process -Name x"}),
         ("cmd", {"command": "dir & echo hi"}),
@@ -278,7 +278,7 @@ def test_powershell_and_cmd_skip_posix_ast_split(monkeypatch: pytest.MonkeyPatch
 def test_mcp_unknown_dialect_still_attempts_posix_split(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import agent_shield.tool_permission.engine as engine_mod
+    from agent_shield.tool_permission import shell_structure
     from agent_shield.tool_permission.toolguard.shell_ast import (
         ShellAstParseResult,
         ShellSubcommand,
@@ -293,7 +293,7 @@ def test_mcp_unknown_dialect_still_attempts_posix_split(
             ),
         )
 
-    monkeypatch.setattr(engine_mod, "parse_shell_for_permission", stub)
+    monkeypatch.setattr(shell_structure, "parse_shell_for_permission", stub)
     candidates = PermissionEngine.build_candidates(
         "mcp_exec_command",
         {"command": "ls; pwd"},
