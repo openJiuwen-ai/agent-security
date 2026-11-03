@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 
 from agent_shield.tool_permission import PermissionEngine, PermissionLevel
-from agent_shield.tool_permission.hostguard.safety import _loose_parse_worktree_target
 
 
 def _run(awaitable):
@@ -43,12 +42,9 @@ def test_host_guard_blocks_mcp_exec_kill_without_worktree() -> None:
     assert result.matched_rule == "host_guard:safety"
 
 
-def test_develop_profile_python_name_kill() -> None:
+def test_enabled_guard_blocks_python_by_name() -> None:
     engine = PermissionEngine({
-        "host_guard": {
-                "enabled": True,
-                "python_name_kill": True,
-            },
+        "host_guard": {"enabled": True},
         "runtime": {"workspace_root": str(Path.cwd())},
         "tools": {"bash": "allow"},
         "package_builtin_rules": False,
@@ -75,23 +71,8 @@ def _engine(
     })
 
 
-def _self_parent_guard() -> dict:
-    """dev-stable: image-name kills, self/parent pid, no segment rules."""
-
-    return {
-        "enabled": True,
-        "shell_mismatch": False,
-        "python_name_kill": False,
-        "process_image_kill": True,
-        "segment_guard": False,
-        "join_continuations": False,
-        "pid_kill": "self_parent",
-        "worktree_parser": "loose",
-    }
-
-
 def test_process_image_kill_blocks_node_and_keeps_im_reason() -> None:
-    engine = _engine(_self_parent_guard())
+    engine = _engine({"enabled": True})
     node = _run(engine.check_permission("bash", {"command": "taskkill /IM node.exe /F"}))
     assert node.permission is PermissionLevel.DENY
     assert node.matched_rule == "host_guard:safety"
@@ -103,25 +84,28 @@ def test_process_image_kill_blocks_node_and_keeps_im_reason() -> None:
     )
 
 
-def test_process_image_kill_stays_off_for_node_and_unnamed_pipeline() -> None:
-    engine = _engine({"enabled": True, "shell_mismatch": False, "python_name_kill": True})
+def test_enabled_guard_blocks_node_and_unnamed_pipeline() -> None:
+    engine = _engine({"enabled": True})
     node = _run(engine.check_permission("bash", {"command": "taskkill /IM node.exe /F"}))
-    assert node.matched_rule != "host_guard:safety"
-    unnamed = _run(engine.check_permission("powershell", {"command": "Get-Process | Stop-Process"}))
-    assert unnamed.matched_rule != "host_guard:safety"
+    assert node.permission is PermissionLevel.DENY
+    assert node.reason == "blocked pattern: taskkill /im targeting agent/host runtime"
+    unnamed = _run(engine.check_permission(
+        "powershell", {"command": "Get-Process | Stop-Process"},
+    ))
+    assert unnamed.permission is PermissionLevel.DENY
+    assert unnamed.reason == "blocked pattern: Get-Process combined with Stop-Process"
     python_im = _run(engine.check_permission("bash", {"command": "taskkill /IM python.exe /F"}))
     assert python_im.permission is PermissionLevel.DENY
-    assert "host python interpreter" in (python_im.reason or "")
 
 
-def test_self_parent_blocks_current_pid_only(monkeypatch) -> None:
+def test_pid_kill_blocks_current_process_and_wider_spellings(monkeypatch) -> None:
     monkeypatch.setattr(
         "agent_shield.tool_permission.hostguard.safety.os.getpid", lambda: 4242,
     )
     monkeypatch.setattr(
         "agent_shield.tool_permission.hostguard.safety.os.getppid", lambda: 1,
     )
-    engine = _engine(_self_parent_guard())
+    engine = _engine({"enabled": True})
     blocked = _run(engine.check_permission("bash", {"command": "taskkill /PID 4242 /F"}))
     assert blocked.permission is PermissionLevel.DENY
     assert blocked.matched_rule == "host_guard:safety"
@@ -129,31 +113,59 @@ def test_self_parent_blocks_current_pid_only(monkeypatch) -> None:
     other = _run(engine.check_permission("bash", {"command": "taskkill /PID 99999 /F"}))
     assert other.matched_rule != "host_guard:safety"
     spelled = _run(engine.check_permission("bash", {"command": "kill -9 4242"}))
-    assert spelled.matched_rule != "host_guard:safety"
+    assert spelled.permission is PermissionLevel.DENY
+    assert spelled.reason is not None
+    assert "4242" in spelled.reason
+    assert "JiuwenSwarm backend" in spelled.reason
 
 
-def test_pid_kill_off_allows_current_pid(monkeypatch) -> None:
+def test_ancestor_scan_ignores_pid_1(monkeypatch) -> None:
+    class _Proc:
+        def __init__(self, pid: int) -> None:
+            self.pid = pid
+
+        @staticmethod
+        def parents() -> list[_Proc]:
+            return [_Proc(1), _Proc(50)]
+
+    class _PsutilError(Exception):
+        pass
+
+    fake = type("psutil", (), {
+        "Error": _PsutilError,
+        "Process": staticmethod(lambda: _Proc(4242)),
+        "process_iter": staticmethod(lambda *_args, **_kwargs: []),
+    })
     monkeypatch.setattr(
         "agent_shield.tool_permission.hostguard.safety.os.getpid", lambda: 4242,
     )
+    monkeypatch.setattr("agent_shield.tool_permission.hostguard.safety.psutil", fake)
+    from agent_shield.tool_permission.hostguard.safety import _runtime_process_ids
+
+    found = _runtime_process_ids()
+    assert 1 not in found
+    assert {4242, 50} <= found
+
+
+def test_commands_without_a_target_pid_do_not_scan_processes(monkeypatch) -> None:
+    def _boom() -> set[int]:
+        raise AssertionError("process scan")
+
     monkeypatch.setattr(
-        "agent_shield.tool_permission.hostguard.safety.os.getppid", lambda: 1,
+        "agent_shield.tool_permission.hostguard.safety._runtime_process_ids",
+        _boom,
     )
-    engine = _engine({"enabled": True, "shell_mismatch": False, "pid_kill": "off"})
-    result = _run(engine.check_permission("bash", {"command": "taskkill /PID 4242 /F"}))
+    engine = _engine({"enabled": True})
+    result = _run(engine.check_permission("bash", {"command": "echo hi"}))
     assert result.matched_rule != "host_guard:safety"
 
 
-def test_backend_pid_kill_uses_the_wider_set(monkeypatch) -> None:
+def test_pid_kill_blocks_a_discovered_runtime_pid(monkeypatch) -> None:
     monkeypatch.setattr(
-        "agent_shield.tool_permission.hostguard.safety._backend_pids",
+        "agent_shield.tool_permission.hostguard.safety._runtime_process_ids",
         lambda: {4242, 7777},
     )
-    engine = _engine({
-        "enabled": True,
-        "shell_mismatch": False,
-        "pid_kill": "backend",
-    })
+    engine = _engine({"enabled": True})
     blocked = _run(engine.check_permission("bash", {"command": "kill 7777"}))
     assert blocked.permission is PermissionLevel.DENY
     assert blocked.reason is not None
@@ -162,37 +174,27 @@ def test_backend_pid_kill_uses_the_wider_set(monkeypatch) -> None:
     other = _run(engine.check_permission("bash", {"command": "kill 1"}))
     assert other.matched_rule != "host_guard:safety"
 
-    monkeypatch.setattr(
-        "agent_shield.tool_permission.hostguard.safety.os.getpid", lambda: 4242,
-    )
-    monkeypatch.setattr(
-        "agent_shield.tool_permission.hostguard.safety.os.getppid", lambda: 1,
-    )
-    narrow = _engine(_self_parent_guard())
-    missed = _run(narrow.check_permission("bash", {"command": "kill 7777"}))
-    assert missed.matched_rule != "host_guard:safety"
 
-
-def test_callers_keep_shell_mismatch_and_product_kills() -> None:
-    stable = _engine(_self_parent_guard())
-    kill_claw = _run(stable.check_permission("bash", {"command": "kill jiuwenclaw"}))
-    assert kill_claw.matched_rule != "host_guard:safety"
-    plain_python = _run(stable.check_permission("bash", {"command": "kill python"}))
-    assert plain_python.matched_rule != "host_guard:safety"
-    mismatch = _run(stable.check_permission("bash", {"command": "Get-ChildItem"}))
-    assert mismatch.matched_rule != "host_guard:shell_mismatch"
-    destructive = _run(stable.check_permission("bash", {"command": "rm -rf /tmp/example"}))
+def test_enabled_guard_blocks_product_python_and_shell_mismatch() -> None:
+    engine = _engine({"enabled": True})
+    kill_claw = _run(engine.check_permission("bash", {"command": "kill jiuwenclaw"}))
+    assert kill_claw.permission is PermissionLevel.DENY
+    assert kill_claw.matched_rule == "host_guard:safety"
+    plain_python = _run(engine.check_permission("bash", {"command": "kill python"}))
+    assert plain_python.permission is PermissionLevel.DENY
+    assert plain_python.matched_rule == "host_guard:safety"
+    mismatch = _run(engine.check_permission("bash", {"command": "Get-ChildItem"}))
+    assert mismatch.permission is PermissionLevel.DENY
+    assert mismatch.matched_rule == "host_guard:shell_mismatch"
+    destructive = _run(engine.check_permission("bash", {"command": "rm -rf /tmp/example"}))
     assert destructive.matched_rule != "host_guard:safety"
 
-    xiaoyi = _engine({"enabled": True})
-    blocked = _run(xiaoyi.check_permission("bash", {"command": "Get-ChildItem"}))
-    assert blocked.matched_rule == "host_guard:shell_mismatch"
 
-
-def test_dev_stable_does_not_join_continuations() -> None:
-    engine = _engine(_self_parent_guard())
+def test_continuations_are_joined_before_matching() -> None:
+    engine = _engine({"enabled": True})
     split = _run(engine.check_permission("bash", {"command": "pkill \\\n-f jiuwenswarm"}))
-    assert split.matched_rule != "host_guard:safety"
+    assert split.permission is PermissionLevel.DENY
+    assert split.matched_rule == "host_guard:safety"
     quoted = _run(engine.check_permission("bash", {"command": 'echo "kill jiuwenclaw"'}))
     assert quoted.matched_rule != "host_guard:safety"
 
@@ -210,14 +212,13 @@ def test_default_host_guard_still_blocks_kill_jiuwenclaw() -> None:
     assert result.matched_rule == "host_guard:safety"
 
 
-def test_dev_stable_worktree_uses_the_loose_parser() -> None:
+def test_worktree_requires_a_real_git_add() -> None:
     with tempfile.TemporaryDirectory() as project:
-        engine = _engine(_self_parent_guard(), Path(project))
+        engine = _engine({"enabled": True}, Path(project))
         echoed = _run(engine.check_permission(
             "bash", {"command": "echo worktree add ../outside-worktree"},
         ))
-        assert echoed.permission is PermissionLevel.DENY
-        assert "Do NOT use `../`" in (echoed.reason or "")
+        assert echoed.matched_rule != "host_guard:safety"
         blocked = _run(engine.check_permission(
             "bash", {"command": "git worktree add ../outside-worktree"},
         ))
@@ -227,7 +228,8 @@ def test_dev_stable_worktree_uses_the_loose_parser() -> None:
         unparsed = _run(engine.check_permission(
             "bash", {"command": "git worktree add"},
         ))
-        assert unparsed.matched_rule != "host_guard:safety"
+        assert unparsed.permission is PermissionLevel.DENY
+        assert unparsed.reason == "worktree add could not be parsed; refused"
         inside = _run(engine.check_permission(
             "bash", {"command": "git worktree add .worktrees/feature -b feature HEAD"},
         ))
@@ -235,10 +237,8 @@ def test_dev_stable_worktree_uses_the_loose_parser() -> None:
         mcp = _run(engine.check_permission(
             "mcp_exec_command", {"command": "git worktree add ../outside-worktree"},
         ))
-        assert mcp.matched_rule != "host_guard:safety"
-        assert _loose_parse_worktree_target(
-            "git worktree add ..\\..\\outside",
-        ) == "..\\..\\outside"
+        assert mcp.permission is PermissionLevel.DENY
+        assert mcp.matched_rule == "host_guard:safety"
         if os.name == "nt":
             windows_parent = _run(engine.check_permission(
                 "bash", {"command": "git worktree add ..\\..\\outside"},
@@ -247,30 +247,9 @@ def test_dev_stable_worktree_uses_the_loose_parser() -> None:
             assert "refused path outside the project" in (windows_parent.reason or "")
 
 
-def test_default_worktree_stays_strict() -> None:
-    with tempfile.TemporaryDirectory() as project:
-        engine = _engine(
-            {"enabled": True, "shell_mismatch": False},
-            Path(project),
-        )
-        echoed = _run(engine.check_permission(
-            "bash", {"command": "echo worktree add ../outside-worktree"},
-        ))
-        assert echoed.matched_rule != "host_guard:safety"
-        unparsed = _run(engine.check_permission(
-            "bash", {"command": "git worktree add"},
-        ))
-        assert unparsed.reason == "worktree add could not be parsed; refused"
-
-
-def test_self_parent_uses_caller_protected_pids() -> None:
+def test_caller_pids_are_added_to_the_discovered_set() -> None:
     engine = PermissionEngine({
-        "host_guard": {
-            "enabled": True,
-            "shell_mismatch": False,
-            "pid_kill": "self_parent",
-            "worktree_guard": False,
-        },
+        "host_guard": {"enabled": True},
         "runtime": {"protected_pids": ["30472"]},
         "package_builtin_rules": False,
         "shell_allowlist": None,

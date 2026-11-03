@@ -20,7 +20,7 @@ from agent_shield.tool_permission.fileguard.component import (
     ImmutableControlPlaneComponent,
 )
 from agent_shield.tool_permission.hostguard import HostGuardComponent
-from agent_shield.tool_permission.hostguard.safety import HostGuardOptions, evaluate_host_guard
+from agent_shield.tool_permission.hostguard.safety import evaluate_host_guard
 
 _QUIET = {
     "tools": {
@@ -85,15 +85,13 @@ def test_update_config_rebuilds_components() -> None:
     assert all(left is not right for left, right in zip(first, engine.built[1], strict=True))
 
 
-def test_host_guard_update_config_toggles_kill_and_shell_mismatch() -> None:
+def test_host_guard_update_config_toggles_the_master_switch() -> None:
     off = _base(host_guard={"enabled": False})
     engine = PermissionEngine(off)
     quiet = _check(engine, "bash", {"command": "pkill -f jiuwenswarm"})
     assert quiet.matched_rule != "host_guard:safety"
 
-    engine.update_config(
-        _base(host_guard={"enabled": True, "shell_mismatch": True})
-    )
+    engine.update_config(_base(host_guard={"enabled": True}))
     killed = _check(engine, "bash", {"command": "pkill -f jiuwenswarm"})
     assert killed.permission is PermissionLevel.DENY
     assert killed.matched_rule == "host_guard:safety"
@@ -101,9 +99,7 @@ def test_host_guard_update_config_toggles_kill_and_shell_mismatch() -> None:
     assert mismatch.permission is PermissionLevel.DENY
     assert mismatch.matched_rule == "host_guard:shell_mismatch"
 
-    engine.update_config(
-        _base(host_guard={"enabled": True, "shell_mismatch": False})
-    )
+    engine.update_config(_base(host_guard={"enabled": False}))
     allowed = _check(engine, "bash", {"command": "Get-ChildItem"})
     assert allowed.matched_rule != "host_guard:shell_mismatch"
 
@@ -118,10 +114,10 @@ def test_host_guard_reads_cmd_and_core_powershell() -> None:
     assert via_core.matched_rule == "host_guard:safety"
 
 
-def test_mcp_exec_kill_is_denied_but_worktree_is_not() -> None:
+def test_mcp_exec_kill_and_worktree_are_both_denied() -> None:
     with tempfile.TemporaryDirectory() as root:
         engine = PermissionEngine(_base(
-            host_guard={"enabled": True, "worktree_guard": True},
+            host_guard={"enabled": True},
             runtime={"workspace_root": root, "project_root": root},
         ))
         killed = _check(engine, "mcp_exec_command", {"command": "pkill -f jiuwenswarm"})
@@ -133,7 +129,8 @@ def test_mcp_exec_kill_is_denied_but_worktree_is_not() -> None:
             "mcp_exec_command",
             {"command": "git worktree add ../outside-wt -b feature HEAD"},
         )
-        assert outside.matched_rule != "host_guard:safety"
+        assert outside.permission is PermissionLevel.DENY
+        assert outside.matched_rule == "host_guard:safety"
 
         bash_outside = _check(
             engine,
@@ -149,11 +146,7 @@ def test_mcp_exec_kill_is_denied_but_worktree_is_not() -> None:
 def test_worktree_words_outside_git_add_are_allowed() -> None:
     with tempfile.TemporaryDirectory() as root:
         engine = PermissionEngine(_base(
-            host_guard={
-                    "enabled": True,
-                    "worktree_guard": True,
-                    "shell_mismatch": False,
-                },
+            host_guard={"enabled": True},
             runtime={"workspace_root": root, "project_root": root},
         ))
         for command in (
@@ -168,11 +161,7 @@ def test_worktree_words_outside_git_add_are_allowed() -> None:
 def test_quoted_worktree_targets_cannot_leave_the_project() -> None:
     with tempfile.TemporaryDirectory() as root:
         engine = PermissionEngine(_base(
-            host_guard={
-                    "enabled": True,
-                    "worktree_guard": True,
-                    "shell_mismatch": False,
-                },
+            host_guard={"enabled": True},
             runtime={"workspace_root": root, "project_root": root},
         ))
         outside = (
@@ -198,6 +187,67 @@ def test_quoted_worktree_targets_cannot_leave_the_project() -> None:
             {"command": 'git worktree add ".worktrees/ok"'},
         )
         assert inside.matched_rule != "host_guard:safety"
+
+
+def test_immutable_control_follows_the_master_switch() -> None:
+    with tempfile.TemporaryDirectory() as workspace:
+        root = Path(workspace)
+        control = root / "control"
+        control.mkdir()
+        target = control / "config.yaml"
+        target.write_text("x", encoding="utf-8")
+        package = root / "package.json"
+        package.write_text("{}", encoding="utf-8")
+        runtime = {
+            "workspace_root": workspace,
+            "immutable_control_roots": [str(control)],
+        }
+        # Incomplete roots must not block construction once the switch is off.
+        PermissionEngine(_base(
+            enabled=False,
+            runtime={"immutable_control_roots": [str(control)]},
+        ))
+
+        off = PermissionEngine(_base(
+            enabled=False,
+            file_guard={"enabled": False},
+            runtime=runtime,
+        ))
+        checked = _check(off, "write_file", {"path": str(target)})
+        assert checked.permission is PermissionLevel.ALLOW
+        assert checked.reason == "Permission system is disabled"
+
+        direct_level, direct_rule = _run(
+            off.evaluate_global_policy_directly("write_file", {"path": str(target)})
+        )
+        assert direct_level is PermissionLevel.ALLOW
+        assert direct_rule != "immutable_control_plane"
+        package_level, package_rule = _run(
+            off.evaluate_global_policy_directly("write_file", {"path": str(package)})
+        )
+        assert package_level is PermissionLevel.ALLOW
+        assert package_rule != "immutable_project_execution_config"
+
+        on = _base(
+            enabled=True,
+            file_guard={"enabled": False},
+            runtime=runtime,
+        )
+        protected = _check(PermissionEngine(on), "write_file", {"path": str(target)})
+        assert protected.permission is PermissionLevel.DENY
+        assert protected.matched_rule == "immutable_control_plane"
+
+        off.update_config(on)
+        restored = _check(off, "write_file", {"path": str(target)})
+        assert restored.permission is PermissionLevel.DENY
+        assert restored.matched_rule == "immutable_control_plane"
+
+        off.update_config(_base(
+            enabled=False,
+            file_guard={"enabled": False},
+            runtime=runtime,
+        ))
+        assert _check(off, "write_file", {"path": str(target)}).permission is PermissionLevel.ALLOW
 
 
 def test_permissions_enabled_false_disables_checks() -> None:
@@ -382,7 +432,7 @@ def test_top_level_tools_and_host_guard() -> None:
         "tools": {"bash": "deny"},
         "package_builtin_rules": False,
         "shell_allowlist": None,
-        "host_guard": {"enabled": True, "shell_mismatch": False},
+        "host_guard": {"enabled": True},
     })
     baseline = _check(engine, "bash", {"command": "echo hi"})
     assert baseline.permission is PermissionLevel.DENY
@@ -400,13 +450,13 @@ def test_evaluate_global_policy_directly_sees_host_guard() -> None:
     assert rule == "host_guard:safety"
 
 
-def test_protected_patterns_apply_to_mcp_exec() -> None:
+def test_protected_patterns_replace_the_floor_only() -> None:
     engine = PermissionEngine(_base(host_guard={
-            "enabled": True,
-            "protected_patterns": [
-                {"pattern": r"\bdo-not-run\b", "reason": "blocked custom"},
-            ],
-        }))
+        "enabled": True,
+        "protected_patterns": [
+            {"pattern": r"\bdo-not-run\b", "reason": "blocked custom"},
+        ],
+    }))
     builtin = _check(engine, "mcp_exec_command", {"command": "pkill -f jiuwenswarm"})
     assert builtin.permission is PermissionLevel.DENY
     assert builtin.matched_rule == "host_guard:safety"
@@ -420,6 +470,14 @@ def test_protected_patterns_apply_to_mcp_exec() -> None:
     assert custom.permission is PermissionLevel.DENY
     assert custom.matched_rule == "host_guard:safety"
     assert custom.reason == "blocked custom"
+    with pytest.raises(TypeError, match="protected_patterns"):
+        engine.update_config(_base(host_guard={
+            "enabled": True,
+            "protected_patterns": "nope",
+        }))
+    assert custom.reason == "blocked custom"
+    still = _check(engine, "mcp_exec_command", {"command": "do-not-run"})
+    assert still.reason == "blocked custom"
 
 
 def test_immutable_relative_paths_follow_workspace_or_runtime_cwd(
@@ -482,7 +540,7 @@ def test_immutable_relative_paths_follow_workspace_or_runtime_cwd(
 
 
 def test_host_guard_matches_original_segment_and_continuation_rules() -> None:
-    engine = PermissionEngine(_base(host_guard={"enabled": True, "shell_mismatch": False}))
+    engine = PermissionEngine(_base(host_guard={"enabled": True}))
     for command in (
         "kill jiuwenclaw",
         "kill -9 jiuwenclaw",
@@ -512,7 +570,7 @@ def test_host_guard_matches_original_segment_and_continuation_rules() -> None:
         tools[name] = "allow"
     unhooked = PermissionEngine(_base(
         tools=tools,
-        host_guard={"enabled": True, "shell_mismatch": False},
+        host_guard={"enabled": True},
     ))
     for name in ("sh", "zsh", "cmd", "create_terminal"):
         skipped = _check(unhooked, name, {"command": "pkill -f jiuwenswarm"})
@@ -520,26 +578,20 @@ def test_host_guard_matches_original_segment_and_continuation_rules() -> None:
 
 
 def test_python_name_kill_follows_original_rule_two() -> None:
-    engine = PermissionEngine(_base(host_guard={
-            "enabled": True,
-            "shell_mismatch": False,
-            "python_name_kill": True,
-        }))
+    engine = PermissionEngine(_base(host_guard={"enabled": True}))
     for command in ("kill python", "kill -9 python3", "taskkill /IM python.exe /F"):
         result = _check(engine, "bash", {"command": command})
         assert result.permission is PermissionLevel.DENY, command
         assert result.matched_rule == "host_guard:safety", command
+    named = _check(engine, "powershell", {"command": "Stop-Process -Id 1234 -Name python"})
+    assert named.permission is PermissionLevel.DENY
+    assert named.reason == "blocked pattern: Stop-Process -Name targeting agent/host runtime"
     for command in (
         'taskkill /FI "IMAGENAME eq python.exe"',
         "taskkill /IM py.exe",
-        "Stop-Process -Id 1234 -Name python",
     ):
         result = _check(engine, "powershell", {"command": command})
         assert result.matched_rule != "host_guard:safety", command
-
-    off = PermissionEngine(_base(host_guard={"enabled": True, "shell_mismatch": False}))
-    plain = _check(off, "bash", {"command": "kill python"})
-    assert plain.matched_rule != "host_guard:safety"
 
 
 def test_glob_and_outbound_resolve_against_runtime_cwd() -> None:
@@ -601,36 +653,29 @@ def test_file_guard_enabled_uses_bool_not_string_parser() -> None:
 
 
 def test_python_name_prefixes_stay_unparsed_like_the_original() -> None:
-    engine = PermissionEngine(_base(host_guard={
-            "enabled": True,
-            "shell_mismatch": False,
-            "python_name_kill": True,
-        }))
+    engine = PermissionEngine(_base(host_guard={"enabled": True}))
     direct = _check(engine, "bash", {"command": "pkill python"})
     assert direct.matched_rule == "host_guard:safety"
+    # The segment parser still does not unwrap these prefixes. The image-name
+    # rule matches the pkill/python text anyway, so the command is blocked.
     for command in (
         "sudo pkill python",
         "timeout 5 pkill python",
         "nohup pkill python",
         "env X=1 pkill python",
+        "sleep 1 & pkill python",
         "(pkill python)",
         "{ pkill python; }",
     ):
         result = _check(engine, "bash", {"command": command})
-        assert result.matched_rule != "host_guard:safety", command
-    # A bare & is not a segment separator in the guard. Whether the engine
-    # splits it first depends on the optional tree-sitter backend.
-    assert evaluate_host_guard(
-        "sleep 1 & pkill python",
-        project_root=None,
-        options=HostGuardOptions(python_name_kill=True),
-    ) is None
+        assert result.matched_rule == "host_guard:safety", command
+    assert evaluate_host_guard("sleep 1 & pkill python", project_root=None) is not None
     wrapped_product = _check(engine, "bash", {"command": "sudo pkill jiuwenswarm"})
     assert wrapped_product.matched_rule == "host_guard:safety"
 
 
 def test_name_rules_match_text_outside_the_kill_command() -> None:
-    engine = PermissionEngine(_base(host_guard={"enabled": True, "shell_mismatch": False}))
+    engine = PermissionEngine(_base(host_guard={"enabled": True}))
     for command in (
         'echo "kill jiuwenswarm is forbidden"',
         'git log --grep="pkill jiuwenswarm"',

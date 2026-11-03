@@ -72,7 +72,7 @@ def runtime_trusted_dirs(config: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 def runtime_protected_pids(config: Mapping[str, Any]) -> frozenset[str] | None:
-    """Process ids supplied by the caller. Missing key keeps the local process ids."""
+    """Extra process ids from the caller. A missing key adds nothing."""
 
     runtime = runtime_section(config)
     if "protected_pids" not in runtime:
@@ -103,15 +103,9 @@ def runtime_immutable_roots(config: Mapping[str, Any]) -> tuple[Path, ...]:
     return tuple(roots)
 
 
-def host_guard_flag(section: Mapping[str, Any], key: str, default: bool = False) -> bool:
-    value = section.get(key, default)
-    return value if isinstance(value, bool) else default
-
-
 __all__ = [
     "builtin_section",
     "file_guard_section",
-    "host_guard_flag",
     "host_guard_section",
     "nested_section",
     "runtime_immutable_roots",
