@@ -20,6 +20,7 @@ from agent_shield.tool_permission.fileguard.component import (
     ImmutableControlPlaneComponent,
 )
 from agent_shield.tool_permission.hostguard import HostGuardComponent
+from agent_shield.tool_permission.hostguard.safety import HostGuardOptions, evaluate_host_guard
 
 _QUIET = {
     "tools": {
@@ -612,12 +613,18 @@ def test_python_name_prefixes_stay_unparsed_like_the_original() -> None:
         "timeout 5 pkill python",
         "nohup pkill python",
         "env X=1 pkill python",
-        "sleep 1 & pkill python",
         "(pkill python)",
         "{ pkill python; }",
     ):
         result = _check(engine, "bash", {"command": command})
         assert result.matched_rule != "host_guard:safety", command
+    # A bare & is not a segment separator in the guard. Whether the engine
+    # splits it first depends on the optional tree-sitter backend.
+    assert evaluate_host_guard(
+        "sleep 1 & pkill python",
+        project_root=None,
+        options=HostGuardOptions(python_name_kill=True),
+    ) is None
     wrapped_product = _check(engine, "bash", {"command": "sudo pkill jiuwenswarm"})
     assert wrapped_product.matched_rule == "host_guard:safety"
 
