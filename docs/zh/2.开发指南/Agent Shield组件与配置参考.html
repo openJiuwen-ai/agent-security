@@ -529,7 +529,7 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
         <tr>
           <td class="k">ImmutableControlPlane</td>
           <td>✓</td><td>✓</td><td>—</td>
-          <td>同 FileGuard：子命令弃权</td>
+          <td>同 FileGuard：子命令弃权。顶层 <code>enabled: false</code> 时不装载</td>
         </tr>
         <tr>
           <td class="k">NetGuard</td>
@@ -1320,6 +1320,11 @@ flowchart TD
         <table class="ref">
           <tr><th>键</th><th>类型</th><th>作用</th></tr>
           <tr>
+            <td class="k">enabled</td>
+            <td>bool，缺省 true</td>
+            <td>权限总开关。false → 本组件不装载，<code>check_permission</code> 与 <code>evaluate_global_policy_directly</code> 都不再做控制面拦截。</td>
+          </tr>
+          <tr>
             <td class="k">runtime.immutable_control_roots</td>
             <td>list[str/path]</td>
             <td>控制面根目录。空 / 缺省 → 组件不装载。</td>
@@ -1340,6 +1345,11 @@ flowchart TD
         <div class="ph red">什么情况返回什么</div>
         <table class="ref">
           <tr><th>条件</th><th>permission</th><th>matched_rule</th></tr>
+          <tr>
+            <td>顶层 <code>enabled: false</code></td>
+            <td>弃权 <code>None</code></td>
+            <td>—</td>
+          </tr>
           <tr>
             <td><code>runtime.immutable_control_roots</code> 空 / 未配置</td>
             <td>弃权 <code>None</code></td>

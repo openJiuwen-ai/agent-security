@@ -147,7 +147,9 @@ class PermissionEngine:
         """Return the raw ``(permission, matched_rule)`` of one tool call.
 
         Runs the same checks as :meth:`check_permission` but is not
-        short-circuited by the ``enabled`` switch.
+        short-circuited by the ``enabled`` switch. Immutable control-plane
+        protection is the exception: that component stays unloaded while
+        ``enabled`` is false.
         """
 
         self._validate_call(tool_name, tool_args)

@@ -200,6 +200,67 @@ def test_quoted_worktree_targets_cannot_leave_the_project() -> None:
         assert inside.matched_rule != "host_guard:safety"
 
 
+def test_immutable_control_follows_the_master_switch() -> None:
+    with tempfile.TemporaryDirectory() as workspace:
+        root = Path(workspace)
+        control = root / "control"
+        control.mkdir()
+        target = control / "config.yaml"
+        target.write_text("x", encoding="utf-8")
+        package = root / "package.json"
+        package.write_text("{}", encoding="utf-8")
+        runtime = {
+            "workspace_root": workspace,
+            "immutable_control_roots": [str(control)],
+        }
+        # Incomplete roots must not block construction once the switch is off.
+        PermissionEngine(_base(
+            enabled=False,
+            runtime={"immutable_control_roots": [str(control)]},
+        ))
+
+        off = PermissionEngine(_base(
+            enabled=False,
+            file_guard={"enabled": False},
+            runtime=runtime,
+        ))
+        checked = _check(off, "write_file", {"path": str(target)})
+        assert checked.permission is PermissionLevel.ALLOW
+        assert checked.reason == "Permission system is disabled"
+
+        direct_level, direct_rule = _run(
+            off.evaluate_global_policy_directly("write_file", {"path": str(target)})
+        )
+        assert direct_level is PermissionLevel.ALLOW
+        assert direct_rule != "immutable_control_plane"
+        package_level, package_rule = _run(
+            off.evaluate_global_policy_directly("write_file", {"path": str(package)})
+        )
+        assert package_level is PermissionLevel.ALLOW
+        assert package_rule != "immutable_project_execution_config"
+
+        on = _base(
+            enabled=True,
+            file_guard={"enabled": False},
+            runtime=runtime,
+        )
+        protected = _check(PermissionEngine(on), "write_file", {"path": str(target)})
+        assert protected.permission is PermissionLevel.DENY
+        assert protected.matched_rule == "immutable_control_plane"
+
+        off.update_config(on)
+        restored = _check(off, "write_file", {"path": str(target)})
+        assert restored.permission is PermissionLevel.DENY
+        assert restored.matched_rule == "immutable_control_plane"
+
+        off.update_config(_base(
+            enabled=False,
+            file_guard={"enabled": False},
+            runtime=runtime,
+        ))
+        assert _check(off, "write_file", {"path": str(target)}).permission is PermissionLevel.ALLOW
+
+
 def test_permissions_enabled_false_disables_checks() -> None:
     engine = PermissionEngine({
         "enabled": False,
