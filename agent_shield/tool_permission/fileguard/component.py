@@ -97,7 +97,11 @@ class FileGuardComponent:
 
 
 class ImmutableControlPlaneComponent:
-    """Host control-plane write protection (independent of file_guard.enabled)."""
+    """Host control-plane write protection.
+
+    Independent of ``file_guard.enabled``. Unloaded when the top-level
+    ``enabled`` switch is false, including raw policy queries.
+    """
 
     def __init__(self) -> None:
         self._guard: ImmutableControlPlaneGuard | None = None
@@ -105,6 +109,12 @@ class ImmutableControlPlaneComponent:
     def configure(self, config: Mapping[str, object]) -> None:
         if not isinstance(config, Mapping):
             raise TypeError("Engine configuration must be a mapping")
+        # Same master switch as PermissionEngine.check_permission. A false
+        # value unloads the guard before root validation, so a disabled
+        # engine can still be built when roots are present.
+        if config.get("enabled", True) is False:
+            self._guard = None
+            return
         roots = runtime_immutable_roots(config)
         workspace = runtime_path(config, "workspace_root") or runtime_workspace_root(config)
         agent_cwd = runtime_path(config, "cwd")
