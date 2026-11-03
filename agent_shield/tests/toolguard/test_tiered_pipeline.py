@@ -388,7 +388,13 @@ def test_tree_sitter_splits_subcommands_and_ignores_quoted_operators(
 
 
 def test_tree_sitter_compound_command_is_judged_per_subcommand(tree_sitter_parser: None) -> None:
-    off = {**_ALLOW_BASH, "package_builtin_rules": False}
+    # compound_chain is a framework floor (not package_builtin); silence it to
+    # assert leaf judging alone. Both leaves allow → whole call allow.
+    off = {
+        **_ALLOW_BASH,
+        "package_builtin_rules": False,
+        "guard_actions": {"compound_chain": "allow"},
+    }
     assert _run(off, "ls && pwd").permission is PermissionLevel.ALLOW
     result = _run(_ALLOW_BASH, "ls && shutdown now")
     assert result.permission is PermissionLevel.DENY

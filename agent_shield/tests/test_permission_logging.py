@@ -72,18 +72,31 @@ async def test_file_tool_logs_tiered_and_file_guard(caplog) -> None:
 
 
 @pytest.mark.asyncio
-async def test_decision_logs_check_permission_args_verbatim(caplog) -> None:
-    """Decision line must echo check_permission inputs with no truncation."""
+async def test_decision_logs_short_args_plain_and_masks_long_strings(caplog) -> None:
+    """Short arg strings stay plain; longer ones are length-masked in the log."""
     engine = PermissionEngine(CONFIG)
-    args = {"command": "echo TOP-SECRET-TOKEN", "description": "keep me"}
+    secret = "S" * 40
+    args = {"command": "echo hi", "token": secret, "description": "keep me"}
     with caplog.at_level(logging.INFO, logger=ENGINE_LOGGER):
         await engine.check_permission("bash", args)
 
     (line,) = _decisions(caplog)
     assert "tool_name=bash" in line
-    assert "TOP-SECRET-TOKEN" in line
-    assert "description" in line
+    assert "echo hi" in line
     assert "keep me" in line
+    assert secret not in line
+    assert "SSSS…SSSS(len=40)" in line
+
+
+@pytest.mark.asyncio
+async def test_destructive_warning_is_visible_in_components(caplog) -> None:
+    """Warning-only components must not collapse to none in the decision line."""
+    engine = PermissionEngine(CONFIG)
+    with caplog.at_level(logging.INFO, logger=ENGINE_LOGGER):
+        await engine.check_permission("bash", {"command": "echo DROP TABLE users"})
+
+    (line,) = _decisions(caplog)
+    assert "DestructiveWarningComponent=warn(['May drop database objects'])" in line
 
 
 @pytest.mark.asyncio
