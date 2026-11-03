@@ -362,6 +362,7 @@ class PermissionEngine:
                         approval,
                         [(type(tiered).__name__, approval)],
                         [(type(tiered).__name__, approval)],
+                        tool_args,
                     )
                     return approval
 
@@ -428,7 +429,14 @@ class PermissionEngine:
         final_verdicts = [
             (name, result) for name, result in all_subscribed if result is not None
         ]
-        self._log_decision(tool_name, last_route, merged, all_subscribed, final_verdicts)
+        self._log_decision(
+            tool_name,
+            last_route,
+            merged,
+            all_subscribed,
+            final_verdicts,
+            tool_args,
+        )
         return merged
 
     def _log_decision(
@@ -438,11 +446,9 @@ class PermissionEngine:
         merged: PermissionResult,
         subscribed: list[tuple[str, PermissionResult | None]],
         verdicts: list[tuple[str, PermissionResult]],
+        tool_args: Mapping[str, Any] | None = None,
     ) -> None:
-        """Log one line per decision: who was asked, what each said, who won.
-
-        Tool arguments are deliberately not logged; they may carry secrets.
-        """
+        """Log one line per decision: exact check_permission inputs + who won."""
 
         if not subscribed:
             basis, winner = "no_subscriber", "-"
@@ -462,11 +468,14 @@ class PermissionEngine:
             f"{name}={'none' if result is None else _level_text(result)}"
             for name, result in subscribed
         )
+        # As passed to check_permission: no truncation, no field picking.
+        args_for_log = dict(tool_args) if tool_args is not None else {}
         logger.info(
-            "permission.engine.decision key=%s tool=%s kind=%s shell=%s decision=%s "
-            "matched_rule=%s winner=%s basis=%s components=[%s]",
+            "permission.engine.decision key=%s tool_name=%s tool_args=%r kind=%s shell=%s "
+            "decision=%s matched_rule=%s winner=%s basis=%s components=[%s]",
             self._label,
             tool_name,
+            args_for_log,
             route.kind.value,
             route.is_shell,
             _level_text(merged, with_rule=False),
