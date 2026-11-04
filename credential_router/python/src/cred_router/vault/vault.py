@@ -30,7 +30,10 @@ from __future__ import annotations
 
 import logging
 import os
+import stat  # noqa: F401
 import threading
+import time  # noqa: F401
+from dataclasses import dataclass, field  # noqa: F401
 from typing import Any, Callable
 
 from cred_router.crypto import Mode, decrypt_credential, encrypt_credential
@@ -91,9 +94,6 @@ from .store import (
 # it before the store was split across several modules, and they are
 # kept importable from here so that nothing that reached for them here
 # stops working.
-import stat  # noqa: F401
-import time  # noqa: F401
-from dataclasses import dataclass, field  # noqa: F401
 from .codec import decode_container  # noqa: F401
 from .errors import VaultError  # noqa: F401
 
@@ -266,7 +266,7 @@ class Vault(AuthorityMixin):
                 vault.converge_stragglers()
 
             if authority is not None:
-                vault._start_authority(
+                vault.start_authority(
                     cfg.etcd, self_identity, anchor, cluster_store)
             return vault
         except BaseException:
@@ -297,17 +297,17 @@ class Vault(AuthorityMixin):
 
     # -- reading --------------------------------------------------------
 
-    def get(self, id: str) -> Record:
-        """Load a record by id."""
-        if not id:
+    def get(self, record_id: str) -> Record:
+        """Load a record by its id."""
+        if not record_id:
             raise InvalidRecordError("id is empty")
-        row = get_record(self.db, id)
+        row = get_record(self.db, record_id)
         if row is None:
-            raise NotFoundError(f'"{id}"')
+            raise NotFoundError(f'"{record_id}"')
         sch = self.schema_for_version(row.schema_version)
         if sch is None:
             raise SchemaMismatchError(
-                f'record "{id}" was written with schema v{row.schema_version}, which this store does not know'
+                f'record "{record_id}" was written with schema v{row.schema_version}, which this store does not know'
             )
         return self._decode_record(row, sch)
 
@@ -483,23 +483,23 @@ class Vault(AuthorityMixin):
             )
         return encode_container(container)
 
-    def delete(self, id: str) -> None:
+    def delete(self, record_id: str) -> None:
         """Remove a record.
 
         It raises :class:`~cred_router.vault.errors.NotFoundError` when
         the id is unknown.
         """
-        if not id:
+        if not record_id:
             raise InvalidRecordError("id is empty")
         with self.wmu:
             # With an authority the delete goes to it, and only to it: the
             # local copy is a mirror, and the watch brings the deletion
             # here.
             if self.authority is not None:
-                self.authority.delete_record(self.db, id)
+                self.authority.delete_record(self.db, record_id)
                 return
-            if not delete_record(self.db, id):
-                raise NotFoundError(f'"{id}"')
+            if not delete_record(self.db, record_id):
+                raise NotFoundError(f'"{record_id}"')
 
     # -- housekeeping ---------------------------------------------------
 

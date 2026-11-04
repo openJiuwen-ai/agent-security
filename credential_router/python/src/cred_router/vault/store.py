@@ -311,14 +311,14 @@ def _row_to_record(row: tuple) -> RecordRow:
     )
 
 
-def get_record(db: Database, id: str) -> RecordRow | None:
-    """Load one record by id.
+def get_record(db: Database, record_id: str) -> RecordRow | None:
+    """Load one record by its id.
 
     It returns None when the id is unknown, so the caller distinguishes
     "absent" from "failed" without inspecting an error string.
     """
     row = db.query_one(
-        f"SELECT {_RECORD_COLUMNS} FROM vault_record WHERE id = ?", (id,)
+        f"SELECT {_RECORD_COLUMNS} FROM vault_record WHERE id = ?", (record_id,)
     )
     if row is None:
         return None
@@ -359,9 +359,9 @@ def put_record(db: Database, row: RecordRow) -> None:
         raise ConflictError(f'writing record "{row.id}" affected no rows')
 
 
-def delete_record(db: Database, id: str) -> bool:
+def delete_record(db: Database, record_id: str) -> bool:
     """Remove a record."""
-    cur = db.execute("DELETE FROM vault_record WHERE id = ?", (id,))
+    cur = db.execute("DELETE FROM vault_record WHERE id = ?", (record_id,))
     return cur.rowcount > 0
 
 
@@ -418,7 +418,7 @@ def count_stragglers(db: Database, target_dek: int) -> int:
 
 
 def update_record_cipher(
-    db: Database, id: str, row_version: int, data: bytes, dek_version: int
+    db: Database, record_id: str, row_version: int, data: bytes, dek_version: int
 ) -> bool:
     """Write a re-encrypted record."""
     cur = db.execute(
@@ -426,7 +426,7 @@ def update_record_cipher(
         UPDATE vault_record
         SET data = ?, dek_version = ?, row_version = row_version + 1, updated_at = ?
         WHERE id = ? AND row_version = ?""",
-        (data, dek_version, int(time.time()), id, row_version),
+        (data, dek_version, int(time.time()), record_id, row_version),
     )
     return cur.rowcount > 0
 
