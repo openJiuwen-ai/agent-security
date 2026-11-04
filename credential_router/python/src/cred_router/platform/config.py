@@ -262,6 +262,7 @@ def format_duration(value: timedelta) -> str:
 # --- the whole configuration ------------------------------------------------
 
 
+
 @dataclass
 class Config:
     upstream_timeout_ms: int = DEFAULT_UPSTREAM_TIMEOUT_MS
@@ -541,7 +542,8 @@ class Config:
                         f"{scope.uid}")
         self._validate_vault_schema(vault)
 
-    def _validate_vault_schema(self, vault: "VaultConfig") -> None:
+    @staticmethod
+    def _validate_vault_schema(vault: "VaultConfig") -> None:
         """Check the record declaration.
 
         A store that is on with no declaration has no shape to enforce
