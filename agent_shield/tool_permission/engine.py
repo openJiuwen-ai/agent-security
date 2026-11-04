@@ -45,10 +45,38 @@ _COMPONENT_BY_NAME: dict[str, type[Any]] = {
 
 
 def _level_text(result: PermissionResult, *, with_rule: bool = True) -> str:
-    level = result.permission.value if result.permission is not None else "none"
-    if with_rule and result.matched_rule:
-        return f"{level}({result.matched_rule})"
-    return level
+    if result.permission is not None:
+        level = result.permission.value
+        if with_rule and result.matched_rule:
+            return f"{level}({result.matched_rule})"
+        return level
+    # Warning-only results (e.g. DestructiveWarning) must not look like abstention.
+    if with_rule and result.warnings:
+        return f"warn({result.warnings!r})"
+    return "none"
+
+
+# Length-based log redaction: long values are often tokens; not a complete desensitizer.
+_LOG_ARG_PLAIN_MAX = 32
+_LOG_ARG_KEEP = 4
+
+
+def _mask_long_str(value: str) -> str:
+    if len(value) <= _LOG_ARG_PLAIN_MAX:
+        return value
+    return f"{value[:_LOG_ARG_KEEP]}…{value[-_LOG_ARG_KEEP:]}(len={len(value)})"
+
+
+def _redact_args_for_log(value: Any) -> Any:
+    """Mask string values longer than ``_LOG_ARG_PLAIN_MAX`` for decision logs."""
+
+    if isinstance(value, str):
+        return _mask_long_str(value)
+    if isinstance(value, Mapping):
+        return {str(key): _redact_args_for_log(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_redact_args_for_log(item) for item in value]
+    return value
 
 
 def _command_text(args: Mapping[str, Any]) -> str:
@@ -362,6 +390,7 @@ class PermissionEngine:
                         approval,
                         [(type(tiered).__name__, approval)],
                         [(type(tiered).__name__, approval)],
+                        tool_args,
                     )
                     return approval
 
@@ -428,7 +457,14 @@ class PermissionEngine:
         final_verdicts = [
             (name, result) for name, result in all_subscribed if result is not None
         ]
-        self._log_decision(tool_name, last_route, merged, all_subscribed, final_verdicts)
+        self._log_decision(
+            tool_name,
+            last_route,
+            merged,
+            all_subscribed,
+            final_verdicts,
+            tool_args,
+        )
         return merged
 
     def _log_decision(
@@ -438,11 +474,9 @@ class PermissionEngine:
         merged: PermissionResult,
         subscribed: list[tuple[str, PermissionResult | None]],
         verdicts: list[tuple[str, PermissionResult]],
+        tool_args: Mapping[str, Any] | None = None,
     ) -> None:
-        """Log one line per decision: who was asked, what each said, who won.
-
-        Tool arguments are deliberately not logged; they may carry secrets.
-        """
+        """Log one line per decision: redacted check_permission inputs + who won."""
 
         if not subscribed:
             basis, winner = "no_subscriber", "-"
@@ -462,11 +496,14 @@ class PermissionEngine:
             f"{name}={'none' if result is None else _level_text(result)}"
             for name, result in subscribed
         )
+        # Strings longer than _LOG_ARG_PLAIN_MAX are masked (length heuristic only).
+        args_for_log = _redact_args_for_log(dict(tool_args) if tool_args is not None else {})
         logger.info(
-            "permission.engine.decision key=%s tool=%s kind=%s shell=%s decision=%s "
-            "matched_rule=%s winner=%s basis=%s components=[%s]",
+            "permission.engine.decision key=%s tool_name=%s tool_args=%r kind=%s shell=%s "
+            "decision=%s matched_rule=%s winner=%s basis=%s components=[%s]",
             self._label,
             tool_name,
+            args_for_log,
             route.kind.value,
             route.is_shell,
             _level_text(merged, with_rule=False),

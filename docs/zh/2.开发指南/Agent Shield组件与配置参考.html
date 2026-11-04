@@ -1399,63 +1399,123 @@ flowchart TD
     <p class="sub">默认关闭 · 开启后参与取最严 · 命中一律 DENY</p>
     <div class="box hi-orange" style="margin-bottom:12px">
       <div class="n">看哪些候选</div>
-      <div class="d">仅 <b>shell</b>，且工具名在安全名单（bash / powershell / mcp_exec_command）。
-        <b>原文 / 剥壳 / 子命令都会跑</b>（不按 kind 弃权）。非 shell 弃权。</div>
+      <div class="d">仅 <b>shell</b>，且工具名在安全名单（bash / powershell / core.powershell / mcp_exec_command）。
+        <b>原文 / 剥壳 / 子命令都会跑</b>（不按 kind 弃权）。非 shell 弃权。
+        <code>mcp_exec_command</code> 不跑 worktree。</div>
     </div>
-    <div class="explain">
-      <h4>怎么匹配</h4>
-      <p>输入：工具参数里的命令字符串（<code>command</code> / <code>cmd</code>）。匹配方式：<strong>子串正则 / 切段解析</strong>，要求「杀进程类命令」与「受保护名字」在同一段里同时出现。</p>
-      <ul>
-        <li>内置形态（<code>enabled: true</code> 即生效）：<code>pkill|killall|kill</code> +（中间可有参数，遇 <code>;</code> <code>|</code> <code>&amp;</code> 换行断开）+ <code>jiuwenswarm|jiuwenclaw</code></li>
-        <li><code>pkill -f jiuwenswarm</code> → DENY（要同时有 pkill 与 jiuwenswarm）</li>
-        <li><code>pkill nginx</code> → 放行本规则；<code>echo jiuwenswarm</code> → 放行本规则</li>
-        <li>切段：按 <code>;</code> <code>&amp;&amp;</code> <code>|</code> 切开后，段首是 kill 族且段内带受保护名 → DENY</li>
-      </ul>
+    <div class="panel" style="margin-top:12px">
+      <div class="ph orange">开启后固定检查（enabled: true）</div>
+      <p class="sub" style="margin:0 0 8px">输入 <code>command</code>/<code>cmd</code>。杀运行时各项匹配前，会按方言去掉续行符再拼回一行（bash/sh 的 <code>\</code>换行、PowerShell 的反引号换行、cmd 的 <code>^</code>换行），避免折行躲开后面的正则/切段。</p>
+      <table class="ref">
+        <tr><th>防什么</th><th>检查项</th><th>怎么判</th><th>命中例</th></tr>
+        <tr>
+          <td><b>方言不一致</b></td>
+          <td>shell 错配</td>
+          <td>仅工具名 <code>bash</code>：命令文本像 PowerShell（Cmdlet / <code>$env:</code> 等）→ DENY</td>
+          <td>bash + <code>Get-ChildItem</code></td>
+        </tr>
+        <tr>
+          <td rowspan="5"><b>杀运行时</b></td>
+          <td>产品名底线</td>
+          <td>
+            整串正则，同一命令段内（遇 <code>;</code> <code>|</code> <code>&amp;</code> 换行断开）同时出现杀进程命令与产品名 → DENY：
+            <code>pkill</code>/<code>killall</code> 目标为 <code>jiuwenswarm</code> 或 <code>jiuwenclaw</code>；
+            <code>kill</code> 目标为 <code>jiuwenswarm</code>；
+            或 <code>jiuwenswarm … | xargs kill</code>。
+            底线不含单独的 <code>kill jiuwenclaw</code>（见下行段级点名）。
+            写出 <code>protected_patterns</code> = 只用你的列表替换该底线（切段等仍跑）。
+          </td>
+          <td><code>pkill -f jiuwenswarm</code></td>
+        </tr>
+        <tr>
+          <td>段级点名</td>
+          <td>
+            按 <code>;</code> <code>&amp;&amp;</code> <code>|</code> 切段；段首为 kill 族
+            （<code>pkill</code>/<code>killall</code>/<code>kill</code>/<code>Stop-Process</code>/<code>taskkill</code> 等），
+            且段内含 <code>jiuwenswarm</code> 或 <code>jiuwenclaw</code> → DENY（含 <code>kill jiuwenclaw</code>）
+          </td>
+          <td><code>kill jiuwenclaw</code></td>
+        </tr>
+        <tr>
+          <td>Python 名杀</td>
+          <td>段首 kill 族，目标名像 python（非纯 PID）→ DENY</td>
+          <td><code>pkill python</code> · <code>taskkill /IM python.exe</code></td>
+        </tr>
+        <tr>
+          <td>按进程名杀</td>
+          <td>
+            不限 PowerShell。整串正则，下列任一命中 → DENY：
+            ① 同一命令里 <code>Get-Process</code> 与 <code>Stop-Process</code> 相距不超过 400 字符（可不写进程名）；
+            ② <code>Stop-Process -Name</code> 的目标是 python / node / jiuwenswarm / jiuwenclaw；
+            ③ Windows <code>taskkill /im</code> 的目标是上述名字；
+            ④ Unix <code>pkill</code> / <code>killall</code> 的目标是 python。
+            PowerShell 只认全名，不含别名 <code>gps</code>/<code>spps</code>。
+          </td>
+          <td><code>taskkill /IM node.exe</code> · <code>Stop-Process -Name python</code></td>
+        </tr>
+        <tr>
+          <td>按 PID 杀</td>
+          <td>
+            命令里要杀的 PID（<code>kill</code> / <code>taskkill /pid</code> / <code>Stop-Process -Id</code> / wmic 等）
+            若在受保护名单中 → DENY。名单 = 下列并集：
+            当前进程；父进程链上 pid&gt;1 的祖先（需 psutil）；
+            cmdline 命中后端特征的进程（含 <code>--desktop-run-agent</code> / <code>--desktop-run-gateway</code>、
+            <code>-m jiuwenswarm.app</code> 等后端模块、对应 <code>.py</code> 脚本路径、
+            入口名如 <code>jiuwenswarm-agentserver</code>）；
+            再加上 <code>runtime.protected_pids</code> 里宿主写入的 PID。
+          </td>
+          <td><code>kill &lt;后端pid&gt;</code> · <code>Stop-Process -Id &lt;本pid&gt;</code></td>
+        </tr>
+        <tr>
+          <td><b>worktree 逃逸</b></td>
+          <td>严格 worktree</td>
+          <td>
+            真 <code>git … worktree add</code>；目标出 <code>runtime.project_root</code>/<code>workspace_root</code>
+            或解析失败 → DENY。无 root 则跳过。
+          </td>
+          <td><code>git worktree add ../outside</code></td>
+        </tr>
+      </table>
     </div>
     <div class="panel" style="margin-top:12px">
       <div class="ph orange">配置项</div>
       <table class="ref">
-        <tr><th>键</th><th>默认</th><th>开了拦什么 / 怎么判</th><th>命中例</th></tr>
+        <tr><th>键</th><th>默认</th><th>说明</th></tr>
         <tr>
           <td class="k">host_guard.enabled</td>
           <td><code>false</code></td>
-          <td>总开关；false → 组件不装载</td>
-          <td>—</td>
+          <td>总开关；false → 组件不装载；true → 上表检查一并生效</td>
         </tr>
         <tr>
           <td class="k">host_guard.protected_patterns</td>
           <td>内置 6 条</td>
           <td>
-            整段命令正则，元素 <code>{pattern, reason}</code>。缺省 6 条：
-            <code>pkill|killall|kill</code>×<code>jiuwenswarm|jiuwenclaw</code>，以及
-            <code>jiuwenswarm … | xargs kill</code>。
-            <strong>写出本键 = 只用你的列表做整段正则</strong>（内置 6 条不再参与）。
-            另有切段规则（段首 kill 族且段内含 jiuwenswarm/jiuwenclaw）始终生效，不由本键控制。
+            元素 <code>{pattern, reason}</code>。缺省为产品名底线 6 条。
+            写出本键 = 只用你的列表做整段正则底线；段级点名等不受本键关闭。
           </td>
-          <td><code>pkill -f jiuwenswarm</code></td>
         </tr>
         <tr>
-          <td class="k">其它键</td>
-          <td>不接受</td>
+          <td class="k">runtime.protected_pids</td>
+          <td>不写</td>
           <td>
-            <code>host_guard</code> 只接受 <code>enabled</code> 与 <code>protected_patterns</code>。
-            <code>shell_mismatch</code>、<code>worktree_guard</code>、<code>python_name_kill</code>、
-            <code>backend_pid_kill</code>、<code>whole_line_regex</code> 等旧键会抛
-            <code>ValueError</code>，整次 <code>PermissionEngine</code> 配置不生效。
-            <code>enabled: true</code> 时这些能力一并生效，不再单开：bash 上的 shell 错配、
-            进程映像与切段、进程号、严格 worktree（只认真正的 <code>git worktree add</code>）。
-            worktree 需要 <code>runtime.project_root</code> 或 <code>runtime.workspace_root</code>，都没有则跳过。
-            进程号集合为本进程、pid 大于 1 的祖先、cmdline 像后端的进程；
-            <code>runtime.protected_pids</code> 只追加，不缩小该集合。
+            宿主注入的额外受保护 PID 列表（字符串或数字）。并入「按 PID 杀」名单，不替换自动发现的本进程/祖先/后端进程。
+            不写则不加额外 PID；按 PID 杀仍跑。
           </td>
-          <td>多写 <code>shell_mismatch: true</code> → 构造引擎失败</td>
+        </tr>
+        <tr>
+          <td class="k">runtime.project_root<br>/ workspace_root</td>
+          <td>不写</td>
+          <td>worktree 检查用；优先 <code>project_root</code>，否则 <code>workspace_root</code>。都没有则跳过 worktree。</td>
         </tr>
       </table>
       <pre class="ex" style="margin-top:8px;font-size:11px"><span class="k">host_guard</span>:
   <span class="k">enabled</span>: <span class="n">true</span>
   <span class="k">protected_patterns</span>:                <span class="c"># 可选；缺省用内置产品名底线</span>
     - <span class="k">pattern</span>: <span class="s">'\bpkill\b[^\n\r;|&amp;]*agent_server'</span>
-      <span class="k">reason</span>: <span class="s">blocked: pkill agent_server</span></pre>
+      <span class="k">reason</span>: <span class="s">blocked: pkill agent_server</span>
+<span class="k">runtime</span>:                              <span class="c"># 宿主注入</span>
+  <span class="k">protected_pids</span>: [<span class="s">"1234"</span>, <span class="s">"5678"</span>]
+  <span class="k">project_root</span>: <span class="s">"/path/to/project"</span></pre>
     </div>
   </section>
 
@@ -1645,7 +1705,6 @@ flowchart TD
   host_guard:
     enabled: false
     # protected_patterns: [{pattern: '...', reason: '...'}]  # 可选；缺省内置产品名底线
-    # 只接受 enabled / protected_patterns；旧键会抛 ValueError
 
   net_guard:
     enabled: false
@@ -1949,7 +2008,7 @@ flowchart TD
   <!-- Audit log -->
   <section class="sec" id="audit-log">
     <h2>11. 审计日志（agent_shield）</h2>
-    <p class="sub">仅本库写出的日志契约 · 与 rail / 前端打的行无关 · 工具参数原文不落盘</p>
+    <p class="sub">仅本库写出的日志契约 · 与 rail / 前端打的行无关 · decision 行带上经长度掩码的 check_permission 入参</p>
 
     <div class="box hi-gray" style="margin-bottom:12px">
       <div class="n">库写什么</div>
@@ -1958,6 +2017,8 @@ flowchart TD
         <code>agent_shield.tool_permission.engine</code> /
         <code>agent_shield.tool_permission.manager</code>。
         消息正文是固定前缀 + <code>key=value</code> 字段；<strong>不指定文件名</strong>，落盘由宿主 Handler 决定。
+        <code>tool_args</code> 按传入对象写入，但对<strong>长度 &gt; 32</strong> 的字符串做掩码（保留首尾各 4 字符 + <code>len=</code>）；
+        这是防长 token 落盘的启发式，<strong>不是完备脱敏</strong>。
       </div>
     </div>
 
@@ -1994,7 +2055,7 @@ flowchart TD
     </table>
 
     <h3>11.2 decision 行：字段与可选值</h3>
-    <pre class="ex">permission.engine.decision key=… tool=… kind=… shell=… decision=… matched_rule=… winner=… basis=… components=[…]</pre>
+    <pre class="ex">permission.engine.decision key=… tool_name=… tool_args=… kind=… shell=… decision=… matched_rule=… winner=… basis=… components=[…]</pre>
     <table class="ref" style="margin-top:8px">
       <thead><tr><th>字段</th><th>可选值 / 形态</th><th>含义</th></tr></thead>
       <tbody>
@@ -2004,9 +2065,17 @@ flowchart TD
           <td>引擎构造时的 <code>label</code>；Manager 登记键；一次性 <code>config=</code> 固定为 <code>(one-off)</code></td>
         </tr>
         <tr>
-          <td class="k">tool</td>
+          <td class="k">tool_name</td>
           <td>任意工具名字符串</td>
-          <td>本次 <code>check_permission</code> 的工具名</td>
+          <td>本次 <code>check_permission</code> 的工具名（与入参同名，便于对照）</td>
+        </tr>
+        <tr>
+          <td class="k">tool_args</td>
+          <td>Python <code>%r</code> 字典（字符串长度掩码）</td>
+          <td>
+            本次 <code>check_permission</code> 的参数；字符串 ≤32 明文，&gt;32 形如
+            <code>abcd…wxyz(len=N)</code>。嵌套 dict/list 递归处理。长度启发式，非完备脱敏。
+          </td>
         </tr>
         <tr>
           <td class="k">kind</td>
@@ -2046,7 +2115,7 @@ flowchart TD
         <tr>
           <td class="k">components</td>
           <td>见下方「怎么读」</td>
-          <td><strong>必须整段展开</strong>：每个组件一次意见；定位「谁拦的 / 谁弃权」靠这里，不能省略</td>
+          <td><strong>必须整段展开</strong>：每个组件一次意见；定位「谁拦的 / 谁弃权 / 谁只告警」靠这里，不能省略</td>
         </tr>
       </tbody>
     </table>
@@ -2056,9 +2125,15 @@ flowchart TD
       <p>固定组件顺序（每个候选一轮）：</p>
       <p class="mono" style="margin:6px 0;line-height:1.5">InjectionComponent → CommandAllowlistComponent → DestructiveWarningComponent → TieredPolicyComponent → HostGuardComponent → FileGuardComponent → DeletionGuardComponent → ImmutableControlPlaneComponent → NetGuardComponent</p>
       <ul>
-        <li>单项形态：<code>组件类名=none</code>（弃权）或 <code>组件类名=allow|ask|deny</code> 或 <code>组件类名=allow|ask|deny(规则id)</code></li>
+        <li>单项形态：
+          <code>组件类名=none</code>（弃权 / 空结果）·
+          <code>组件类名=allow|ask|deny</code> ·
+          <code>组件类名=allow|ask|deny(规则id)</code> ·
+          <code>组件类名=warn(['文案', …])</code>（仅警告、不改 allow/ask/deny；典型为 DestructiveWarning）
+        </li>
+        <li><code>warn(…)</code> 与 <code>none</code> 必须区分：前者表示组件命中并写入了 <code>warnings</code>，后者才是本轮没说话。</li>
         <li>多候选（剥壳 / 子命令）时，<strong>按候选顺序把上述 9 项再追加一遍</strong>，所以列表会变长；对照时按每 9 个一组切</li>
-        <li>排障：先看最终 <code>decision</code> + <code>matched_rule</code> + <code>winner</code>，再在 <code>components</code> 里找同规则/同等级的项；<code>none</code> 表示该组件本轮没说话</li>
+        <li>排障：先看最终 <code>decision</code> + <code>matched_rule</code> + <code>winner</code>，再在 <code>components</code> 里找同规则/同等级/警告项</li>
       </ul>
     </div>
 
@@ -2073,37 +2148,43 @@ flowchart TD
     <div class="panel" style="margin-bottom:10px">
       <div class="ph green">单工具 · ALLOW · 非 shell</div>
       <div class="d" style="font-size:12px;margin-bottom:6px"><code>read_file</code> · <code>tools.read_file: allow</code></div>
-      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=demo tool=read_file kind=original shell=False decision=allow matched_rule=tools.read_file winner=TieredPolicyComponent basis=component components=[InjectionComponent=none,CommandAllowlistComponent=none,DestructiveWarningComponent=none,TieredPolicyComponent=allow(tools.read_file),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
+      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=demo tool_name=read_file tool_args={'path': 'a.txt'} kind=original shell=False decision=allow matched_rule=tools.read_file winner=TieredPolicyComponent basis=component components=[InjectionComponent=none,CommandAllowlistComponent=none,DestructiveWarningComponent=none,TieredPolicyComponent=allow(tools.read_file),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
     </div>
 
     <div class="panel" style="margin-bottom:10px">
       <div class="ph orange">单命令 · ASK</div>
       <div class="d" style="font-size:12px;margin-bottom:6px"><code>bash</code> · <code>command=ls</code> · <code>tools.bash: ask</code></div>
-      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=demo tool=bash kind=original shell=True decision=ask matched_rule=tools.bash winner=TieredPolicyComponent basis=component components=[InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=ask(tools.bash),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
+      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=demo tool_name=bash tool_args={'command': 'ls'} kind=original shell=True decision=ask matched_rule=tools.bash winner=TieredPolicyComponent basis=component components=[InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=ask(tools.bash),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
+    </div>
+
+    <div class="panel" style="margin-bottom:10px">
+      <div class="ph gray">仅警告 · DestructiveWarning（不改 decision）</div>
+      <div class="d" style="font-size:12px;margin-bottom:6px"><code>bash</code> · <code>command=echo DROP TABLE users</code> · <code>tools.bash: allow</code></div>
+      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=demo tool_name=bash tool_args={'command': 'echo DROP TABLE users'} kind=original shell=True decision=allow matched_rule=tools.bash winner=TieredPolicyComponent basis=component components=[InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=warn(['May drop database objects']),TieredPolicyComponent=allow(tools.bash),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
     </div>
 
     <div class="panel" style="margin-bottom:10px">
       <div class="ph red">单命令 · DENY</div>
       <div class="d" style="font-size:12px;margin-bottom:6px"><code>bash</code> · <code>command=rm -rf /tmp/x</code> · <code>tools.bash: deny</code></div>
-      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=demo tool=bash kind=original shell=True decision=deny matched_rule=tools.bash winner=TieredPolicyComponent basis=component components=[InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=deny(tools.bash),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
+      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=demo tool_name=bash tool_args={'command': 'rm -rf /tmp/x'} kind=original shell=True decision=deny matched_rule=tools.bash winner=TieredPolicyComponent basis=component components=[InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=deny(tools.bash),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
     </div>
 
     <div class="panel" style="margin-bottom:10px">
       <div class="ph red">复合命令 · DENY（规则命中整串）</div>
       <div class="d" style="font-size:12px;margin-bottom:6px"><code>ls; rm -rf /tmp/y</code> · 规则 <code>deny_rm</code>（<code>re:\brm\b</code>）；本例未拆出子命令候选时仍是一组 9 项</div>
-      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=demo tool=bash kind=original shell=True decision=deny matched_rule=tiered_policy:rules:deny:rules[deny_rm] winner=TieredPolicyComponent basis=component components=[InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=deny(tiered_policy:rules:deny:rules[deny_rm]),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
+      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=demo tool_name=bash tool_args={'command': 'ls; rm -rf /tmp/y'} kind=original shell=True decision=deny matched_rule=tiered_policy:rules:deny:rules[deny_rm] winner=TieredPolicyComponent basis=component components=[InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=deny(tiered_policy:rules:deny:rules[deny_rm]),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
     </div>
 
     <div class="panel" style="margin-bottom:10px">
       <div class="ph red">剥壳 · DENY（components 两组：原文 + 剥壳）</div>
       <div class="d" style="font-size:12px;margin-bottom:6px"><code>bash -c "rm x"</code> · <code>kind=unwrapped</code>（最后评估的是剥壳候选）；列表含 18 项 = 2×9</div>
-      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=demo tool=bash kind=unwrapped shell=True decision=deny matched_rule=tiered_policy:rules:deny:rules[deny_rm] winner=TieredPolicyComponent basis=component components=[InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=deny(tiered_policy:rules:deny:rules[deny_rm]),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none,InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=deny(tiered_policy:rules:deny:rules[deny_rm]),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
+      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=demo tool_name=bash tool_args={'command': 'bash -c "rm x"'} kind=unwrapped shell=True decision=deny matched_rule=tiered_policy:rules:deny:rules[deny_rm] winner=TieredPolicyComponent basis=component components=[InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=deny(tiered_policy:rules:deny:rules[deny_rm]),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none,InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=deny(tiered_policy:rules:deny:rules[deny_rm]),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
     </div>
 
     <div class="panel" style="margin-bottom:10px">
       <div class="ph blue">临时 config= · key=(one-off)</div>
       <div class="d" style="font-size:12px;margin-bottom:6px"><code>check_permission(…, config=cfg)</code>，不登记</div>
-      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=(one-off) tool=bash kind=original shell=True decision=ask matched_rule=tools.bash winner=TieredPolicyComponent basis=component components=[InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=ask(tools.bash),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
+      <pre class="ex" style="white-space:pre-wrap;word-break:break-all">permission.engine.decision key=(one-off) tool_name=bash tool_args={'command': 'ls'} kind=original shell=True decision=ask matched_rule=tools.bash winner=TieredPolicyComponent basis=component components=[InjectionComponent=allow,CommandAllowlistComponent=allow(shell_allowlist:disabled),DestructiveWarningComponent=none,TieredPolicyComponent=ask(tools.bash),HostGuardComponent=none,FileGuardComponent=none,DeletionGuardComponent=none,ImmutableControlPlaneComponent=none,NetGuardComponent=none]</pre>
     </div>
 
     <h3>11.4 relay-claw 集成 jiuwenswarm 时日志在哪</h3>

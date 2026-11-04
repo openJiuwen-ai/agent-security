@@ -16,7 +16,7 @@ from .models import PermissionLevel, PermissionResult
 from .routing import CommandDialect, supports_posix_subcommand_split
 from .toolguard.shell_ast import ShellAstParseResult, ShellSubcommand, parse_shell_for_permission
 
-_PREFIX = "tiered_policy"  # keep matched_rule labels stable
+# Framework structure floors — do NOT use the tiered_policy: prefix (misleading).
 _STRICTNESS = {
     PermissionLevel.DENY: 0,
     PermissionLevel.ASK: 1,
@@ -39,7 +39,7 @@ _INTERPRETER_SINK_NAMES = frozenset({
 })
 # Former builtin shell_compound_chain pattern.
 _COMPOUND_CHAIN_RE = re.compile(r"[;&|]|\$\{|\r?\n")
-_COMPOUND_LABEL = f"{_PREFIX}:shell_structure:shell_compound_chain"
+_COMPOUND_LABEL = "shell_structure:shell_compound_chain"
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,7 +99,7 @@ def _floor_hits(
     floors: list[tuple[PermissionLevel, str]] = []
     if parse.kind == "too_complex":
         reason = parse.reason or "unsupported_complex_structure"
-        floors.append((actions["too_complex"], f"{_PREFIX}:shell_ast:too_complex:{reason}"))
+        floors.append((actions["too_complex"], f"shell_structure:shell_ast:too_complex:{reason}"))
     elif parse.kind == "parse_unavailable" and flags.has_risky_structure():
         non_redir_risk = any((
             flags.has_compound_operators,
@@ -114,12 +114,19 @@ def _floor_hits(
         if non_redir_risk:
             reason = parse.reason or "conservative_fallback"
             floors.append(
-                (actions["parse_unavailable"], f"{_PREFIX}:shell_ast:parse_unavailable:{reason}")
+                (
+                    actions["parse_unavailable"],
+                    f"shell_structure:shell_ast:parse_unavailable:{reason}",
+                )
             )
     if flags.has_heredoc:
-        floors.append((actions["structure_guard"], f"{_PREFIX}:shell_ast:structure_guard"))
+        floors.append(
+            (actions["structure_guard"], "shell_structure:shell_ast:structure_guard")
+        )
     if parse.kind == "simple" and _has_interpreter_sink(parse):
-        floors.append((actions["interpreter_sink"], f"{_PREFIX}:shell_guard:interpreter_sink"))
+        floors.append(
+            (actions["interpreter_sink"], "shell_structure:shell_guard:interpreter_sink")
+        )
     return floors
 
 

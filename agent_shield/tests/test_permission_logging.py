@@ -35,7 +35,9 @@ async def test_decision_line_names_winner_and_every_subscribed_component(caplog)
 
     (line,) = _decisions(caplog)
     assert "key=k1" in line
-    assert "tool=bash kind=original shell=True decision=deny matched_rule=tools.bash" in line
+    assert "tool_name=bash" in line
+    assert "tool_args={'command': 'ls'}" in line
+    assert "kind=original shell=True decision=deny matched_rule=tools.bash" in line
     assert "winner=TieredPolicyComponent basis=component" in line
     assert "TieredPolicyComponent=deny(tools.bash)" in line
     assert "DestructiveWarningComponent=none" in line
@@ -48,6 +50,8 @@ async def test_non_shell_tool_still_runs_tiered_and_logs(caplog) -> None:
         await engine.check_permission("web_search", {"query": "x"})
 
     (line,) = _decisions(caplog)
+    assert "tool_name=web_search" in line
+    assert "tool_args={'query': 'x'}" in line
     assert "kind=original shell=False decision=deny matched_rule=tools.web_search" in line
     assert "TieredPolicyComponent=deny(tools.web_search)" in line
     assert "basis=component" in line
@@ -60,18 +64,39 @@ async def test_file_tool_logs_tiered_and_file_guard(caplog) -> None:
         await engine.check_permission("read_file", {"path": "a.txt"})
 
     (line,) = _decisions(caplog)
+    assert "tool_name=read_file" in line
+    assert "tool_args={'path': 'a.txt'}" in line
     assert "kind=original shell=False" in line
     assert "TieredPolicyComponent=deny(tools.read_file)" in line
     assert "FileGuardComponent=none" in line
 
 
 @pytest.mark.asyncio
-async def test_tool_arguments_are_not_logged(caplog) -> None:
+async def test_decision_logs_short_args_plain_and_masks_long_strings(caplog) -> None:
+    """Short arg strings stay plain; longer ones are length-masked in the log."""
     engine = PermissionEngine(CONFIG)
-    with caplog.at_level(logging.DEBUG, logger="agent_shield"):
-        await engine.check_permission("bash", {"command": "echo TOP-SECRET-TOKEN"})
+    secret = "S" * 40
+    args = {"command": "echo hi", "token": secret, "description": "keep me"}
+    with caplog.at_level(logging.INFO, logger=ENGINE_LOGGER):
+        await engine.check_permission("bash", args)
 
-    assert "TOP-SECRET-TOKEN" not in caplog.text
+    (line,) = _decisions(caplog)
+    assert "tool_name=bash" in line
+    assert "echo hi" in line
+    assert "keep me" in line
+    assert secret not in line
+    assert "SSSS…SSSS(len=40)" in line
+
+
+@pytest.mark.asyncio
+async def test_destructive_warning_is_visible_in_components(caplog) -> None:
+    """Warning-only components must not collapse to none in the decision line."""
+    engine = PermissionEngine(CONFIG)
+    with caplog.at_level(logging.INFO, logger=ENGINE_LOGGER):
+        await engine.check_permission("bash", {"command": "echo DROP TABLE users"})
+
+    (line,) = _decisions(caplog)
+    assert "DestructiveWarningComponent=warn(['May drop database objects'])" in line
 
 
 @pytest.mark.asyncio
