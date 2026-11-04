@@ -225,9 +225,6 @@ from .config_sections import (
     VaultConfig,
 )
 
-# --- defaults ---------------------------------------------------------------
-
-# --- durations --------------------------------------------------------------
 
 def format_duration(value: timedelta) -> str:
     """Render a duration the way Go's ``time.Duration.String`` does."""
