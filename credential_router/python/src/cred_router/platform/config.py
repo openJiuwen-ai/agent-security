@@ -252,15 +252,7 @@ def format_duration(value: timedelta) -> str:
     return f"{sign}{hours}h{minute}m{int(second)}s"
 
 
-# --- section helpers --------------------------------------------------------
-
-
-# --- the sections -----------------------------------------------------------
-
-
 # --- the whole configuration ------------------------------------------------
-
-
 @dataclass
 class Config:
     upstream_timeout_ms: int = DEFAULT_UPSTREAM_TIMEOUT_MS
