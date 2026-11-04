@@ -328,9 +328,11 @@ def converge_to(
                 vault.reload_snapshot()
                 src = vault.keys.by_version(row.dek_version)
             if src is None:
+                held = format_held_versions(vault.keys.held_versions())
                 raise StaleGenerationError(
-                    f'record "{row.id}" is under generation {row.dek_version}, which this store does not hold (it holds '
-                    f"{format_held_versions(vault.keys.held_versions())})"
+                    f'record "{row.id}" is under generation '
+                    f"{row.dek_version}, which this store does not hold "
+                    f"(it holds {held})"
                 )
 
             rewritten: list[ContainerField] = []
@@ -342,7 +344,9 @@ def converge_to(
                     )
                 if f.encrypted != definition.encrypted:
                     raise SchemaMismatchError(
-                        f'record "{row.id}" field "{f.name}" is marked encrypted={f.encrypted} but schema v{sch.version} says {definition.encrypted}'
+                        f'record "{row.id}" field "{f.name}" is marked '
+                        f"encrypted={f.encrypted} but schema v{sch.version} "
+                        f"says {definition.encrypted}"
                     )
                 if not definition.encrypted:
                     rewritten.append(f)
