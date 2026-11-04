@@ -57,7 +57,7 @@ class AuthorityMixin:
         except Exception as exc:  # noqa: BLE001 - reported, not fatal
             _log.warning("vault: could not read the fleet's rotation gate: %s", exc)
 
-    def _start_authority(
+    def start_authority(
         self,
         cfg: Any,
         self_identity: Any,
@@ -163,7 +163,6 @@ class AuthorityMixin:
     def adopt_cluster_dek(self, dek: bytes, generation: int) -> None:
         """Install the fleet's newer generation on this node."""
         from cred_router.crypto import KeyBytes, parse_mode, wrap_dek
-        from cred_router.vault.errors import KeyMismatchError
         from cred_router.vault.keys import (
             KeySnapshot,
             derive_kek,

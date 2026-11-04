@@ -475,10 +475,11 @@ def init_keys(
     DEK and persists them, unless an adopted DEK is supplied. On an
     existing store it loads them.
     """
-    if adopt is not None and adopt.previous and len(adopt.previous) != DEK_SIZE:
-        raise KeyMismatchError(
-            f"the adopted previous DEK is {len(adopt.previous)} bytes, want {DEK_SIZE}"
-        )
+    if adopt is not None and adopt.previous:
+        if len(adopt.previous) != DEK_SIZE:
+            raise KeyMismatchError(
+                f"the adopted previous DEK is {len(adopt.previous)} bytes, want {DEK_SIZE}"
+            )
     km = read_key_meta(db)
     if km is None:
         return init_fresh_keys(db, secrets_dir, mode, adopt)
@@ -529,7 +530,10 @@ def init_keys(
         # pending rotation means this node died in the middle of one.
         # The authority's generation has already moved, so the node has to
         # come back holding the new key.
-        if not shared_key_meta and km.pending_dek_version != 0 and km.pending_wrapped_dek:
+        pending_key_present = (
+            km.pending_dek_version != 0 and bool(km.pending_wrapped_dek)
+        )
+        if not shared_key_meta and pending_key_present:
             try:
                 pending = unwrap_dek(mode, kek.bytes(), km.pending_wrapped_dek)
             except CryptoError as exc:
@@ -547,7 +551,8 @@ def init_keys(
             km.wrapped_dek = km.pending_wrapped_dek
             km.pending_wrapped_dek = b""
             km.pending_dek_version = 0
-            assert mgr.prev() is not None
+            if mgr.prev() is None:
+                raise KeyMismatchError("the rotated store has no previous DEK")
             km.superseded_dek_version = mgr.prev().version
             km.superseded_wrapped_dek = old_wrapped
             update_key_meta(db, km)
