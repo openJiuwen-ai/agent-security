@@ -99,9 +99,11 @@ S3_SHARD = bytes((
 #: A compile-time constant: 16 bytes fixed at build time. It is PBKDF2
 #: domain separation, not a secret — the literal is in the binary.
 #:
-#: Copied byte for byte from ``pkg/vault/keys.go``:
-#: ``0x76 0x61 0x75 0x6c 0x74 0x2d 0x6b 0x65 ...`` = "vault-kek-salt-v".
-KEK_SALT = bytes.fromhex("7661756c742d6b656b2d73616c742d76")
+#: Copied byte for byte from ``pkg/vault/keys.go``.
+KEK_SALT = bytes((
+    118, 97, 117, 108, 116, 45, 107, 101,
+    107, 45, 115, 97, 108, 116, 45, 118,
+))
 
 
 def crypto_mode_unusable(stored: str, exc: Exception) -> KeyMismatchError:
