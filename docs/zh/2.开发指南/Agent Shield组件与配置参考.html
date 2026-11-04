@@ -1435,62 +1435,27 @@ flowchart TD
           <td><code>pkill -f jiuwenswarm</code></td>
         </tr>
         <tr>
-          <td class="k">host_guard.shell_mismatch</td>
-          <td><code>true</code></td>
-          <td>仅工具名 <code>bash</code>：命令文本像 PowerShell（Cmdlet / <code>$env:</code> 等）→ DENY</td>
-          <td>bash + <code>Get-ChildItem</code></td>
-        </tr>
-        <tr>
-          <td class="k">host_guard.worktree_guard</td>
-          <td><code>true</code></td>
+          <td class="k">其它键</td>
+          <td>不接受</td>
           <td>
-            防 Agent 用 <code>git worktree add &lt;path&gt;</code> 在 <code>runtime.workspace_root</code> <strong>外</strong>再建可写工作树（绕开工作区边界）。
-            目标必须在 workspace 内；路径解析失败也 DENY。
+            <code>host_guard</code> 只接受 <code>enabled</code> 与 <code>protected_patterns</code>。
+            <code>shell_mismatch</code>、<code>worktree_guard</code>、<code>python_name_kill</code>、
+            <code>backend_pid_kill</code>、<code>whole_line_regex</code> 等旧键会抛
+            <code>ValueError</code>，整次 <code>PermissionEngine</code> 配置不生效。
+            <code>enabled: true</code> 时这些能力一并生效，不再单开：bash 上的 shell 错配、
+            进程映像与切段、进程号、严格 worktree（只认真正的 <code>git worktree add</code>）。
+            worktree 需要 <code>runtime.project_root</code> 或 <code>runtime.workspace_root</code>，都没有则跳过。
+            进程号集合为本进程、pid 大于 1 的祖先、cmdline 像后端的进程；
+            <code>runtime.protected_pids</code> 只追加，不缩小该集合。
           </td>
-          <td><code>git worktree add ../outside</code> → DENY；<code>git worktree add .worktrees/f</code> → 放行本项</td>
-        </tr>
-        <tr>
-          <td class="k">host_guard.python_name_kill</td>
-          <td><code>false</code></td>
-          <td>段首为 kill 族，且目标名像 python（非纯 PID）→ DENY</td>
-          <td><code>pkill python</code> · <code>taskkill /IM python.exe /F</code></td>
-        </tr>
-        <tr>
-          <td class="k">host_guard.backend_pid_kill</td>
-          <td><code>false</code></td>
-          <td>
-            防按数字 PID 杀掉宿主后端 / 当前权限进程。
-            从命令抽出目标 PID，与运行时集合求交：① 当前进程；② 其祖先（需 psutil）；③ cmdline 像 JiuwenSwarm 后端的进程（如
-            <code>-m jiuwenswarm.app</code>、<code>jiuwenswarm-agentserver</code>、
-            <code>--desktop-run-agent</code> 等，见代码 <code>_BACKEND_*</code>）。
-            PID 名单运行时扫描，配置里不写死。
-          </td>
-          <td><code>kill 12345</code> / <code>taskkill /PID 12345</code>（12345 落在上述集合时）</td>
-        </tr>
-        <tr>
-          <td class="k">host_guard.whole_line_regex</td>
-          <td><code>false</code></td>
-          <td>
-            <b>路径开关</b>，不是多一道独立威胁类型：true 时整段改走<strong>整行正则</strong>判定（模块 <code>whole_line_regex.py</code>），上表默认路径（shell_mismatch / python_name_kill / backend_pid_kill / 严格 worktree / 切段 safety）不跑。命中规则名 <code>host_guard:whole_line_regex</code>。整行路径内容：
-            <ul style="margin:4px 0 0;padding-left:1.1em">
-              <li>固定整行正则：杀 jiuwenswarm/jiuwenclaw；按名 <code>Stop-Process</code>/<code>taskkill /IM</code> 打 python、node、jiuwenswarm；<code>pkill/killall python</code></li>
-              <li>防自尽：命令目标 PID 为<strong>当前进程或父进程</strong>（或 <code>runtime.protected_pids</code> 注入的集合）→ DENY</li>
-              <li>宽松 worktree：文本里出现 <code>worktree add</code> 且目标出 workspace → DENY（可误伤 <code>echo worktree add ../x</code>）；仅 <code>bash</code>/<code>powershell</code>/<code>core.powershell</code> 跑 worktree，<code>mcp_exec_command</code> 不跑</li>
-            </ul>
-          </td>
-          <td><code>taskkill /PID &lt;本PID&gt; /F</code> · <code>Stop-Process -Name python</code> · <code>taskkill /IM node.exe /F</code></td>
+          <td>多写 <code>shell_mismatch: true</code> → 构造引擎失败</td>
         </tr>
       </table>
       <pre class="ex" style="margin-top:8px;font-size:11px"><span class="k">host_guard</span>:
   <span class="k">enabled</span>: <span class="n">true</span>
-  <span class="k">worktree_guard</span>: <span class="n">true</span>
-  <span class="k">shell_mismatch</span>: <span class="n">true</span>
-  <span class="k">python_name_kill</span>: <span class="n">false</span>
-  <span class="k">backend_pid_kill</span>: <span class="n">false</span>
-  <span class="k">protected_patterns</span>:                <span class="c"># 可选；缺省用内置</span>
+  <span class="k">protected_patterns</span>:                <span class="c"># 可选；缺省用内置产品名底线</span>
     - <span class="k">pattern</span>: <span class="s">'\bpkill\b[^\n\r;|&amp;]*agent_server'</span>
-      <span class="k">reason</span>: <span class="s">blocked: pkill agent_server</span>
-  <span class="k">whole_line_regex</span>: <span class="n">false</span></pre>
+      <span class="k">reason</span>: <span class="s">blocked: pkill agent_server</span></pre>
     </div>
   </section>
 
@@ -1679,12 +1644,8 @@ flowchart TD
 
   host_guard:
     enabled: false
-    worktree_guard: true
-    shell_mismatch: true
-    python_name_kill: false
-    backend_pid_kill: false
-    # protected_patterns: [{pattern: '...', reason: '...'}]  # 可选；缺省内置
-    whole_line_regex: false
+    # protected_patterns: [{pattern: '...', reason: '...'}]  # 可选；缺省内置产品名底线
+    # 只接受 enabled / protected_patterns；旧键会抛 ValueError
 
   net_guard:
     enabled: false
