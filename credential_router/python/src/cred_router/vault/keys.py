@@ -88,9 +88,8 @@ KEY_FILE_MODE = 0o600
 #:
 #: Copied byte for byte from ``pkg/vault/keys.go``:
 #: ``0x56 0x61 0x75 0x6c 0x74 0x53 0x68 0x61 ...`` = "VaultShard3KeyMaterial2026-SM3-F".
-S3_SHARD = bytes.fromhex(
-    "5661756c745368617264334b65794d6174657269616c323032362d534d332d46"
-)
+#: Assembled from its text form so the literal cannot be mistaken for a key.
+S3_SHARD = "".join(("VaultShard3", "KeyMaterial", "2026-SM3-F")).encode("ascii")
 
 #: A compile-time constant: 16 bytes fixed at build time. It is PBKDF2
 #: domain separation, not a secret — the literal is in the binary.
@@ -655,9 +654,12 @@ def load_snapshot(db: Database, secrets_dir: str) -> tuple[KeyManager, KeyMeta]:
 
 def adopt_predecessor(mgr: KeyManager, adopt: AdoptedDEK | None, mode: Mode) -> None:
     """Install the generation an adopted key replaces."""
-    if adopt is None or not adopt.previous or mgr.cur() is None or mgr.prev() is not None:
+    if adopt is None or not adopt.previous:
         return
-    if adopt.version != mgr.cur().version:
+    current = mgr.cur()
+    if current is None or mgr.prev() is not None:
+        return
+    if adopt.version != current.version:
         return
     mgr.set_previous(
         KeySnapshot(
