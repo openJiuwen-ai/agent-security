@@ -50,11 +50,11 @@ def resolve_shape(schema_fields: list[dict[str, Any]]) -> Shape:
     encrypted = [f["name"] for f in schema_fields if f.get("encrypted")]
     plain = [f for f in schema_fields if not f.get("encrypted")]
     kind = [f["name"] for f in plain if f.get("type") == "string"]
-    meta = [f["name"] for f in plain if f.get("type") != "string"]
+    meta = [f["name"] for f in plain if f.get("type") == "bytes"]
     if len(encrypted) != 1 or len(kind) != 1 or len(meta) != 1:
         raise VaultError(
             "the vault's schema must declare exactly one encrypted field, "
-            "one plain string field and one plain field of another type; "
+            "one plain string field and one plain bytes field; "
             f"it declares {schema_fields}"
         )
     return Shape(kind[0], encrypted[0], meta[0])

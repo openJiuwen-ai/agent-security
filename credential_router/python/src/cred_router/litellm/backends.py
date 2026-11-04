@@ -142,20 +142,29 @@ class UdsBackend:
                 f"the vault at {self.path} did not answer: {exc}") from exc
 
         try:
-            writer.write(frame)
-            await writer.drain()
-            header = await reader.readexactly(4)
-            (length,) = struct.unpack("!I", header)
-            if length > MAX_FRAME:
-                raise VaultError(
-                    f"the vault answered with {length} bytes, over the limit")
-            answer = await reader.readexactly(length)
-            return json.loads(answer.decode("utf-8"))
-        except (OSError, asyncio.IncompleteReadError) as exc:
+            return await asyncio.wait_for(
+                self._exchange(reader, writer, frame), timeout=self.timeout)
+        except (OSError, asyncio.IncompleteReadError, asyncio.TimeoutError) as exc:
             raise VaultError(
                 f"the vault at {self.path} did not answer: {exc}") from exc
         finally:
             writer.close()
+
+    async def _exchange(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        frame: bytes,
+    ) -> dict[str, Any]:
+        writer.write(frame)
+        await writer.drain()
+        header = await reader.readexactly(4)
+        (length,) = struct.unpack("!I", header)
+        if length > MAX_FRAME:
+            raise VaultError(
+                f"the vault answered with {length} bytes, over the limit")
+        answer = await reader.readexactly(length)
+        return json.loads(answer.decode("utf-8"))
 
     def _read(self, conn: socket.socket) -> dict[str, Any]:
         header = self._read_exactly(conn, 4)
