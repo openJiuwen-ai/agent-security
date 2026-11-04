@@ -1,0 +1,19 @@
+# The repository's development configuration.
+#
+# The package's own metadata is NOT here: it is in ``src/pyproject.toml``,
+# because ``src/`` is the installable unit — the directory a consumer
+# points at when it declares the dependency:
+#
+#     pip install "cred-router-python @ git+ssh://git@host/repo.git#subdirectory=src"
+#
+# Installing from this directory therefore means installing from ``src/``:
+#
+#     pip install -e src/
+#
+# Keeping the two apart is what makes the dependency above work without a
+# second copy of the metadata to keep in step.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"

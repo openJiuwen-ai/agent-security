@@ -1,0 +1,19 @@
+# Python's build and cache output.
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# The tools' caches.
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# The environment's own files.
+.venv/
+venv/
+.env
