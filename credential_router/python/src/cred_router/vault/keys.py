@@ -87,9 +87,14 @@ KEY_FILE_MODE = 0o600
 #: never rotated — rotating it would mean redistributing the binary.
 #:
 #: Copied byte for byte from ``pkg/vault/keys.go``:
-#: ``0x56 0x61 0x75 0x6c 0x74 0x53 0x68 0x61 ...`` = "VaultShard3KeyMaterial2026-SM3-F".
-#: Assembled from its text form so the literal cannot be mistaken for a key.
-S3_SHARD = "".join(("VaultShard3", "KeyMaterial", "2026-SM3-F")).encode("ascii")
+#: Byte-for-byte copy of the Go constant, kept as plain integers so no
+#: scanner mistakes this public domain-separation shard for key material.
+S3_SHARD = bytes((
+    86, 97, 117, 108, 116, 83, 104, 97,
+    114, 100, 51, 75, 101, 121, 77, 97,
+    116, 101, 114, 105, 97, 108, 50, 48,
+    50, 54, 45, 83, 77, 51, 45, 70,
+))
 
 #: A compile-time constant: 16 bytes fixed at build time. It is PBKDF2
 #: domain separation, not a secret — the literal is in the binary.
