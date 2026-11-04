@@ -73,4 +73,6 @@ def _decode_row(row: RecordRow) -> list[ContainerField]:
     try:
         return decode_container(row.data)
     except InvalidRecordError as exc:
-        raise VaultError(f'vault: decode record "{row.id}": {exc}') from exc
+        raise InvalidRecordError(
+            f'decode record "{row.id}": {exc}', whole=True
+        ) from exc

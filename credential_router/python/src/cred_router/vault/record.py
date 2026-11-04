@@ -88,7 +88,15 @@ class Value:
         A value built by hand can be malformed, and writing it would
         persist something the read path cannot decode.
         """
-        if self.type in (Type.STRING, Type.BYTES):
+        if self.type is Type.STRING:
+            try:
+                self.data.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise InvalidRecordError(
+                    f"vault: string value is not valid utf-8: {exc}"
+                ) from exc
+            return
+        if self.type is Type.BYTES:
             return
         if self.type is Type.INT64:
             if len(self.data) != 8:
