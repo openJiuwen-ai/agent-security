@@ -212,7 +212,11 @@ class Database:
             else:
                 if self._rolled_back:
                     return
-                self._conn.execute("COMMIT")
+                try:
+                    self._conn.execute("COMMIT")
+                except sqlite3.Error:
+                    self._safe_rollback()
+                    raise
 
     def _safe_rollback(self) -> None:
         """Roll the transaction back, whatever the database thinks."""
