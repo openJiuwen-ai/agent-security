@@ -16,9 +16,9 @@ from .errors import InvalidError
 __all__ = ["check_data_dir"]
 
 
-def check_data_dir(dir: str) -> None:
+def check_data_dir(data_dir: str) -> None:
     """Refuse a data directory that other users can write to."""
-    path = os.path.abspath(dir)
+    path = os.path.abspath(data_dir)
     current = path
     while True:
         try:

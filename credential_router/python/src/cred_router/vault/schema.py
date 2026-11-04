@@ -190,8 +190,6 @@ def parse_schema(definition: bytes | str) -> Schema:
             )
             for f in raw_fields
         ]
-    except InvalidSchemaError:
-        raise
     except (ValueError, TypeError, AttributeError) as exc:
         raise InvalidSchemaError(f"vault: parse schema: {exc}") from exc
     out = Schema(version=version, fields=fields)

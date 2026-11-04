@@ -113,13 +113,13 @@ def decode_container(data: bytes) -> list[ContainerField]:
             raise InvalidRecordError(
                 f"vault: container: truncated at field {i} name length"
             )
-        name_len = int.from_bytes(data[off : off + 2], "big")
+        name_len = int.from_bytes(data[off:off + 2], "big")
         off += 2
         if off + name_len > len(data):
             raise InvalidRecordError(
                 f"vault: container: truncated at field {i} name"
             )
-        name = data[off : off + name_len].decode("utf-8", "replace")
+        name = data[off:off + name_len].decode("utf-8", "replace")
         off += name_len
 
         if off + 2 > len(data):
@@ -134,13 +134,13 @@ def decode_container(data: bytes) -> list[ContainerField]:
             raise InvalidRecordError(
                 f"vault: container: truncated at field {i} value length"
             )
-        val_len = int.from_bytes(data[off : off + 4], "big")
+        val_len = int.from_bytes(data[off:off + 4], "big")
         off += 4
         if off + val_len > len(data):
             raise InvalidRecordError(
                 f"vault: container: truncated at field {i} value"
             )
-        val = data[off : off + val_len]
+        val = data[off:off + val_len]
         off += val_len
 
         out.append(

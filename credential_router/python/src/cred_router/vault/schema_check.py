@@ -26,7 +26,7 @@ __all__ = [
 
 
 def verify_against_schema(
-    id: str,
+    record_id: str,
     sch: Schema,
     defs: dict[str, FieldDef],
     fields: list[ContainerField],
@@ -36,15 +36,17 @@ def verify_against_schema(
         definition = defs.get(f.name)
         if definition is None:
             raise SchemaMismatchError(
-                f'record "{id}" has field "{f.name}", which schema v{sch.version} does not declare'
+                f'record "{record_id}" has field "{f.name}", which schema v{sch.version} does not declare'
             )
         if f.encrypted != definition.encrypted:
             raise SchemaMismatchError(
-                f'record "{id}" field "{f.name}" is marked encrypted={f.encrypted} but schema v{sch.version} says {definition.encrypted}'
+                f'record "{record_id}" field "{f.name}" is marked encrypted='
+                f'{f.encrypted} but schema v{sch.version} says {definition.encrypted}'
             )
         if f.type != definition.type:
             raise SchemaMismatchError(
-                f'record "{id}" field "{f.name}" has type {f.type} but schema v{sch.version} says {definition.type}'
+                f'record "{record_id}" field "{f.name}" has type {f.type} '
+                f'but schema v{sch.version} says {definition.type}'
             )
 
 
