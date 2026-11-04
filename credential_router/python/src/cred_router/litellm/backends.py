@@ -144,7 +144,7 @@ class UdsBackend:
         try:
             return await asyncio.wait_for(
                 self._exchange(reader, writer, frame), timeout=self.timeout)
-        except (OSError, asyncio.IncompleteReadError, asyncio.TimeoutError) as exc:
+        except (OSError, asyncio.IncompleteReadError) as exc:
             raise VaultError(
                 f"the vault at {self.path} did not answer: {exc}") from exc
         finally:
