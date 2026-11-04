@@ -285,12 +285,12 @@ def read_key_meta(db: Database) -> KeyMeta | None:
     """
     row = db.query_one(
         """
-		SELECT active_dek_version, pending_dek_version, crypto_mode,
-		       active_config_shard, pending_config_shard,
-		       file_shard_version, file_shard_rotated_at, last_rotate_at,
-		       wrapped_dek, pending_wrapped_dek,
-		       superseded_dek_version, superseded_wrapped_dek, updated_at
-		FROM vault_key_metadata WHERE id = 1"""
+        SELECT active_dek_version, pending_dek_version, crypto_mode,
+               active_config_shard, pending_config_shard,
+               file_shard_version, file_shard_rotated_at, last_rotate_at,
+               wrapped_dek, pending_wrapped_dek,
+               superseded_dek_version, superseded_wrapped_dek, updated_at
+        FROM vault_key_metadata WHERE id = 1"""
     )
     if row is None:
         return None
@@ -316,13 +316,13 @@ def insert_key_meta(db: Database, km: KeyMeta) -> None:
     now = int(time.time())
     db.execute(
         """
-		INSERT INTO vault_key_metadata (
-			id, active_dek_version, pending_dek_version, crypto_mode,
-			active_config_shard, pending_config_shard,
-			file_shard_version, file_shard_rotated_at, last_rotate_at,
-			wrapped_dek, pending_wrapped_dek,
-			superseded_dek_version, superseded_wrapped_dek, updated_at
-		) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        INSERT INTO vault_key_metadata (
+            id, active_dek_version, pending_dek_version, crypto_mode,
+            active_config_shard, pending_config_shard,
+            file_shard_version, file_shard_rotated_at, last_rotate_at,
+            wrapped_dek, pending_wrapped_dek,
+            superseded_dek_version, superseded_wrapped_dek, updated_at
+        ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             km.active_dek_version,
             km.pending_dek_version,
@@ -347,13 +347,13 @@ def update_key_meta(db: Database, km: KeyMeta) -> None:
     now = int(time.time())
     cur = db.execute(
         """
-		UPDATE vault_key_metadata SET
-			active_dek_version = ?, pending_dek_version = ?, crypto_mode = ?,
-			active_config_shard = ?, pending_config_shard = ?,
-			file_shard_version = ?, file_shard_rotated_at = ?, last_rotate_at = ?,
-			wrapped_dek = ?, pending_wrapped_dek = ?,
-			superseded_dek_version = ?, superseded_wrapped_dek = ?, updated_at = ?
-		WHERE id = 1""",
+        UPDATE vault_key_metadata SET
+            active_dek_version = ?, pending_dek_version = ?, crypto_mode = ?,
+            active_config_shard = ?, pending_config_shard = ?,
+            file_shard_version = ?, file_shard_rotated_at = ?, last_rotate_at = ?,
+            wrapped_dek = ?, pending_wrapped_dek = ?,
+            superseded_dek_version = ?, superseded_wrapped_dek = ?, updated_at = ?
+        WHERE id = 1""",
         (
             km.active_dek_version,
             km.pending_dek_version,
