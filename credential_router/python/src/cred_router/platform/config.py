@@ -262,7 +262,6 @@ def format_duration(value: timedelta) -> str:
 # --- the whole configuration ------------------------------------------------
 
 
-
 @dataclass
 class Config:
     upstream_timeout_ms: int = DEFAULT_UPSTREAM_TIMEOUT_MS
