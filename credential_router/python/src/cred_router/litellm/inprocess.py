@@ -202,7 +202,8 @@ class InProcessBackend:
                     self._shape = resolve_shape(self.schema_fields_sync())
         return self._shape
 
-    def _to_record(self, name: str, fields: list[dict[str, Any]]) -> Record:
+    @staticmethod
+    def _to_record(name: str, fields: list[dict[str, Any]]) -> Record:
         """Turn the protocol's fields into a record to store."""
         record = Record(id=name)
         for f in fields:
@@ -347,20 +348,24 @@ def open_in_process_backend(config_path: str,
         ),
         schema)
 
-    # This process now holds the store's key material, so it protects
-    # itself the way the service does.  It happens after the store is
-    # open — the keys exist by then, which is what has to be protected.
-    _protect_process_memory()
+    try:
+        # This process now holds the store's key material, so it protects
+        # itself the way the service does.  It happens after the store is
+        # open — the keys exist by then, which is what has to be protected.
+        _protect_process_memory()
 
-    # The store's DEK rotation is a capability of the store, and this
-    # process is the one holding it — so the rotation is attached here
-    # too, and the question of whether anybody is listening on a socket
-    # does not arise.  A period of zero attaches nothing.
-    rotate_stop = None
-    period = config.vault.rotation.period
-    if period > 0:
-        from ..vault import start_auto_rotate
+        # The store's DEK rotation is a capability of the store, and this
+        # process is the one holding it — so the rotation is attached here
+        # too, and the question of whether anybody is listening on a socket
+        # does not arise.  A period of zero attaches nothing.
+        rotate_stop = None
+        period = config.vault.rotation.period
+        if period > 0:
+            from ..vault import start_auto_rotate
 
-        rotate_stop = start_auto_rotate(vault, period)
+            rotate_stop = start_auto_rotate(vault, period)
+    except BaseException:
+        vault.close()
+        raise
 
     return InProcessBackend(vault, rotate_stop=rotate_stop)

@@ -49,33 +49,45 @@ class SecretBackend(Protocol):
         """The secret, or None when the store does not hold it."""
 
     def write_sync(self, name: str, kind: str, value: bytes,
-                   meta: dict[str, Any] | None = None) -> None: ...
+                   meta: dict[str, Any] | None = None) -> None:
+        ...
 
     async def write_async(self, name: str, kind: str, value: bytes,
-                           meta: dict[str, Any] | None = None) -> None: ...
+                          meta: dict[str, Any] | None = None) -> None:
+        ...
 
     def delete_sync(self, name: str) -> bool:
         """True when something was deleted."""
+        ...
 
-    async def delete_async(self, name: str) -> bool: ...
+    async def delete_async(self, name: str) -> bool:
+        ...
 
-    def schema_fields_sync(self) -> list[dict[str, Any]]: ...
+    def schema_fields_sync(self) -> list[dict[str, Any]]:
+        ...
 
-    async def schema_fields_async(self) -> list[dict[str, Any]]: ...
+    async def schema_fields_async(self) -> list[dict[str, Any]]:
+        ...
 
     def list_sync(self, prefix: str = "") -> list[dict[str, Any]]:
         """The records whose id begins with ``prefix``."""
+        ...
 
-    async def list_async(self, prefix: str = "") -> list[dict[str, Any]]: ...
+    async def list_async(self, prefix: str = "") -> list[dict[str, Any]]:
+        ...
 
     def status_sync(self) -> dict[str, Any]:
         """What the store reports about itself."""
+        ...
 
-    async def status_async(self) -> dict[str, Any]: ...
+    async def status_async(self) -> dict[str, Any]:
+        ...
 
-    def healthy_sync(self) -> bool: ...
+    def healthy_sync(self) -> bool:
+        ...
 
-    async def healthy_async(self) -> bool: ...
+    async def healthy_async(self) -> bool:
+        ...
 
 
 # --- the unix socket backend -------------------------------------------------
@@ -125,7 +137,7 @@ class UdsBackend:
             reader, writer = await asyncio.wait_for(
                 asyncio.open_unix_connection(self.path), timeout=self.timeout
             )
-        except (OSError, asyncio.TimeoutError) as exc:
+        except OSError as exc:
             raise VaultError(
                 f"the vault at {self.path} did not answer: {exc}") from exc
 
@@ -274,13 +286,17 @@ class UdsBackend:
 
     def _shape_sync(self) -> Shape:
         self.schema_fields_sync()
-        assert self._shape is not None
-        return self._shape
+        shape = self._shape
+        if shape is None:
+            raise VaultError("the store did not report its schema")
+        return shape
 
     async def _shape_async(self) -> Shape:
         await self.schema_fields_async()
-        assert self._shape is not None
-        return self._shape
+        shape = self._shape
+        if shape is None:
+            raise VaultError("the store did not report its schema")
+        return shape
 
     @staticmethod
     def _consume(answer: dict[str, Any], name: str,
