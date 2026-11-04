@@ -92,7 +92,6 @@ __all__ = [
 ]
 
 
-
 __all__ = [
     "AdminConfig",
     "AuthRule",
