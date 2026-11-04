@@ -118,9 +118,10 @@ class TLSConfig:
         named = bool(self.ca_file or self.cert_file or self.key_file)
         return named and not self.all_set()
 
-    # These two are here because this configuration and the vault's own are
-    # used interchangeably: the runtime builds one of these and the vault's
-    # dialer reads it as its own.
+
+# These two are here because this configuration and the vault's own are
+# used interchangeably: the runtime builds one of these and the vault's
+# dialer reads it as its own.
 @dataclass(frozen=True)
 class EtcdConfig:
     """The vault's own view of the etcd deployment.
@@ -188,7 +189,8 @@ def vault_etcd_config(cfg: Any) -> EtcdConfig:
     )
     # The TLS material only when there is any: an empty set of paths handed
     # to the client is a FileNotFoundError on "".
-    if tls is not None and (tls.ca_file or tls.cert_file or tls.key_file):
+    tls_named = bool(tls.ca_file or tls.cert_file or tls.key_file) if tls else False
+    if tls is not None and tls_named:
         out = EtcdConfig(
             endpoints=out.endpoints,
             namespace=out.namespace,
