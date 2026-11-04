@@ -67,7 +67,13 @@ def decrypt_credential(mode: Mode, key: bytes, blob: bytes) -> bytes:
         raise InvalidCiphertextError(
             f"crypto: invalid ciphertext: blob too short: {len(blob)} bytes"
         )
-    if Mode(blob[0]) is not mode:
+    try:
+        actual = Mode(blob[0])
+    except ValueError as exc:
+        raise UnsupportedCipherFormatError(
+            f"crypto: unsupported cipher format: got 0x{blob[0]:02x}"
+        ) from exc
+    if actual is not mode:
         raise UnsupportedCipherFormatError(
             f"crypto: unsupported cipher format: got 0x{blob[0]:02x}, "
             f"want {mode}"
