@@ -7,6 +7,7 @@ the loader lives beside them in ``config.py``.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -257,6 +258,15 @@ def _as_int(value: Any, name: str) -> int:
     return int(value)
 
 
+def _as_float(value: Any, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(f"{name} must be a number")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ConfigError(f"{name} must be a finite number")
+    return number
+
+
 def _as_bool(value: Any, name: str) -> bool:
     if not isinstance(value, bool):
         raise ConfigError(f"{name} must be true or false")
@@ -298,9 +308,10 @@ class RotationConfig:
             complete_drain_timeout=parse_duration(
                 _get(raw, "complete_drain_timeout",
                      DEFAULT_ROTATION_COMPLETE_DRAIN_TIMEOUT)),
-            barrier_quorum_ratio=float(
+            barrier_quorum_ratio=_as_float(
                 _get(raw, "barrier_quorum_ratio",
-                     DEFAULT_ROTATION_BARRIER_QUORUM_RATIO)),
+                     DEFAULT_ROTATION_BARRIER_QUORUM_RATIO),
+                "rotation.barrier_quorum_ratio"),
         )
 
 

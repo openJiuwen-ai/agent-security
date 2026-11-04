@@ -89,72 +89,11 @@ __all__ = [
     "load",
     "load_for_store",
     "parse_duration",
-]
-
-
-__all__ = [
-    "AdminConfig",
-    "AuthRule",
-    "BackupConfig",
-    "CacheConfig",
-    "ClusterConfig",
     "Code",
-    "Config",
-    "ConfigError",
-    "DEFAULT_ADMIN_ADDR",
-    "DEFAULT_ADMIN_API_KEY_MAX_LEN",
-    "DEFAULT_ADMIN_AUTH_TYPE_MAX_LEN",
-    "DEFAULT_ADMIN_KEY_TAG_MAX_LEN",
-    "DEFAULT_ADMIN_REAL_URL_MAX_LEN",
-    "DEFAULT_ADMIN_USER_ID_MAX_LEN",
-    "DEFAULT_BACKUP_DIR",
-    "DEFAULT_BACKUP_FILENAME_TPL",
-    "DEFAULT_BACKUP_KEEP",
-    "DEFAULT_CACHE_ENTRY_TTL",
-    "DEFAULT_CACHE_MAX_ENTRIES",
-    "DEFAULT_CACHE_TOMBSTONE_TTL",
-    "DEFAULT_CLUSTER_FETCH_TIMEOUT",
-    "DEFAULT_CRYPTO_MODE",
-    "DEFAULT_DATA_DIR",
-    "DEFAULT_ETCD_DIAL_TIMEOUT",
-    "DEFAULT_ETCD_NAMESPACE",
-    "DEFAULT_ETCD_OPERATION_TIMEOUT",
-    "DEFAULT_ETCD_WATCH_LIVENESS_TIMEOUT",
-    "DEFAULT_KEY_SNAPSHOT_FILENAME_TPL",
-    "DEFAULT_KEY_SNAPSHOT_KEEP",
-    "DEFAULT_RECOVERY_MAX_WAIT",
-    "DEFAULT_ROTATION_BARRIER_QUORUM_RATIO",
-    "DEFAULT_ROTATION_COMPLETE_DRAIN_TIMEOUT",
-    "DEFAULT_ROTATION_DRAIN_TIMEOUT",
-    "DEFAULT_ROTATION_MAX_PHASE_A_LOOPS",
-    "DEFAULT_ROTATION_PERIOD",
-    "DEFAULT_SERVER_BIND_ADDRESS",
-    "DEFAULT_SERVER_IDLE_CONN_TIMEOUT",
-    "DEFAULT_SERVER_MAX_REQUEST_BYTES",
-    "DEFAULT_SERVER_MAX_RESPONSE_BYTES",
-    "DEFAULT_SERVER_READ_HEADER_TIMEOUT",
-    "DEFAULT_SERVER_SHUTDOWN_TIMEOUT",
-    "DEFAULT_SERVER_SHUTDOWN_ZERO_BUDGET",
-    "DEFAULT_SSRF_CACHE_TTL",
-    "DEFAULT_SSRF_TIMEOUT",
-    "DEFAULT_UPSTREAM_TIMEOUT_MS",
-    "EtcdConfig",
-    "EtcdTLSConfig",
-    "RecoveryConfig",
-    "RotationConfig",
-    "SSRFConfig",
-    "ServerConfig",
     "ServiceError",
-    "VaultConfig",
-    "_as_dict",
-    "_as_int",
-    "_as_str",
-    "_get",
-    "format_duration",
-    "load",
-    "load_for_store",
-    "parse_duration",
 ]
+
+
 
 from .config_sections import (
     DEFAULT_UPSTREAM_TIMEOUT_MS,
@@ -226,27 +165,39 @@ from .config_sections import (
 )
 
 
+def _format_frac(value: int, digits: int) -> str:
+    """A whole part and a fraction with no trailing zeros."""
+    whole, rest = divmod(value, 10 ** digits)
+    if rest == 0:
+        return str(whole)
+    return f"{whole}.{rest:0{digits}d}".rstrip("0")
+
+
 def format_duration(value: timedelta) -> str:
     """Render a duration the way Go's ``time.Duration.String`` does."""
-    total_ns = int(value.total_seconds() * 1_000_000_000)
+    total_ns = (
+        (value.days * 86_400 + value.seconds) * 1_000_000_000
+        + value.microseconds * 1_000
+    )
     if total_ns == 0:
         return "0s"
     sign = "-" if total_ns < 0 else ""
     total_ns = abs(total_ns)
-    if total_ns < 1_000:
-        return f"{sign}{total_ns}ns"
-    if total_ns < 1_000_000:
-        return f"{sign}{total_ns / 1_000:.0f}µs"
     if total_ns < 1_000_000_000:
-        return f"{sign}{total_ns / 1_000_000:.0f}ms"
-    seconds = total_ns / 1_000_000_000
-    if seconds < 60:
-        return f"{sign}{seconds:.0f}s"
-    minutes, second = divmod(seconds, 60)
+        if total_ns < 1_000_000:
+            return f"{sign}{_format_frac(total_ns, 3)}µs"
+        return f"{sign}{_format_frac(total_ns, 6)}ms"
+    whole_seconds, nanos = divmod(total_ns, 1_000_000_000)
+    seconds = str(whole_seconds % 60)
+    if nanos:
+        seconds += f".{nanos:09d}".rstrip("0")
+    minutes = whole_seconds // 60
+    if minutes == 0:
+        return f"{sign}{seconds}s"
     if minutes < 60:
-        return f"{sign}{int(minutes)}m{int(second)}s"
-    hours, minute = divmod(int(minutes), 60)
-    return f"{sign}{hours}h{minute}m{int(second)}s"
+        return f"{sign}{minutes}m{seconds}s"
+    hours, minute = divmod(minutes, 60)
+    return f"{sign}{hours}h{minute}m{seconds}s"
 
 
 # --- the whole configuration ------------------------------------------------
@@ -398,7 +349,12 @@ class Config:
         if not bind:
             raise ConfigError("server.bind_address is empty")
         host, _, _ = bind.rpartition(":")
-        wildcard = host in ("", "0.0.0.0", "::", "[::]")
+        candidate = host.strip("[]")
+        try:
+            wildcard = not candidate or \
+                ipaddress.ip_address(candidate).is_unspecified
+        except ValueError:
+            wildcard = host in ("", "0", "0.0.0.0", "::", "[::]")
         if wildcard and not self.server.external_address.strip():
             raise ConfigError(
                 "server.external_address is required when "
