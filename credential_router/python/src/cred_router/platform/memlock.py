@@ -76,7 +76,12 @@ def _address_of(buf: Any) -> int:
     intermediate object is dropped before returning: it holds an export
     on the buffer, and an exported buffer cannot be resized.
     """
-    view = ctypes.c_char.from_buffer(buf)
+    try:
+        view = ctypes.c_char.from_buffer(buf)
+    except TypeError as exc:
+        raise MemlockError(
+            "memlock: the buffer must be writable (for example a bytearray)"
+        ) from exc
     try:
         return ctypes.addressof(view)
     finally:
