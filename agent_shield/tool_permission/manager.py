@@ -16,10 +16,15 @@ logger = logging.getLogger(__name__)
 DEFAULT_KEY = "default"
 DEFAULT_MAX_KEYS = 1024
 ONE_OFF_LABEL = "(one-off)"
+_MANAGER_INIT_TOKEN = object()
 
 
 class PermissionManager:
     """Keep a table of ``key -> PermissionEngine``; each key owns a full config.
+
+    Use :func:`get_permission_manager` to obtain the process-wide instance.
+    Callers must not build engines themselves: this manager is the only public
+    entry point for permission decisions.
 
     The manager only stores, replaces and removes configurations.  Rule
     matching stays in :class:`PermissionEngine`, and merging configurations
@@ -37,7 +42,16 @@ class PermissionManager:
       new one, and a decision already running keeps the engine it started with.
     """
 
-    def __init__(self, max_keys: int = DEFAULT_MAX_KEYS) -> None:
+    def __init__(
+        self,
+        max_keys: int = DEFAULT_MAX_KEYS,
+        *,
+        _token: object | None = None,
+    ) -> None:
+        if _token is not _MANAGER_INIT_TOKEN:
+            raise RuntimeError(
+                "PermissionManager is process-wide; use get_permission_manager()"
+            )
         if isinstance(max_keys, bool) or not isinstance(max_keys, int):
             raise TypeError("max_keys must be an int")
         if max_keys < 0:
@@ -146,6 +160,14 @@ class PermissionManager:
             return tuple(self._engines)
 
 
+def create_isolated_permission_manager(
+    max_keys: int = DEFAULT_MAX_KEYS,
+) -> PermissionManager:
+    """Build an isolated manager for tests; production must use get_permission_manager()."""
+
+    return PermissionManager(max_keys, _token=_MANAGER_INIT_TOKEN)
+
+
 _instance: PermissionManager | None = None
 _instance_lock = threading.Lock()
 
@@ -157,5 +179,5 @@ def get_permission_manager() -> PermissionManager:
     if _instance is None:
         with _instance_lock:
             if _instance is None:
-                _instance = PermissionManager()
+                _instance = PermissionManager(_token=_MANAGER_INIT_TOKEN)
     return _instance

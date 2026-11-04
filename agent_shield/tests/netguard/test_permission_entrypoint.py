@@ -11,12 +11,12 @@ import socket
 
 import pytest
 
-from agent_shield.tool_permission import PermissionEngine
 from agent_shield.tool_permission import PermissionLevel as L
+from agent_shield.tool_permission.engine import PermissionEngine
 from agent_shield.tool_permission.netguard.component import NetGuardComponent
 from agent_shield.tool_permission.netguard.iptext import ipv4, ipv6
 from agent_shield.tool_permission.netguard.tool_policy import NetworkToolPolicy
-from agent_shield.tool_permission.routing import CandidateKind, is_network_tool, resolve_route
+from agent_shield.tool_permission.routing import CandidateKind, is_network_tool
 
 FETCH_TOOLS = ("mcp_fetch_webpage", "fetch_webpage", "web_fetch_webpage")
 URL = "https://example.com/page"

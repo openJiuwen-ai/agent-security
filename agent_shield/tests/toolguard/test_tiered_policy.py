@@ -6,10 +6,10 @@ import asyncio
 
 import pytest
 
-from agent_shield.tool_permission import PermissionEngine, PermissionLevel
+from agent_shield.tool_permission import PermissionLevel
+from agent_shield.tool_permission.engine import PermissionEngine
 from agent_shield.tool_permission.routing import CandidateKind, CommandDialect, RouteContext
 from agent_shield.tool_permission.toolguard.tiered import TieredPolicyComponent
-
 
 _BASH_ROUTE = RouteContext(
     kind=CandidateKind.ORIGINAL,

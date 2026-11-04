@@ -575,6 +575,7 @@ class PermissionEngine:
 
         warnings = [warning for result in results for warning in result.warnings]
         external_paths = [path for result in results for path in result.external_paths]
+        ask_accesses = [item for result in results for item in result.ask_accesses]
 
         return PermissionResult(
             permission=(
@@ -586,6 +587,7 @@ class PermissionEngine:
             reason=strongest.reason if strongest is not None else None,
             warnings=warnings,
             external_paths=external_paths,
+            ask_accesses=ask_accesses,
         )
 
     @staticmethod

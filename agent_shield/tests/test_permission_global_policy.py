@@ -6,7 +6,8 @@ import asyncio
 
 import pytest
 
-from agent_shield.tool_permission import PermissionEngine, PermissionLevel
+from agent_shield.tool_permission import PermissionLevel
+from agent_shield.tool_permission.engine import PermissionEngine
 
 _CONFIG = {
     "tools": {"bash": "allow"},

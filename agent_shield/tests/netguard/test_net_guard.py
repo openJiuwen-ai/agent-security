@@ -12,9 +12,10 @@ from pathlib import Path
 
 import pytest
 
-import agent_shield.tool_permission as tool_permission
-from agent_shield.tool_permission import PermissionEngine, PermissionResult
+from agent_shield import tool_permission
 from agent_shield.tool_permission import PermissionLevel as L
+from agent_shield.tool_permission import PermissionResult
+from agent_shield.tool_permission.engine import PermissionEngine
 from agent_shield.tool_permission.netguard.component import NetGuardComponent
 from agent_shield.tool_permission.netguard.iptext import ipv4, ipv6
 
