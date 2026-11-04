@@ -28,50 +28,50 @@ from .format import format_duration
 #: The records table.
 RECORD_DDL = """
 CREATE TABLE IF NOT EXISTS vault_record (
-	id             TEXT PRIMARY KEY,
-	schema_version INTEGER NOT NULL,
-	data           BLOB NOT NULL,
-	dek_version    INTEGER NOT NULL,
-	row_version    INTEGER NOT NULL DEFAULT 1,
-	source_revision INTEGER NOT NULL DEFAULT 0,
-	created_at     INTEGER NOT NULL,
-	updated_at     INTEGER NOT NULL
+    id             TEXT PRIMARY KEY,
+    schema_version INTEGER NOT NULL,
+    data           BLOB NOT NULL,
+    dek_version    INTEGER NOT NULL,
+    row_version    INTEGER NOT NULL DEFAULT 1,
+    source_revision INTEGER NOT NULL DEFAULT 0,
+    created_at     INTEGER NOT NULL,
+    updated_at     INTEGER NOT NULL
 )"""
 
 #: The schema registry.
 SCHEMA_DDL = """
 CREATE TABLE IF NOT EXISTS vault_schema (
-	version    INTEGER PRIMARY KEY,
-	hash       BLOB NOT NULL,
-	definition TEXT NOT NULL,
-	created_at INTEGER NOT NULL
+    version    INTEGER PRIMARY KEY,
+    hash       BLOB NOT NULL,
+    definition TEXT NOT NULL,
+    created_at INTEGER NOT NULL
 )"""
 
 #: The key material and the rotation state.
 KEY_META_DDL = """
 CREATE TABLE IF NOT EXISTS vault_key_metadata (
-	id                     INTEGER PRIMARY KEY CHECK (id = 1),
-	active_dek_version     INTEGER NOT NULL,
-	pending_dek_version    INTEGER NOT NULL DEFAULT 0,
-	crypto_mode            TEXT    NOT NULL,
-	active_config_shard    BLOB    NOT NULL,
-	pending_config_shard   BLOB    NOT NULL DEFAULT x'',
-	file_shard_version     INTEGER NOT NULL DEFAULT 1,
-	file_shard_rotated_at  INTEGER NOT NULL DEFAULT 0,
-	last_rotate_at         INTEGER NOT NULL DEFAULT 0,
-	wrapped_dek            BLOB    NOT NULL,
-	pending_wrapped_dek    BLOB    NOT NULL DEFAULT x'',
-	superseded_dek_version INTEGER NOT NULL DEFAULT 0,
-	superseded_wrapped_dek BLOB    NOT NULL DEFAULT x'',
-	updated_at             INTEGER NOT NULL
+    id                     INTEGER PRIMARY KEY CHECK (id = 1),
+    active_dek_version     INTEGER NOT NULL,
+    pending_dek_version    INTEGER NOT NULL DEFAULT 0,
+    crypto_mode            TEXT    NOT NULL,
+    active_config_shard    BLOB    NOT NULL,
+    pending_config_shard   BLOB    NOT NULL DEFAULT x'',
+    file_shard_version     INTEGER NOT NULL DEFAULT 1,
+    file_shard_rotated_at  INTEGER NOT NULL DEFAULT 0,
+    last_rotate_at         INTEGER NOT NULL DEFAULT 0,
+    wrapped_dek            BLOB    NOT NULL,
+    pending_wrapped_dek    BLOB    NOT NULL DEFAULT x'',
+    superseded_dek_version INTEGER NOT NULL DEFAULT 0,
+    superseded_wrapped_dek BLOB    NOT NULL DEFAULT x'',
+    updated_at             INTEGER NOT NULL
 )"""
 
 #: The mirror's bookkeeping.
 SYNC_STATE_DDL = """
 CREATE TABLE IF NOT EXISTS vault_sync_state (
-	id               INTEGER PRIMARY KEY CHECK (id = 1),
-	last_applied_rev INTEGER NOT NULL DEFAULT 0,
-	updated_at       INTEGER NOT NULL
+    id               INTEGER PRIMARY KEY CHECK (id = 1),
+    last_applied_rev INTEGER NOT NULL DEFAULT 0,
+    updated_at       INTEGER NOT NULL
 )"""
 
 T = TypeVar("T")
@@ -338,14 +338,14 @@ def put_record(db: Database, row: RecordRow) -> None:
     row.updated_at = now
     cur = db.execute(
         """
-		INSERT INTO vault_record (id, schema_version, data, dek_version, row_version, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 1, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			schema_version = excluded.schema_version,
-			data           = excluded.data,
-			dek_version    = excluded.dek_version,
-			row_version    = vault_record.row_version + 1,
-			updated_at     = excluded.updated_at""",
+        INSERT INTO vault_record (id, schema_version, data, dek_version, row_version, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 1, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            schema_version = excluded.schema_version,
+            data           = excluded.data,
+            dek_version    = excluded.dek_version,
+            row_version    = vault_record.row_version + 1,
+            updated_at     = excluded.updated_at""",
         (
             row.id,
             row.schema_version,
@@ -423,9 +423,9 @@ def update_record_cipher(
     """Write a re-encrypted record."""
     cur = db.execute(
         """
-		UPDATE vault_record
-		SET data = ?, dek_version = ?, row_version = row_version + 1, updated_at = ?
-		WHERE id = ? AND row_version = ?""",
+        UPDATE vault_record
+        SET data = ?, dek_version = ?, row_version = row_version + 1, updated_at = ?
+        WHERE id = ? AND row_version = ?""",
         (data, dek_version, int(time.time()), id, row_version),
     )
     return cur.rowcount > 0
@@ -445,8 +445,8 @@ def insert_schema_entry(db: Database, entry: SchemaEntry) -> None:
     """Record a schema version."""
     db.execute(
         """
-		INSERT INTO vault_schema (version, hash, definition, created_at)
-		VALUES (?, ?, ?, ?)""",
+        INSERT INTO vault_schema (version, hash, definition, created_at)
+        VALUES (?, ?, ?, ?)""",
         (entry.version, entry.hash, entry.definition, int(time.time())),
     )
 
