@@ -6,7 +6,8 @@ import asyncio
 import tempfile
 from pathlib import Path
 
-from agent_shield.tool_permission import PermissionEngine, PermissionLevel
+from agent_shield.tool_permission import PermissionLevel
+from agent_shield.tool_permission.engine import PermissionEngine
 from agent_shield.tool_permission.fileguard.file_guard import build_file_guard_checker
 
 

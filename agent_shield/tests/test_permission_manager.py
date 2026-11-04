@@ -26,14 +26,14 @@ def _level(manager: PermissionManager, key: str | None = None, command: str = "l
 
 
 def test_default_key_exists_with_empty_config() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
 
     assert manager.has_config("default")
     assert dict(manager.get_config()) == {}
 
 
 def test_update_without_key_targets_default() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
 
     manager.update_config(_BASE)
 
@@ -42,7 +42,7 @@ def test_update_without_key_targets_default() -> None:
 
 
 def test_update_new_key_registers_it() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
 
     manager.update_config(_BASE, "s1")
 
@@ -52,7 +52,7 @@ def test_update_new_key_registers_it() -> None:
 
 
 def test_update_existing_key_replaces_the_whole_config() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
     manager.update_config(_DENY, "s1")
     assert _level(manager, "s1") is PermissionLevel.DENY
 
@@ -63,7 +63,7 @@ def test_update_existing_key_replaces_the_whole_config() -> None:
 
 
 def test_invalid_config_on_existing_key_keeps_the_old_one() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
     manager.update_config(_DENY, "s1")
 
     with pytest.raises(ValueError):
@@ -73,7 +73,7 @@ def test_invalid_config_on_existing_key_keeps_the_old_one() -> None:
 
 
 def test_invalid_config_on_new_key_does_not_register_it() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
 
     with pytest.raises(ValueError):
         manager.update_config({"enabled": "yes"}, "s1")
@@ -82,7 +82,7 @@ def test_invalid_config_on_new_key_does_not_register_it() -> None:
 
 
 def test_registered_config_is_a_deep_copy() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
     config: dict[str, Any] = {"tools": {"bash": "allow"}, "package_builtin_rules": False}
     manager.update_config(config, "s1")
 
@@ -92,7 +92,7 @@ def test_registered_config_is_a_deep_copy() -> None:
 
 
 def test_update_config_rejects_non_mapping() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
 
     with pytest.raises(TypeError):
         manager.update_config([], "s1")  # type: ignore[arg-type]
@@ -103,7 +103,7 @@ def test_update_config_rejects_non_mapping() -> None:
 
 
 def test_keys_decide_independently() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
     manager.update_config(_BASE, "a")
     manager.update_config(_DENY, "b")
 
@@ -112,7 +112,7 @@ def test_keys_decide_independently() -> None:
 
 
 def test_updating_one_key_leaves_others_untouched() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
     manager.update_config(_BASE)
     manager.update_config(_BASE, "a")
     manager.update_config(_BASE, "b")
@@ -125,7 +125,7 @@ def test_updating_one_key_leaves_others_untouched() -> None:
 
 
 def test_evaluate_global_policy_directly_follows_the_key() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
     manager.update_config(_BASE, "a")
     manager.update_config(_DENY, "b")
 
@@ -140,7 +140,7 @@ def test_evaluate_global_policy_directly_follows_the_key() -> None:
 
 
 def test_one_off_config_decides_without_registering() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
     manager.update_config(_BASE, "a")
     keys_before = manager.keys()
 
@@ -153,7 +153,7 @@ def test_one_off_config_decides_without_registering() -> None:
 
 
 def test_one_off_config_for_global_policy() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
 
     permission, _rule = asyncio.run(
         manager.evaluate_global_policy_directly("bash", {"command": "ls"}, config=_DENY)
@@ -163,7 +163,7 @@ def test_one_off_config_for_global_policy() -> None:
 
 
 def test_one_off_config_is_not_affected_by_later_changes_to_the_dict() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
     config = {"tools": {"bash": "deny"}, "package_builtin_rules": False, "shell_allowlist": None}
     result = asyncio.run(manager.check_permission("bash", {"command": "ls"}, config=config))
     config["tools"]["bash"] = "allow"
@@ -173,7 +173,7 @@ def test_one_off_config_is_not_affected_by_later_changes_to_the_dict() -> None:
 
 
 def test_config_takes_precedence_over_key() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
     manager.update_config(_BASE, "a")
 
     result = asyncio.run(manager.check_permission("bash", {"command": "ls"}, "a", config=_DENY))
@@ -186,7 +186,7 @@ def test_config_takes_precedence_over_key() -> None:
 
 
 def test_invalid_one_off_config_raises() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
 
     with pytest.raises(ValueError):
         asyncio.run(manager.check_permission("bash", {"command": "ls"}, config={"enabled": "yes"}))
@@ -198,7 +198,7 @@ def test_invalid_one_off_config_raises() -> None:
 
 
 def test_unregistered_key_raises_and_does_not_fall_back_to_default() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
     manager.update_config(_BASE)
 
     with pytest.raises(KeyError):
@@ -211,7 +211,7 @@ def test_unregistered_key_raises_and_does_not_fall_back_to_default() -> None:
 
 @pytest.mark.parametrize("key", ["", "   "])
 def test_empty_key_is_rejected(key: str) -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
 
     with pytest.raises(ValueError):
         manager.update_config(_BASE, key)
@@ -223,7 +223,7 @@ def test_empty_key_is_rejected(key: str) -> None:
 
 @pytest.mark.parametrize("key", [1, b"a", ("a",)])
 def test_non_string_key_is_rejected(key: Any) -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
 
     with pytest.raises(TypeError):
         manager.update_config(_BASE, key)
@@ -232,7 +232,7 @@ def test_non_string_key_is_rejected(key: Any) -> None:
 
 
 def test_invalid_call_arguments_still_raise() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
 
     with pytest.raises(ValueError):
         asyncio.run(manager.check_permission("", {}))
@@ -244,7 +244,7 @@ def test_invalid_call_arguments_still_raise() -> None:
 
 
 def test_remove_makes_the_key_unregistered() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
     manager.update_config(_BASE, "s1")
 
     assert manager.remove_config("s1") is True
@@ -254,11 +254,11 @@ def test_remove_makes_the_key_unregistered() -> None:
 
 
 def test_remove_missing_key_returns_false() -> None:
-    assert PermissionManager().remove_config("nope") is False
+    assert PermissionManager._for_test().remove_config("nope") is False
 
 
 def test_default_cannot_be_removed() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
 
     with pytest.raises(ValueError):
         manager.remove_config("default")
@@ -266,7 +266,7 @@ def test_default_cannot_be_removed() -> None:
 
 
 def test_key_can_be_registered_again_after_removal() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
     manager.update_config(_DENY, "s1")
     manager.remove_config("s1")
 
@@ -279,7 +279,7 @@ def test_key_can_be_registered_again_after_removal() -> None:
 
 
 def test_new_key_beyond_limit_is_rejected() -> None:
-    manager = PermissionManager(max_keys=3)
+    manager = PermissionManager._for_test(max_keys=3)
     for name in ("a", "b", "c"):
         manager.update_config(_BASE, name)
 
@@ -291,7 +291,7 @@ def test_new_key_beyond_limit_is_rejected() -> None:
 
 
 def test_default_does_not_count_towards_the_limit() -> None:
-    manager = PermissionManager(max_keys=1)
+    manager = PermissionManager._for_test(max_keys=1)
 
     manager.update_config(_BASE, "a")
 
@@ -299,7 +299,7 @@ def test_default_does_not_count_towards_the_limit() -> None:
 
 
 def test_replacing_an_existing_key_works_when_full() -> None:
-    manager = PermissionManager(max_keys=1)
+    manager = PermissionManager._for_test(max_keys=1)
     manager.update_config(_BASE, "a")
 
     manager.update_config(_DENY, "a")
@@ -308,7 +308,7 @@ def test_replacing_an_existing_key_works_when_full() -> None:
 
 
 def test_removal_frees_a_slot() -> None:
-    manager = PermissionManager(max_keys=1)
+    manager = PermissionManager._for_test(max_keys=1)
     manager.update_config(_BASE, "a")
     manager.remove_config("a")
 
@@ -320,11 +320,11 @@ def test_removal_frees_a_slot() -> None:
 @pytest.mark.parametrize("limit", [-1, True, 1.5, "3"])
 def test_invalid_limit_is_rejected(limit: Any) -> None:
     with pytest.raises((TypeError, ValueError)):
-        PermissionManager(max_keys=limit)
+        PermissionManager._for_test(max_keys=limit)
 
 
 def test_zero_limit_allows_only_default() -> None:
-    manager = PermissionManager(max_keys=0)
+    manager = PermissionManager._for_test(max_keys=0)
 
     with pytest.raises(RuntimeError):
         manager.update_config(_BASE, "a")
@@ -336,7 +336,7 @@ def test_zero_limit_allows_only_default() -> None:
 
 
 def test_get_config_does_not_expose_internal_state() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
     manager.update_config(_BASE, "s1")
 
     view = manager.get_config("s1")
@@ -350,7 +350,7 @@ def test_get_config_does_not_expose_internal_state() -> None:
 
 
 def test_in_flight_decision_keeps_the_config_it_started_with() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
     manager.update_config(_BASE, "s1")
 
     async def scenario():
@@ -364,7 +364,7 @@ def test_in_flight_decision_keeps_the_config_it_started_with() -> None:
 
 
 def test_concurrent_registration_never_exceeds_the_limit() -> None:
-    manager = PermissionManager(max_keys=10)
+    manager = PermissionManager._for_test(max_keys=10)
     barrier = threading.Barrier(40)
     rejected: list[int] = []
 
@@ -386,7 +386,7 @@ def test_concurrent_registration_never_exceeds_the_limit() -> None:
 
 
 def test_concurrent_updates_of_one_key_leave_a_whole_config() -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
     barrier = threading.Barrier(20)
     configs = [
         {
@@ -442,11 +442,52 @@ def test_concurrent_first_access_creates_one_instance(monkeypatch: pytest.Monkey
     assert len({id(item) for item in seen}) == 1
 
 
-def test_direct_construction_is_independent_of_the_singleton() -> None:
-    own = PermissionManager()
+def test_direct_construction_is_rejected() -> None:
+    with pytest.raises(RuntimeError, match="get_permission_manager"):
+        PermissionManager()
+
+
+def test_for_test_manager_is_independent_of_the_singleton() -> None:
+    own = PermissionManager._for_test()
     own.update_config(_DENY, "only-here")
 
     assert not get_permission_manager().has_config("only-here")
+
+
+def test_component_apis_accept_a_one_off_config() -> None:
+    manager = PermissionManager._for_test()
+    config = {
+        "host_guard": {"enabled": True},
+        "tools": {"bash": "allow"},
+        "package_builtin_rules": False,
+        "shell_allowlist": None,
+    }
+
+    assert manager.component_active("host_guard", config=config) is True
+    result = manager.evaluate_component(
+        "host_guard", "bash", {"command": "pkill -f jiuwenswarm"}, config=config
+    )
+    assert result is not None
+    assert result.permission is PermissionLevel.DENY
+
+    assert manager.component_active("host_guard", config={"host_guard": {"enabled": False}}) is False
+
+
+def test_component_view_binds_a_derived_config() -> None:
+    manager = PermissionManager._for_test()
+    view = manager.component_view(
+        "host_guard",
+        {
+            "host_guard": {"enabled": True},
+            "package_builtin_rules": False,
+            "shell_allowlist": None,
+        },
+    )
+
+    assert view.active() is True
+    result = view.evaluate("bash", {"command": "pkill -f jiuwenswarm"})
+    assert result is not None
+    assert result.permission is PermissionLevel.DENY
 
 
 def test_manager_is_exported_from_the_facade() -> None:

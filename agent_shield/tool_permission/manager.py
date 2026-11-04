@@ -16,10 +16,45 @@ logger = logging.getLogger(__name__)
 DEFAULT_KEY = "default"
 DEFAULT_MAX_KEYS = 1024
 ONE_OFF_LABEL = "(one-off)"
+_MANAGER_INIT_TOKEN = object()
+
+
+class PermissionComponentView:
+    """One named component bound to one derived configuration.
+
+    Created by :meth:`PermissionManager.component_view`. Callers that need
+    repeated component-level decisions on a derived config (for example the
+    file-guard path pipeline) hold this view instead of building an engine.
+    """
+
+    def __init__(self, engine: PermissionEngine, name: str) -> None:
+        self._engine = engine
+        self._name = name
+
+    def active(self) -> bool:
+        return self._engine.component_active(self._name)
+
+    def evaluate(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, Any],
+    ) -> PermissionResult | None:
+        return self._engine.evaluate_component(self._name, tool_name, tool_args)
+
+    def collect_ask_accesses(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, Any],
+    ) -> list[tuple[str, str]]:
+        return self._engine.collect_file_guard_ask_accesses(tool_name, tool_args)
 
 
 class PermissionManager:
     """Keep a table of ``key -> PermissionEngine``; each key owns a full config.
+
+    Use :func:`get_permission_manager` to obtain the process-wide instance.
+    Callers must not build engines themselves: this manager is the only public
+    entry point for permission decisions.
 
     The manager only stores, replaces and removes configurations.  Rule
     matching stays in :class:`PermissionEngine`, and merging configurations
@@ -37,7 +72,16 @@ class PermissionManager:
       new one, and a decision already running keeps the engine it started with.
     """
 
-    def __init__(self, max_keys: int = DEFAULT_MAX_KEYS) -> None:
+    def __init__(
+        self,
+        max_keys: int = DEFAULT_MAX_KEYS,
+        *,
+        _token: object | None = None,
+    ) -> None:
+        if _token is not _MANAGER_INIT_TOKEN:
+            raise RuntimeError(
+                "PermissionManager is process-wide; use get_permission_manager()"
+            )
         if isinstance(max_keys, bool) or not isinstance(max_keys, int):
             raise TypeError("max_keys must be an int")
         if max_keys < 0:
@@ -47,6 +91,12 @@ class PermissionManager:
         self._engines: dict[str, PermissionEngine] = {
             DEFAULT_KEY: PermissionEngine({}, label=DEFAULT_KEY)
         }
+
+    @classmethod
+    def _for_test(cls, max_keys: int = DEFAULT_MAX_KEYS) -> PermissionManager:
+        """Build an isolated manager for tests; production uses get_permission_manager()."""
+
+        return cls(max_keys, _token=_MANAGER_INIT_TOKEN)
 
     @staticmethod
     def _resolve_key(key: str | None) -> str:
@@ -131,6 +181,50 @@ class PermissionManager:
             tool_name, tool_args
         )
 
+    def evaluate_component(
+        self,
+        name: str,
+        tool_name: str,
+        tool_args: Mapping[str, Any],
+        key: str | None = None,
+        *,
+        config: Mapping[str, Any] | None = None,
+    ) -> PermissionResult | None:
+        """Run one named component under ``key`` or a one-off ``config``."""
+
+        return self._engine_for(key, config).evaluate_component(
+            name, tool_name, tool_args
+        )
+
+    def component_active(
+        self,
+        name: str,
+        key: str | None = None,
+        *,
+        config: Mapping[str, Any] | None = None,
+    ) -> bool:
+        """Whether the named component is active under ``key`` or one-off ``config``."""
+
+        return self._engine_for(key, config).component_active(name)
+
+    def component_view(
+        self,
+        name: str,
+        config: Mapping[str, Any],
+    ) -> PermissionComponentView:
+        """Bind one component to a derived config for repeated decisions.
+
+        Use this when the caller purposely derived a config (not a registered
+        key) and needs component-only semantics; the caller owns the view's
+        lifetime and must rebuild it if the config changes.
+        """
+
+        if not isinstance(config, Mapping):
+            raise TypeError("config must be a mapping")
+        return PermissionComponentView(
+            PermissionEngine(config, label=ONE_OFF_LABEL), name
+        )
+
     def get_config(self, key: str | None = None) -> Mapping[str, Any]:
         """Return the configuration registered under ``key`` as a read-only view."""
 
@@ -157,5 +251,5 @@ def get_permission_manager() -> PermissionManager:
     if _instance is None:
         with _instance_lock:
             if _instance is None:
-                _instance = PermissionManager()
+                _instance = PermissionManager(_token=_MANAGER_INIT_TOKEN)
     return _instance

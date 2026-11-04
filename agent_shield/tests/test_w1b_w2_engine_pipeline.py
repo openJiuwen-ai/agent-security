@@ -14,7 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from agent_shield.tool_permission import PermissionEngine, PermissionLevel, PermissionResult
+from agent_shield.tool_permission import PermissionLevel, PermissionResult
+from agent_shield.tool_permission.engine import PermissionEngine
 from agent_shield.tool_permission.fileguard.component import (
     FileGuardComponent,
     ImmutableControlPlaneComponent,

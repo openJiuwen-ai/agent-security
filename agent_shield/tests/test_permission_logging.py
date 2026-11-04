@@ -94,7 +94,7 @@ async def test_component_failure_is_logged_and_still_raised(caplog, monkeypatch)
 
 @pytest.mark.asyncio
 async def test_manager_tags_decisions_with_key_and_logs_config_changes(caplog) -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
     with caplog.at_level(logging.INFO, logger="agent_shield"):
         manager.update_config(CONFIG, "u1")
         manager.update_config(CONFIG, "u1")
@@ -113,7 +113,7 @@ async def test_manager_tags_decisions_with_key_and_logs_config_changes(caplog) -
 
 @pytest.mark.asyncio
 async def test_unregistered_key_logs_a_warning(caplog) -> None:
-    manager = PermissionManager()
+    manager = PermissionManager._for_test()
     with caplog.at_level(logging.WARNING, logger=MANAGER_LOGGER), pytest.raises(KeyError):
         await manager.check_permission("bash", {"command": "ls"}, "nobody")
 

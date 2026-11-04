@@ -8,8 +8,9 @@ from itertools import product
 
 import pytest
 
-from agent_shield.tool_permission import PermissionEngine, PermissionLevel, PermissionResult
+from agent_shield.tool_permission import PermissionLevel, PermissionResult
 from agent_shield.tool_permission.component import PermissionComponent
+from agent_shield.tool_permission.engine import PermissionEngine
 from agent_shield.tool_permission.routing import RouteInterest, SecurityTarget
 
 _STRICTNESS_ORDER = [
