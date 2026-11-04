@@ -6,11 +6,9 @@ and the two are **interoperable** — they read and
 write the same files, so a store created by one is readable by the other and
 a deployment can move from one to the other without migrating data.
 
-The reason the port exists: `litellm` reads its secrets through
-`get_secret`, and today that is a Unix-domain-socket round trip to a
-separate Go process. In Python the same call can be an in-process function
-call, which removes the socket's latency, its permission model and the
-cross-language frame codec from the hot path.
+The port exists so a Python process can use the store directly, without a
+Unix-domain-socket round trip to a separate service. The client and the
+LLM-gateway integration live in the consuming application.
 
 ## Layout
 
@@ -22,7 +20,6 @@ src/cred_router/
   credmgr/    the credential router: store, keystore, cache, backup, admin
   admin/      the admin API — the only writer of a credential
   proxy/      the LLM upstream proxy
-  litellm/    the adapter that lets litellm read secrets in-process
   platform/   the error envelope, the configuration, the single-instance guard
   redact/     the one rule that decides how much of a key a log line may carry
 test/
@@ -68,15 +65,12 @@ lost key rather than a typo.
 
 ```sh
 pip install -e .            # the core
-pip install -e '.[litellm]' # plus the litellm adapter
 pip install -e '.[admin]'   # plus the admin API server
 pip install -e '.[proxy]'   # plus the proxy's HTTP client
 pip install -e '.[etcd]'    # plus the etcd client
 ```
 
 The core package imports nothing beyond `cryptography` and `PyYAML`.
-Importing `cred_router` must never pull in litellm: `cred_router.litellm`
-is the only module that may, and it is an optional extra.
 
 ## Running
 
@@ -140,12 +134,11 @@ schema = Schema(version=1, fields=[
     FieldDef(name="secret", type=Type.BYTES, encrypted=True),
 ])
 vault = Vault.open(VaultConfig(data_dir="/var/lib/credential-router/vault"), schema)
-secret = vault.get("litellm/model/gpt-4o")
+secret = vault.get("example/model/gpt-4o")
 ```
 
-See `src/cred_router/litellm/` for the litellm adapter, which adds the
-namespace filtering the proxy needs so that litellm's per-request lookups
-never reach the store.
+The client, the object-id conventions and the LLM-gateway adapter live in
+the consuming application, not in this package.
 
 ## Compatibility rules
 

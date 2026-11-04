@@ -26,7 +26,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-litellm = ["litellm"]
 admin = ["fastapi>=0.110", "uvicorn>=0.27"]
 proxy = ["httpx>=0.27"]
 etcd = ["etcd3>=0.12"]

@@ -13,9 +13,6 @@ The package is layered:
 ``cred_router.credmgr``
     The credential router itself: the credential store, the key material
     it uses, the admin API and the proxy.
-``cred_router.litellm``
-    The adapter that lets litellm read secrets in-process. Importing this
-    package must not pull in litellm; that module is an optional extra.
 """
 
 from __future__ import annotations
