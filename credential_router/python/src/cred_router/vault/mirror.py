@@ -63,16 +63,16 @@ def apply_mirrored_record(
     now = int(time.time())
     db.execute(
         """
-		INSERT INTO vault_record (id, schema_version, data, dek_version, row_version, source_revision, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 1, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			schema_version  = excluded.schema_version,
-			data            = excluded.data,
-			dek_version     = excluded.dek_version,
-			source_revision = excluded.source_revision,
-			row_version     = vault_record.row_version + 1,
-			updated_at      = excluded.updated_at
-		WHERE vault_record.source_revision < excluded.source_revision""",
+        INSERT INTO vault_record (id, schema_version, data, dek_version, row_version, source_revision, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            schema_version  = excluded.schema_version,
+            data            = excluded.data,
+            dek_version     = excluded.dek_version,
+            source_revision = excluded.source_revision,
+            row_version     = vault_record.row_version + 1,
+            updated_at      = excluded.updated_at
+        WHERE vault_record.source_revision < excluded.source_revision""",
         (
             id,
             int(schema_version),
@@ -122,11 +122,11 @@ def write_sync_state(db: Database, rev: int) -> None:
     """
     db.execute(
         """
-		INSERT INTO vault_sync_state (id, last_applied_rev, updated_at)
-		VALUES (?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			last_applied_rev = MAX(vault_sync_state.last_applied_rev, excluded.last_applied_rev),
-			updated_at      = excluded.updated_at""",
+        INSERT INTO vault_sync_state (id, last_applied_rev, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            last_applied_rev = MAX(vault_sync_state.last_applied_rev, excluded.last_applied_rev),
+            updated_at      = excluded.updated_at""",
         (MIRROR_SYNC_STATE_ID, int(rev), int(time.time())),
     )
 
