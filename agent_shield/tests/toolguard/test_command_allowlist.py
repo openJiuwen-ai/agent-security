@@ -30,6 +30,33 @@ def test_default_allowlist_allows_known_prefix_and_denies_unknown_prefix() -> No
     assert denied is not None and denied.permission is PermissionLevel.DENY
 
 
+def test_allowlist_pads_chain_separators_before_taking_prefix() -> None:
+    """``ls;`` must match allowlisted ``ls``, not fail as token ``ls;``."""
+
+    component = CommandAllowlistComponent()
+    component.configure({"shell_allowlist": ["ls"]})
+    route = _shell_route()
+
+    for command in (
+        "ls;",
+        "ls; rm file",
+        "ls;rm file",
+        "ls|wc",
+        "ls&& true",
+        "ls|| false",
+    ):
+        result = run(component.evaluate("bash", {"command": command}, route=route))
+        assert result is not None, command
+        assert result.permission is PermissionLevel.ALLOW, command
+        assert "ls" in (result.reason or "")
+
+    denied = run(
+        component.evaluate("bash", {"command": "rm; ls"}, route=route)
+    )
+    assert denied is not None and denied.permission is PermissionLevel.DENY
+    assert "rm" in (denied.reason or "")
+
+
 def test_explicit_none_or_empty_list_disables_allowlist() -> None:
     route = _shell_route(CommandDialect.POWERSHELL)
     for value in (None, []):

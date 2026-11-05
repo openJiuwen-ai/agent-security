@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import os
+import re
 
 from ..models import PermissionLevel, PermissionResult
 from ..routing import CandidateKind, RouteContext
@@ -17,6 +18,15 @@ _DEFAULT_ALLOWLIST = (
     "mv", "move", "grep", "find", "curl", "wget", "ps", "df", "ping",
 )
 _MISSING = object()
+# Pad shell chain separators so ``ls;rm`` / ``ls; rm`` yield first token ``ls``.
+_SHELL_CHAIN_SEP = re.compile(r"(&&|\|\||[;|&])")
+
+
+def _command_prefix(command: str) -> str:
+    """Return the first argv-like token after spacing shell chain separators."""
+
+    spaced = _SHELL_CHAIN_SEP.sub(r" \1 ", command)
+    return spaced.split()[0] if spaced.strip() else ""
 
 
 class CommandAllowlistComponent:
@@ -70,7 +80,7 @@ class CommandAllowlistComponent:
         if not isinstance(command, str):
             return None
 
-        prefix = command.split()[0] if command.strip() else ""
+        prefix = _command_prefix(command)
         matched = any(
             prefix == allowed or prefix.endswith(os.sep + allowed)
             for allowed in self._allowlist
