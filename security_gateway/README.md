@@ -1,8 +1,8 @@
-# cred_router (Python)
+# security_gateway (Python)
 
 A Python implementation of `cred_router`: a generic secure store and
-credential router. It is a port of the Go service in the parent directory
-(`..`), and the two are **interoperable** — they read and
+credential router. It is a port of the Go service in `../credential_router`,
+and the two are **interoperable** — they read and
 write the same files, so a store created by one is readable by the other and
 a deployment can move from one to the other without migrating data.
 
@@ -25,11 +25,11 @@ src/cred_router/
   litellm/    the adapter that lets litellm read secrets in-process
   platform/   the error envelope, the configuration, the single-instance guard
   redact/     the one rule that decides how much of a key a log line may carry
-tests/
+test/
   unit/        one directory per package
   integration/ the whole stack on one machine
   interop/     the checks that only make sense against the Go implementation
-docs/
+doc/
   ADMIN_API_CONTRACT.md   what the admin API answers, as the Go binary answers it
   ETCD_CLIENT_CONTRACT.md what the etcd client offers, and the CAS rule
 ```
@@ -39,7 +39,7 @@ Python module is supposed to do, read the Go file it came from — the Go
 code is the specification, and its comments explain the reasoning behind
 each rule.
 
-The two files in `docs/` are worth reading before changing the admin API or
+The two files in `doc/` are worth reading before changing the admin API or
 the etcd code. Both were written by **running the Go binary** and recording
 what it actually answered, because the Go source is easy to misread:
 `respondJSON` wraps the body, and several response shapes are assembled in
@@ -107,7 +107,7 @@ The Go service's tests are the specification. Port them rather than
 inventing new ones: the Go suite is 114 files and 36k lines, and it encodes
 the failure modes that matter.
 
-`tests/interop/` holds the checks that only make sense against the other
+`test/interop/` holds the checks that only make sense against the other
 implementation: the vault's files, the vault's socket protocol, the
 credential database, and the admin API's answers. They drive the prebuilt
 Go binary — the Go toolchain is not needed, and the binary is treated as

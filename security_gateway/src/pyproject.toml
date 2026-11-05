@@ -3,7 +3,7 @@
 # The package lives in this directory (``cred_router/``), so this is the
 # directory a consumer points at:
 #
-#     pip install "cred-router-python @ git+ssh://git@host/repo.git#subdirectory=src"
+#     pip install "cred-router-python @ git+ssh://git@host/repo.git#subdirectory=security_gateway/src"
 #
 # The repository root holds the development configuration (pytest, and
 # whatever else the repo configures); the package's own metadata is here,

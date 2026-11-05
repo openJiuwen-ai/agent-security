@@ -13,6 +13,7 @@ ENV/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
+.eggs/
 .coverage
 .coverage.*
 coverage.xml
