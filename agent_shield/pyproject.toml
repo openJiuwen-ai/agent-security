@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agent-shield"
 version = "0.1.0"
-description = "Agent security components: tool permission decision and content detection"
+description = "Agent security components: behavior policy, intercepts, tool permission, and content detection"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
-dependencies = []
+dependencies = ["PyYAML>=6"]
 
 [project.optional-dependencies]
 dev = [
@@ -20,7 +20,11 @@ dev = [
     # Optional shell parser backend; without it the conservative fallback scanner is used.
     "tree-sitter>=0.25.0,<0.26.0",
     "tree-sitter-bash>=0.25.0,<0.26.0",
+    "jsonschema>=4",
 ]
+
+[project.scripts]
+agent-pdp = "agent_shield.policy_engine.server.cli:main"
 
 [tool.setuptools]
 # Flat layout: this directory is itself the agent_shield package.
@@ -35,10 +39,29 @@ packages = [
     "agent_shield.tool_permission.hostguard",
     "agent_shield.tool_permission.netguard",
     "agent_shield.tool_permission.toolguard",
+    "agent_shield.policy_engine",
+    "agent_shield.policy_engine.matchers",
+    "agent_shield.policy_engine.models",
+    "agent_shield.policy_engine.core",
+    "agent_shield.policy_engine.builtin",
+    "agent_shield.policy_engine.events",
+    "agent_shield.policy_engine.server",
+    "agent_shield.intercepts",
+    "agent_shield.intercepts.tool_call",
+    "agent_shield.intercepts.tool_call.adapters",
+    "agent_shield.intercepts.tool_call.adapters.jiuwenswarm",
+    "agent_shield.intercepts.native_call",
+    "agent_shield.intercepts.tool_output",
+    "agent_shield.intercepts.tool_output.adapters",
+    "agent_shield.intercepts.tool_output.adapters.jiuwenswarm",
 ]
+
+[tool.setuptools.package-data]
+agent_shield = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--import-mode=importlib"
 markers = [
     "unit: Unit tests",
     "integration: Integration tests",

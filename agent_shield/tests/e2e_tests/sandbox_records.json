@@ -1,0 +1,3415 @@
+[
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_001",
+      "operation_id": "op_sb_001",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/app.py",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-001"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_002",
+      "operation_id": "op_sb_002",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/main.py",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-002"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_003",
+      "operation_id": "op_sb_003",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/README.md",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-003"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_004",
+      "operation_id": "op_sb_004",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/docs/design.md",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-004"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_005",
+      "operation_id": "op_sb_005",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tests/test_app.py",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-005"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_006",
+      "operation_id": "op_sb_006",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/package.json",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-006"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_007",
+      "operation_id": "op_sb_007",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/util.py",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-007"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_008",
+      "operation_id": "op_sb_008",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/config.py",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-008"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_009",
+      "operation_id": "op_sb_009",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/LICENSE",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-009"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_010",
+      "operation_id": "op_sb_010",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/api.py",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-010"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_011",
+      "operation_id": "op_sb_011",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/docs/readme.md",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-011"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_012",
+      "operation_id": "op_sb_012",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/models.py",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-012"
+  },
+  {
+    "label": "workspace write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_013",
+      "operation_id": "op_sb_013",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/out.py",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      }
+    },
+    "id": "sb-013"
+  },
+  {
+    "label": "workspace write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_014",
+      "operation_id": "op_sb_014",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/build/note.txt",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      }
+    },
+    "id": "sb-014"
+  },
+  {
+    "label": "workspace write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_015",
+      "operation_id": "op_sb_015",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/generated.py",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      }
+    },
+    "id": "sb-015"
+  },
+  {
+    "label": "workspace write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_016",
+      "operation_id": "op_sb_016",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/docs/notes.md",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      }
+    },
+    "id": "sb-016"
+  },
+  {
+    "label": "workspace write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_017",
+      "operation_id": "op_sb_017",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/log.txt",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      }
+    },
+    "id": "sb-017"
+  },
+  {
+    "label": "workspace write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_018",
+      "operation_id": "op_sb_018",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/new_module.py",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      }
+    },
+    "id": "sb-018"
+  },
+  {
+    "label": "workspace mkdir",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_019",
+      "operation_id": "op_sb_019",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "mkdir",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/pkg",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      }
+    },
+    "id": "sb-019"
+  },
+  {
+    "label": "workspace mkdir",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_020",
+      "operation_id": "op_sb_020",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "mkdir",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tests/fixtures",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      }
+    },
+    "id": "sb-020"
+  },
+  {
+    "label": "workspace copy",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_021",
+      "operation_id": "op_sb_021",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "copy",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/app.py",
+            "role": "source"
+          },
+          {
+            "path": "C:/Users/me/proj/src/app.copy.py",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-021"
+  },
+  {
+    "label": "workspace move",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_022",
+      "operation_id": "op_sb_022",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "move",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/log.txt",
+            "role": "source"
+          },
+          {
+            "path": "C:/Users/me/proj/tmp/log-old.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-022"
+  },
+  {
+    "label": "workspace replace",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_023",
+      "operation_id": "op_sb_023",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "replace",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/new_module.py",
+            "role": "source"
+          },
+          {
+            "path": "C:/Users/me/proj/src/app.py",
+            "role": "target"
+          },
+          {
+            "path": "C:/Users/me/proj/src/app.py.bak",
+            "role": "backup"
+          }
+        ]
+      }
+    },
+    "id": "sb-023"
+  },
+  {
+    "label": "workspace symlink",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_024",
+      "operation_id": "op_sb_024",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "symlink",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/app.py",
+            "role": "source"
+          },
+          {
+            "path": "C:/Users/me/proj/src/app.link.py",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-024"
+  },
+  {
+    "label": "workspace hardlink",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_025",
+      "operation_id": "op_sb_025",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "hardlink",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/README.md",
+            "role": "source"
+          },
+          {
+            "path": "C:/Users/me/proj/README.link.md",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-025"
+  },
+  {
+    "label": "pseudo device",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_026",
+      "operation_id": "op_sb_026",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "NUL",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-026"
+  },
+  {
+    "label": "pseudo device",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_027",
+      "operation_id": "op_sb_027",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "\\\\.\\CON",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-027"
+  },
+  {
+    "label": "outside read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_028",
+      "operation_id": "op_sb_028",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/other/notes.txt",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-028"
+  },
+  {
+    "label": "outside read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_029",
+      "operation_id": "op_sb_029",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "D:/public/readme.txt",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-029"
+  },
+  {
+    "label": "outside read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_030",
+      "operation_id": "op_sb_030",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/other/docs/guide.md",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-030"
+  },
+  {
+    "label": "allowlist connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_031",
+      "operation_id": "op_sb_031",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": "pypi.org",
+            "ip": null,
+            "port": 443
+          }
+        ]
+      }
+    },
+    "id": "sb-031"
+  },
+  {
+    "label": "allowlist connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_032",
+      "operation_id": "op_sb_032",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": "files.pythonhosted.org",
+            "ip": null,
+            "port": 443
+          }
+        ]
+      }
+    },
+    "id": "sb-032"
+  },
+  {
+    "label": "allowlist connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_033",
+      "operation_id": "op_sb_033",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": "upload.pypi.org",
+            "ip": null,
+            "port": 443
+          }
+        ]
+      }
+    },
+    "id": "sb-033"
+  },
+  {
+    "label": "unlisted connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_034",
+      "operation_id": "op_sb_034",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": "example.com",
+            "ip": null,
+            "port": 443
+          }
+        ]
+      }
+    },
+    "id": "sb-034"
+  },
+  {
+    "label": "unlisted connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_035",
+      "operation_id": "op_sb_035",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": null,
+            "ip": "8.8.8.8",
+            "port": 53
+          }
+        ]
+      }
+    },
+    "id": "sb-035"
+  },
+  {
+    "label": "unlisted connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_036",
+      "operation_id": "op_sb_036",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": "example.org",
+            "ip": null,
+            "port": 80
+          }
+        ]
+      }
+    },
+    "id": "sb-036"
+  },
+  {
+    "label": "process exec",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_037",
+      "operation_id": "op_sb_037",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "process",
+        "kind": "create_process",
+        "access": "execute",
+        "resources": [
+          {
+            "role": "image",
+            "image": "C:/Program Files/Git/cmd/git.exe",
+            "command_line": "git status"
+          }
+        ]
+      }
+    },
+    "id": "sb-037"
+  },
+  {
+    "label": "process exec",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_038",
+      "operation_id": "op_sb_038",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "process",
+        "kind": "create_process",
+        "access": "execute",
+        "resources": [
+          {
+            "role": "image",
+            "image": "C:/Program Files/Git/cmd/git.exe",
+            "command_line": "git diff"
+          }
+        ]
+      }
+    },
+    "id": "sb-038"
+  },
+  {
+    "label": "sensitive file",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_039",
+      "operation_id": "op_sb_039",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/.env",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-039"
+  },
+  {
+    "label": "sensitive file",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_040",
+      "operation_id": "op_sb_040",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/.env.local",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-040"
+  },
+  {
+    "label": "sensitive file",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_041",
+      "operation_id": "op_sb_041",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/secrets/id_rsa",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-041"
+  },
+  {
+    "label": "sensitive file",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_042",
+      "operation_id": "op_sb_042",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/keys/server.pem",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-042"
+  },
+  {
+    "label": "sensitive file",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_043",
+      "operation_id": "op_sb_043",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/.aws/credentials",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-043"
+  },
+  {
+    "label": "sensitive file",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_044",
+      "operation_id": "op_sb_044",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/.ssh/authorized_keys",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-044"
+  },
+  {
+    "label": "sensitive file",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_045",
+      "operation_id": "op_sb_045",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/.kube/config",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-045"
+  },
+  {
+    "label": "sensitive file",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_046",
+      "operation_id": "op_sb_046",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/.npmrc",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-046"
+  },
+  {
+    "label": "system critical delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_047",
+      "operation_id": "op_sb_047",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Windows/System32/kernel32.dll",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-047"
+  },
+  {
+    "label": "system critical delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_048",
+      "operation_id": "op_sb_048",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Windows/System32/drivers/etc/hosts",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-048"
+  },
+  {
+    "label": "system critical delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_049",
+      "operation_id": "op_sb_049",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Windows/SysWOW64/ntdll.dll",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-049"
+  },
+  {
+    "label": "system new file",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_050",
+      "operation_id": "op_sb_050",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Windows/Temp/agent-new.dll",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      }
+    },
+    "id": "sb-050"
+  },
+  {
+    "label": "system new file",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_051",
+      "operation_id": "op_sb_051",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Windows/System32/newfilter.sys",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      }
+    },
+    "id": "sb-051"
+  },
+  {
+    "label": "system new file",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_052",
+      "operation_id": "op_sb_052",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Program Files/Vendor/new.exe",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      }
+    },
+    "id": "sb-052"
+  },
+  {
+    "label": "outside delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_053",
+      "operation_id": "op_sb_053",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/other/secret.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-053"
+  },
+  {
+    "label": "outside delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_054",
+      "operation_id": "op_sb_054",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "D:/archive/old.dat",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-054"
+  },
+  {
+    "label": "outside delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_055",
+      "operation_id": "op_sb_055",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Temp/leftover.log",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-055"
+  },
+  {
+    "label": "outside write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_056",
+      "operation_id": "op_sb_056",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/other/plant.txt",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      }
+    },
+    "id": "sb-056"
+  },
+  {
+    "label": "outside write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_057",
+      "operation_id": "op_sb_057",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "D:/drop/payload.bin",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      }
+    },
+    "id": "sb-057"
+  },
+  {
+    "label": "outside write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_058",
+      "operation_id": "op_sb_058",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Temp/staged.txt",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      }
+    },
+    "id": "sb-058"
+  },
+  {
+    "label": "denylist connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_059",
+      "operation_id": "op_sb_059",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": null,
+            "ip": "169.254.169.254",
+            "port": 80
+          }
+        ]
+      }
+    },
+    "id": "sb-059"
+  },
+  {
+    "label": "denylist connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_060",
+      "operation_id": "op_sb_060",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": "metadata.google.internal",
+            "ip": null,
+            "port": 80
+          }
+        ]
+      }
+    },
+    "id": "sb-060"
+  },
+  {
+    "label": "denylist connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_061",
+      "operation_id": "op_sb_061",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": "localhost",
+            "ip": null,
+            "port": 80
+          }
+        ]
+      }
+    },
+    "id": "sb-061"
+  },
+  {
+    "label": "denylist connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_062",
+      "operation_id": "op_sb_062",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": null,
+            "ip": "127.0.0.1",
+            "port": 443
+          }
+        ]
+      }
+    },
+    "id": "sb-062"
+  },
+  {
+    "label": "denylist connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_063",
+      "operation_id": "op_sb_063",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": null,
+            "ip": "::1",
+            "port": 443
+          }
+        ]
+      }
+    },
+    "id": "sb-063"
+  },
+  {
+    "label": "denylist connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_064",
+      "operation_id": "op_sb_064",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": null,
+            "ip": "169.254.169.254",
+            "port": 443
+          }
+        ]
+      }
+    },
+    "id": "sb-064"
+  },
+  {
+    "label": "raw disk write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_065",
+      "operation_id": "op_sb_065",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "device_open",
+        "access": "write",
+        "resources": [
+          {
+            "path": "\\\\.\\PhysicalDrive0",
+            "role": "subject",
+            "device_class": "raw_disk"
+          }
+        ]
+      }
+    },
+    "id": "sb-065"
+  },
+  {
+    "label": "volume write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_066",
+      "operation_id": "op_sb_066",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "device_open",
+        "access": "write",
+        "resources": [
+          {
+            "path": "\\\\.\\C:",
+            "role": "subject",
+            "device_class": "volume"
+          }
+        ]
+      }
+    },
+    "id": "sb-066"
+  },
+  {
+    "label": "named pipe",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_067",
+      "operation_id": "op_sb_067",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "pipe_open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "\\\\.\\pipe\\other-service",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-067"
+  },
+  {
+    "label": "other device",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_068",
+      "operation_id": "op_sb_068",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "device_open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "\\\\.\\COM1",
+            "role": "subject",
+            "device_class": "other"
+          }
+        ]
+      }
+    },
+    "id": "sb-068"
+  },
+  {
+    "label": "git force push",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_069",
+      "operation_id": "op_sb_069",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "process",
+        "kind": "create_process",
+        "access": "execute",
+        "resources": [
+          {
+            "role": "image",
+            "image": "C:/Program Files/Git/cmd/git.exe",
+            "command_line": "git push --force origin main"
+          }
+        ]
+      }
+    },
+    "id": "sb-069"
+  },
+  {
+    "label": "encoded powershell",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_070",
+      "operation_id": "op_sb_070",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "process",
+        "kind": "create_process",
+        "access": "execute",
+        "resources": [
+          {
+            "role": "image",
+            "image": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+            "command_line": "powershell -EncodedCommand QQ=="
+          }
+        ]
+      }
+    },
+    "id": "sb-070"
+  },
+  {
+    "label": "privilege escalate",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_071",
+      "operation_id": "op_sb_071",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "process",
+        "kind": "create_process",
+        "access": "execute",
+        "resources": [
+          {
+            "role": "image",
+            "image": "C:/Windows/System32/sudo.exe",
+            "command_line": "sudo rm C:/Windows/System32/kernel32.dll"
+          }
+        ]
+      }
+    },
+    "id": "sb-071"
+  },
+  {
+    "label": "runas",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_072",
+      "operation_id": "op_sb_072",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "process",
+        "kind": "create_process",
+        "access": "execute",
+        "resources": [
+          {
+            "role": "image",
+            "image": "C:/Windows/System32/runas.exe",
+            "command_line": "runas /user:Administrator cmd.exe"
+          }
+        ]
+      }
+    },
+    "id": "sb-072"
+  },
+  {
+    "label": "process identity mismatch",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_073",
+      "operation_id": "op_sb_073",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/app.py",
+            "role": "subject",
+            "process": {
+              "pid": 99,
+              "tid": 4212,
+              "parent_pid": 3100,
+              "process_instance_id": "4200:134214912000000000",
+              "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+              "command_line": "pwsh -File build.ps1",
+              "identity": {
+                "user_sid": "S-1-5-21-1",
+                "integrity_level": "medium"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "id": "sb-073"
+  },
+  {
+    "label": "process identity mismatch",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_074",
+      "operation_id": "op_sb_074",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/README.md",
+            "role": "subject",
+            "process": {
+              "pid": 4200,
+              "tid": 4212,
+              "parent_pid": 3100,
+              "process_instance_id": "4200:134214912000000000",
+              "image": "C:/Windows/System32/cmd.exe",
+              "command_line": "pwsh -File build.ps1",
+              "identity": {
+                "user_sid": "S-1-5-21-1",
+                "integrity_level": "medium"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "id": "sb-074"
+  },
+  {
+    "label": "process identity mismatch",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_075",
+      "operation_id": "op_sb_075",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/LICENSE",
+            "role": "subject",
+            "process": {
+              "pid": 4200,
+              "tid": 4212,
+              "parent_pid": 3100,
+              "process_instance_id": "4200:134214912000000000",
+              "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+              "command_line": "pwsh -File build.ps1",
+              "identity": {
+                "user_sid": "S-1-5-21-999",
+                "integrity_level": "medium"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "id": "sb-075"
+  },
+  {
+    "label": "process identity mismatch",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_076",
+      "operation_id": "op_sb_076",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/package.json",
+            "role": "subject",
+            "process": {
+              "pid": 4200,
+              "tid": 4212,
+              "parent_pid": 3100,
+              "process_instance_id": "4200:134214912000000000",
+              "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+              "command_line": "pwsh -File build.ps1",
+              "identity": {
+                "user_sid": "S-1-5-21-1",
+                "integrity_level": "high"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "id": "sb-076"
+  },
+  {
+    "label": "invalid record",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_077",
+      "operation_id": "op_sb_077",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "socket",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/app.py",
+            "role": "subject"
+          }
+        ]
+      }
+    },
+    "id": "sb-077"
+  },
+  {
+    "label": "invalid record",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_078",
+      "operation_id": "op_sb_078",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read"
+      }
+    },
+    "id": "sb-078"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_079",
+      "operation_id": "op_sb_079",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-1.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-079"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_080",
+      "operation_id": "op_sb_080",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-2.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-080"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_081",
+      "operation_id": "op_sb_081",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-3.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-081"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_082",
+      "operation_id": "op_sb_082",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-4.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-082"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_083",
+      "operation_id": "op_sb_083",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-5.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-083"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_084",
+      "operation_id": "op_sb_084",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-6.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-084"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_085",
+      "operation_id": "op_sb_085",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-7.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-085"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_086",
+      "operation_id": "op_sb_086",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-8.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-086"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_087",
+      "operation_id": "op_sb_087",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-9.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-087"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_088",
+      "operation_id": "op_sb_088",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-10.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-088"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_089",
+      "operation_id": "op_sb_089",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-11.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-089"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_090",
+      "operation_id": "op_sb_090",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-12.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-090"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_091",
+      "operation_id": "op_sb_091",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-13.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-091"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_092",
+      "operation_id": "op_sb_092",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-14.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-092"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_093",
+      "operation_id": "op_sb_093",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-15.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-093"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_094",
+      "operation_id": "op_sb_094",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-16.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-094"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_095",
+      "operation_id": "op_sb_095",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-17.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-095"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_096",
+      "operation_id": "op_sb_096",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-18.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-096"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_097",
+      "operation_id": "op_sb_097",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-19.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-097"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_098",
+      "operation_id": "op_sb_098",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-20.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-098"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_099",
+      "operation_id": "op_sb_099",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-21.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-099"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_sb_100",
+      "operation_id": "op_sb_100",
+      "time": "2026-10-20T08:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-22.txt",
+            "role": "target"
+          }
+        ]
+      }
+    },
+    "id": "sb-100"
+  }
+]

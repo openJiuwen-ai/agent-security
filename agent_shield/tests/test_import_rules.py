@@ -7,8 +7,9 @@ Rules:
 - Each submodule is its own facade; callers import from ``agent_shield.<sub>``.
 - Inside a submodule, imports are relative.  Across submodules, only the other
   submodule's root may be imported (never its internals).
-- Code outside agent_shield (jiuwenbox, agent_ssas) imports at most one level
-  below the package root, and agent_shield never imports those projects.
+- Code outside agent_shield (jiuwenbox, agent_ssas) imports a package root, or
+  one intercept (agent_shield.intercepts.tool_call, native_call, tool_output).
+  agent_shield never imports those projects.
 """
 
 from __future__ import annotations
@@ -25,6 +26,13 @@ import agent_shield.tool_permission as tool_permission
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = PACKAGE_DIR.parent
 SUBMODULES = ("tool_permission", "detection")
+_INTERCEPTS = {"tool_call", "native_call", "tool_output"}
+
+
+def _beyond_public_surface(parts: list[str]) -> bool:
+    if parts[0] != "agent_shield" or len(parts) <= 2:
+        return False
+    return not (len(parts) == 3 and parts[1] == "intercepts" and parts[2] in _INTERCEPTS)
 
 
 def _python_files(root: Path):
@@ -109,6 +117,6 @@ def test_other_projects_use_submodule_roots_only(project: str) -> None:
     for path in _python_files(root):
         for module, level in _imports(path):
             parts = module.split(".")
-            if not level and parts[0] == "agent_shield" and len(parts) > 2:
+            if not level and _beyond_public_surface(parts):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
     assert not offenders, offenders
