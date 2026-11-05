@@ -4,7 +4,7 @@
 # because ``src/`` is the installable unit — the directory a consumer
 # points at when it declares the dependency:
 #
-#     pip install "cred-router-python @ git+ssh://git@host/repo.git#subdirectory=src"
+#     pip install "cred-router-python @ git+ssh://git@host/repo.git#subdirectory=security_gateway/src"
 #
 # Installing from this directory therefore means installing from ``src/``:
 #
