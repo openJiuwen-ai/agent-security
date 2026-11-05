@@ -753,10 +753,13 @@ class FileGuardChecker:
 
         overall = PermissionLevel.ALLOW
         hit_external: list[str] = []
+        ask_accesses: list[tuple[str, str]] = []
         matched_bits: list[str] = []
         for p, action in accesses:
             level, rule_id = self._resolve_one(p, action)
             overall = tiered_strictest(overall, level)
+            if level == PermissionLevel.ASK:
+                ask_accesses.append((p.as_posix(), action))
             if level != PermissionLevel.ALLOW:
                 hit_external.append(p.as_posix())
                 if rule_id:
@@ -786,6 +789,7 @@ class FileGuardChecker:
             reason=reason,
             matched_rule=matched,
             external_paths=hit_external or None,
+            ask_accesses=ask_accesses,
         )
 
     def collect_ask_accesses(

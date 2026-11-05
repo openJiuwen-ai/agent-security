@@ -4,12 +4,13 @@
 
 本子模块的公开接口只有下面 ``__all__`` 列出的名字；调用方只从这里导入，
 ``toolguard`` / ``fileguard`` / ``netguard`` / ``hostguard`` 以及 ``engine``、
-``routing`` 等内部模块不对外承诺稳定。
+``routing`` 等内部模块不对外承诺稳定。``PermissionEngine`` 是内部实现，
+调用方一律通过 :func:`get_permission_manager` 做权限判定；需要与进程级单例
+隔离的实例（主要供测试）用 :func:`new_permission_manager` 构造。
 """
 
 from .component import PermissionComponent
-from .engine import PermissionEngine
-from .manager import PermissionManager, get_permission_manager
+from .manager import PermissionManager, get_permission_manager, new_permission_manager
 from .models import PermissionLevel, PermissionResult
 from .routing import (
     CandidateKind,
@@ -25,18 +26,18 @@ from .sandbox_projection import (
 )
 
 __all__ = [
+    "CandidateKind",
+    "CommandDialect",
     "PermissionComponent",
-    "PermissionEngine",
     "PermissionLevel",
     "PermissionManager",
     "PermissionResult",
-    "CandidateKind",
-    "CommandDialect",
     "RouteContext",
     "RouteInterest",
-    "SecurityTarget",
     "SandboxPolicyProjection",
+    "SecurityTarget",
     "SkippedSandboxRule",
-    "project_sandbox_policy",
     "get_permission_manager",
+    "new_permission_manager",
+    "project_sandbox_policy",
 ]

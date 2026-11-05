@@ -7,7 +7,8 @@ from typing import Any
 
 import pytest
 
-from agent_shield.tool_permission import PermissionEngine, PermissionLevel
+from agent_shield.tool_permission import PermissionLevel
+from agent_shield.tool_permission.engine import PermissionEngine
 from agent_shield.tool_permission.models import PermissionResult
 from agent_shield.tool_permission.toolguard import shell_ast
 from agent_shield.tool_permission.toolguard.builtin_rules import package_command_rules

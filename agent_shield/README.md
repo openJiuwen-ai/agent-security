@@ -32,6 +32,8 @@ pytest
 
 ## 规则
 
-- 对外只从子模块根导入，例如 `from agent_shield.tool_permission import PermissionEngine`；`agent_shield` 包根不导出任何名字，子模块内部（`toolguard` 等）禁止深导
+- 对外只从子模块根导入，例如 `from agent_shield.tool_permission import get_permission_manager`；`agent_shield` 包根不导出任何名字，子模块内部（`toolguard` 等）禁止深导
+- 权限判定：生产调用方必须用 `get_permission_manager()` 取进程级单例；测试或需要与单例隔离的实例用 `new_permission_manager()`；直接 `PermissionManager()` 会抛 `RuntimeError`
+- `PermissionEngine` 位于 `agent_shield.tool_permission.engine`，仅供内部实现使用，不从门面导出
 - 子模块内部用相对导入；跨子模块只能导入对方的根；`jiuwenbox` 等外部项目同样只导入到子模块根（由 `tests/test_import_rules.py` 守住）
 - 各工作项目录内部组织自己定，收口前不要跨目录引用

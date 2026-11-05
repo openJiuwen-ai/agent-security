@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
-from agent_shield.tool_permission import PermissionEngine, PermissionLevel
+from agent_shield.tool_permission import PermissionLevel
+from agent_shield.tool_permission.engine import PermissionEngine
 from agent_shield.tool_permission.routing import CandidateKind, CommandDialect, RouteContext
 from agent_shield.tool_permission.toolguard.command_allowlist import CommandAllowlistComponent
 

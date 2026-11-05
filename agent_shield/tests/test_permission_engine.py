@@ -7,15 +7,16 @@ from collections.abc import Mapping
 
 import pytest
 
-from agent_shield.tool_permission import PermissionEngine, PermissionLevel, PermissionResult
+from agent_shield.tool_permission import PermissionLevel, PermissionResult
 from agent_shield.tool_permission.component import PermissionComponent
-from agent_shield.tool_permission.toolguard.injection import InjectionComponent
+from agent_shield.tool_permission.engine import PermissionEngine
 from agent_shield.tool_permission.routing import (
     CandidateKind,
     CommandDialect,
     RouteContext,
     resolve_route,
 )
+from agent_shield.tool_permission.toolguard.injection import InjectionComponent
 
 
 class ResultComponent:

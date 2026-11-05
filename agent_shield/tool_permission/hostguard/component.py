@@ -82,12 +82,12 @@ def _tool_basename(tool_name: str) -> str:
 
 
 class HostGuardComponent:
-    """Block host-killing shell commands when ``host_guard.enabled`` is true.
+    """Block host-killing shell commands unless ``host_guard.enabled`` is false.
 
-    Callers are not distinguished. The only switch is ``enabled``. The other
-    accepted key is ``protected_patterns``: omit it to keep the product-name
-    floor, or pass a list to replace that floor only. Segment, image, pid,
-    and worktree checks stay either way.
+    Callers are not distinguished. The only switch is ``enabled`` and it is on
+    by default. The other accepted key is ``protected_patterns``: omit it to
+    keep the product-name floor, or pass a list to replace that floor only.
+    Segment, image, pid, and worktree checks stay either way.
 
     With the switch on, worktree accepts only a real ``git worktree add`` and
     refuses one it cannot parse. Pid checks use the wide command match.
@@ -115,7 +115,7 @@ class HostGuardComponent:
         if not isinstance(config, Mapping):
             raise TypeError("Engine configuration must be a mapping")
         section = host_guard_section(config)
-        enabled_raw = section.get("enabled", False)
+        enabled_raw = section.get("enabled", True)
         if not isinstance(enabled_raw, bool):
             raise TypeError("host_guard.enabled must be a boolean")
         _reject_unknown_host_guard_keys(section)

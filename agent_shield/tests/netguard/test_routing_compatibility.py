@@ -10,8 +10,9 @@ import asyncio
 
 import pytest
 
-from agent_shield.tool_permission import PermissionEngine, PermissionResult
 from agent_shield.tool_permission import PermissionLevel as L
+from agent_shield.tool_permission import PermissionResult
+from agent_shield.tool_permission.engine import PermissionEngine
 from agent_shield.tool_permission.netguard.component import NetGuardComponent
 from agent_shield.tool_permission.netguard.iptext import ipv4
 from agent_shield.tool_permission.routing import is_network_tool

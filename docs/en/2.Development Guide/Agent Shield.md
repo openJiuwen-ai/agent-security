@@ -14,9 +14,11 @@ agent-shield (distribution name `agent-shield`, import name `agent_shield`) is t
 The package root exports nothing. Import from a submodule root:
 
 ```python
-from agent_shield.tool_permission import PermissionEngine
+from agent_shield.tool_permission import get_permission_manager
 from agent_shield.detection import RuleBasedPromptInjectionBackend
 ```
+
+`PermissionEngine` lives in `agent_shield.tool_permission.engine` and is internal; the facade does not export it. Production code obtains the process-wide manager with `get_permission_manager()`; tests that need an isolated instance use `new_permission_manager()`.
 
 `toolguard`, `fileguard`, `netguard`, and `hostguard` are directories inside `tool_permission`. They are not a stable import path.
 

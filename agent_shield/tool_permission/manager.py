@@ -1,4 +1,9 @@
-"""Process-wide permission entry point holding one configuration per key."""
+"""Process-wide permission entry point holding one configuration per key.
+
+Production callers use :func:`get_permission_manager`; tests that need an
+instance isolated from the process-wide singleton use
+:func:`new_permission_manager`.
+"""
 
 from __future__ import annotations
 
@@ -16,10 +21,19 @@ logger = logging.getLogger(__name__)
 DEFAULT_KEY = "default"
 DEFAULT_MAX_KEYS = 1024
 ONE_OFF_LABEL = "(one-off)"
+_MANAGER_INIT_TOKEN = object()
 
 
 class PermissionManager:
     """Keep a table of ``key -> PermissionEngine``; each key owns a full config.
+
+    Production callers must obtain the process-wide instance from
+    :func:`get_permission_manager`.  Tests or callers that need an isolated
+    instance must use :func:`new_permission_manager`; constructing the class
+    directly still raises ``RuntimeError`` so the process-wide singleton stays
+    the single production entry point.  Callers must not build engines
+    themselves: this manager is the only public entry point for permission
+    decisions.
 
     The manager only stores, replaces and removes configurations.  Rule
     matching stays in :class:`PermissionEngine`, and merging configurations
@@ -37,11 +51,20 @@ class PermissionManager:
       new one, and a decision already running keeps the engine it started with.
     """
 
-    def __init__(self, max_keys: int = DEFAULT_MAX_KEYS) -> None:
+    def __init__(
+        self,
+        max_keys: int = DEFAULT_MAX_KEYS,
+        *,
+        _token: object | None = None,
+    ) -> None:
         if isinstance(max_keys, bool) or not isinstance(max_keys, int):
             raise TypeError("max_keys must be an int")
         if max_keys < 0:
             raise ValueError("max_keys must not be negative")
+        if _token is not _MANAGER_INIT_TOKEN:
+            raise RuntimeError(
+                "PermissionManager is process-wide; use get_permission_manager()"
+            )
         self._max_keys = max_keys
         self._lock = threading.Lock()
         self._engines: dict[str, PermissionEngine] = {
@@ -146,6 +169,17 @@ class PermissionManager:
             return tuple(self._engines)
 
 
+def new_permission_manager(max_keys: int = DEFAULT_MAX_KEYS) -> PermissionManager:
+    """Build an isolated manager for tests and local use.
+
+    Production callers must use :func:`get_permission_manager` instead; this
+    factory exists only for tests or code that needs an instance independent
+    of the process-wide singleton.
+    """
+
+    return PermissionManager(max_keys, _token=_MANAGER_INIT_TOKEN)
+
+
 _instance: PermissionManager | None = None
 _instance_lock = threading.Lock()
 
@@ -157,5 +191,5 @@ def get_permission_manager() -> PermissionManager:
     if _instance is None:
         with _instance_lock:
             if _instance is None:
-                _instance = PermissionManager()
+                _instance = PermissionManager(_token=_MANAGER_INIT_TOKEN)
     return _instance

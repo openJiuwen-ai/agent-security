@@ -14,9 +14,11 @@ agent-shield（分发名 `agent-shield`，导入名 `agent_shield`）是进程�
 包根不导出名字。调用方从子模块根导入：
 
 ```python
-from agent_shield.tool_permission import PermissionEngine
+from agent_shield.tool_permission import get_permission_manager
 from agent_shield.detection import RuleBasedPromptInjectionBackend
 ```
+
+`PermissionEngine` 位于 `agent_shield.tool_permission.engine`，仅供内部使用，门面不导出。生产代码通过 `get_permission_manager()` 获取进程级管理器；测试需要隔离实例时用 `new_permission_manager()`。
 
 `toolguard`、`fileguard`、`netguard`、`hostguard` 是 `tool_permission` 内部目录，不作为稳定导入路径。
 

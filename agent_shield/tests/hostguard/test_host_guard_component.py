@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from agent_shield.tool_permission import PermissionEngine, PermissionLevel
+from agent_shield.tool_permission import PermissionLevel
+from agent_shield.tool_permission.engine import PermissionEngine
 
 
 def _run(awaitable):
@@ -298,6 +299,30 @@ def test_removed_pid_switches_are_rejected() -> None:
             "shell_allowlist": None,
         })
     assert engine.config["host_guard"]["enabled"] is True
+
+
+def test_host_guard_is_enabled_by_default() -> None:
+    engine = PermissionEngine({
+        "tools": {"bash": "allow"},
+        "package_builtin_rules": False,
+        "shell_allowlist": None,
+    })
+    assert engine.component_active("host_guard") is True
+    result = _run(engine.check_permission("bash", {"command": "pkill -f jiuwenswarm"}))
+    assert result.permission is PermissionLevel.DENY
+    assert result.matched_rule == "host_guard:safety"
+
+
+def test_host_guard_can_be_disabled_explicitly() -> None:
+    engine = PermissionEngine({
+        "host_guard": {"enabled": False},
+        "tools": {"bash": "allow"},
+        "package_builtin_rules": False,
+        "shell_allowlist": None,
+    })
+    assert engine.component_active("host_guard") is False
+    result = _run(engine.check_permission("bash", {"command": "pkill -f jiuwenswarm"}))
+    assert result.permission is not PermissionLevel.DENY
 
 
 def test_host_guard_reads_cmd_when_command_is_absent() -> None:

@@ -8,8 +8,9 @@ from typing import Any
 
 import pytest
 
-from agent_shield.tool_permission import PermissionEngine, PermissionLevel, PermissionResult
+from agent_shield.tool_permission import PermissionLevel, PermissionResult
 from agent_shield.tool_permission.component import PermissionComponent
+from agent_shield.tool_permission.engine import PermissionEngine
 from agent_shield.tool_permission.routing import RouteInterest, SecurityTarget
 
 _BASE = {"tools": {"bash": "allow"}, "package_builtin_rules": False, "shell_allowlist": None}
