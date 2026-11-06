@@ -1,8 +1,9 @@
 # agent-shield
 
-安全决策 SDK（进程内、纯规则、无 LLM、无网络 IO）。两件事：
+安全决策 SDK（进程内、纯规则、无 LLM、无网络 IO）。三件事：
 
 - **F1 动作决策**（`tool_permission/`）：对工具调用输出确定性结论 allow / ask / deny
+- **行为策略**（`policy_engine/`）：对工具调用和 native record 给出 allow / ask / deny。`intercepts/tool_call/` 接入工具调用，`intercepts/native_call/` 接入系统调用，`intercepts/tool_output/` 把工具结果交给 `detection`
 - **F3 内容检测**（`detection/`）：对进入模型的内容做注入等检测，输出概率性软信号
 
 沙箱（F2）是独立交付件，见同仓 `../jiuwenbox/`。
@@ -19,8 +20,14 @@
 | W4 内容检测 | `detection/` |
 | W6 总入口 / 对外门面 | `__init__.py` 与 `tool_permission/` 根（收口人定） |
 | W8 测试 | `tests/` 下同名子目录 |
-| W1b 宿主命令守卫、W7 调用方迁移 | 不在本仓（jiuwenswarm / agent-core 侧） |
+| 行为策略引擎 | `policy_engine/` |
+| 工具调用接入 | `intercepts/tool_call/` |
+| 工具结果接入 | `intercepts/tool_output/` |
+| W1b 宿主进程守卫 | `intercepts/native_call/` |
+| W7 调用方迁移 | 不在本仓（jiuwenswarm / agent-core 侧） |
 | W5 沙箱接线 | 服务端在 `../jiuwenbox/`，SDK 侧接线随 W6 定 |
+
+`schema/` 是决策与 native record 的 JSON Schema，`native/windows-process-guard/` 是进程守卫的 C/C++ 实现（Microsoft Detours 为 git submodule，克隆需 `--recurse-submodules`）。三方规则经规则集接口注册。PDP 设计见 [docs/agent_shield-design.md](docs/agent_shield-design.md)。
 
 ## 环境
 

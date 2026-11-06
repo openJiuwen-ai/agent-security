@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "process-guard-broker/v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["spec", "action"],
+  "properties": {
+    "spec": { "const": "process-guard-broker/v1" },
+    "action": { "enum": ["provision_child"] },
+    "child": {
+      "type": "object",
+      "required": ["pid", "tid", "architecture"],
+      "properties": {
+        "pid": { "type": "integer" },
+        "tid": { "type": "integer" },
+        "architecture": { "enum": ["x64", "x86"] },
+        "creation_flags": { "type": "integer" }
+      }
+    }
+  }
+}

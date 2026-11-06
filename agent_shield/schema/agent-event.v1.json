@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-event/v1",
+  "type": "object",
+  "additionalProperties": true,
+  "not": { "required": ["preauth"] },
+  "required": ["spec", "id", "time", "source", "workspace", "action"],
+  "properties": {
+    "spec": { "const": "agent-event/v1" },
+    "id": { "type": "string", "minLength": 1 },
+    "time": { "type": "string", "minLength": 1 },
+    "source": { "type": "object" },
+    "cause": {
+      "type": "object",
+      "required": ["tool_call_id", "name"],
+      "properties": {
+        "tool_call_id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "properties": {
+        "root": { "type": "string" },
+        "trusted_dirs": { "type": "array", "items": { "type": "string" } },
+        "os": { "enum": ["windows", "posix"] }
+      }
+    },
+    "user_intent": { "type": ["object", "null"] },
+    "action": {
+      "type": "object",
+      "required": ["category"],
+      "properties": {
+        "category": { "enum": ["tool_call", "model_call"] },
+        "effects": { "type": "array" },
+        "normalization": {
+          "type": "object",
+          "properties": { "status": { "enum": ["ok", "partial", "failed"] } }
+        }
+      }
+    },
+    "host_capabilities": { "type": "object" },
+    "execution": { "type": "object" }
+  }
+}

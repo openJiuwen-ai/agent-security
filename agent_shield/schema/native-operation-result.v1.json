@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "native-operation-result/v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["spec", "request_id", "operation_id", "success", "disposition"],
+  "properties": {
+    "spec": { "const": "native-operation-result/v1" },
+    "request_id": { "type": "string" },
+    "operation_id": { "type": "string" },
+    "success": { "type": "boolean" },
+    "disposition": { "enum": ["trash", "permanent", "denied", "failed"] }
+  }
+}
