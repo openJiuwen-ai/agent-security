@@ -1,4 +1,4 @@
-"""The store's behaviour.
+"""The vault's behaviour.
 
 The Go counterpart is ``tests/unit/vault/vault_test.go``.
 """
@@ -36,14 +36,14 @@ from .conftest import (
 
 
 def test_open_creates_key_material(tmp_path):
-    store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
+    vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     try:
         s1 = tmp_path / "secrets" / "s1.bin.1"
         assert s1.exists()
         assert s1.stat().st_size == 32
         assert stat.S_IMODE(s1.stat().st_mode) == 0o600
     finally:
-        store.close()
+        vault.close()
 
 
 def test_put_get_round_trip(vault):
@@ -63,9 +63,10 @@ def test_put_get_round_trip(vault):
 
 
 def test_the_encrypted_field_is_not_stored_in_the_clear(tmp_path):
-    store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
+    """The encrypted field never appears in plaintext on disk."""
+    vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     try:
-        store.put(
+        vault.put(
             Record(
                 id="cred-1",
                 fields={
@@ -78,7 +79,7 @@ def test_the_encrypted_field_is_not_stored_in_the_clear(tmp_path):
         assert b"stored-value" not in data
         assert b"https://api.example.com/v1" in data
     finally:
-        store.close()
+        vault.close()
 
 
 def test_get_of_an_unknown_id_is_not_found(vault):
@@ -120,18 +121,18 @@ def test_put_rejects_the_wrong_field_type(vault):
 def test_open_refuses_a_schema_older_than_the_store(tmp_path):
     newer = make_test_schema()
     newer.version = 2
-    store = Vault.open(Config(data_dir=str(tmp_path)), newer)
-    store.close()
+    vault = Vault.open(Config(data_dir=str(tmp_path)), newer)
+    vault.close()
 
-    # The store's data was written under a newer schema than the code
+    # The vault's data was written under a newer schema than the code
     # declares. Reading it with the older schema would misread records.
     with pytest.raises(SchemaMismatchError):
         Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
 
 
 def test_open_refuses_a_schema_change_without_a_version_bump(tmp_path):
-    store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
-    store.close()
+    vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
+    vault.close()
 
     changed = make_test_schema()
     changed.fields[1].type = Type.BYTES
@@ -140,29 +141,30 @@ def test_open_refuses_a_schema_change_without_a_version_bump(tmp_path):
 
 
 def test_open_accepts_an_additive_schema_change(tmp_path):
-    store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
-    store.put(
+    """An additive schema change opens with a higher version."""
+    vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
+    vault.put(
         Record(id="cred-1", fields={"api_key": Value.new_string("stored-value")})
     )
-    store.close()
+    vault.close()
 
     extended = make_test_schema()
     extended.version = 2
     extended.fields.append(FieldDef(name="region", type=Type.STRING))
 
-    store2 = Vault.open(Config(data_dir=str(tmp_path)), extended)
+    vault2 = Vault.open(Config(data_dir=str(tmp_path)), extended)
     try:
-        got = store2.get("cred-1")
+        got = vault2.get("cred-1")
         assert got.get_string("api_key") == "stored-value"
         # A record written under the old schema does not have the new field.
         assert got.get("region") is None
     finally:
-        store2.close()
+        vault2.close()
 
 
 def test_open_refuses_a_non_additive_schema_change(tmp_path):
-    store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
-    store.close()
+    vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
+    vault.close()
 
     changed = make_test_schema()
     changed.version = 2
@@ -173,8 +175,8 @@ def test_open_refuses_a_non_additive_schema_change(tmp_path):
 
 def test_open_refuses_a_removed_field(tmp_path):
     """A removal leaves the old records unreadable."""
-    store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
-    store.close()
+    vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
+    vault.close()
 
     changed = make_test_schema()
     changed.version = 2
@@ -185,8 +187,8 @@ def test_open_refuses_a_removed_field(tmp_path):
 
 def test_open_refuses_a_changed_encryption_state(tmp_path):
     """Turning a secret into a plain field would serve it in the clear."""
-    store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
-    store.close()
+    vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
+    vault.close()
 
     changed = make_test_schema()
     changed.version = 2
@@ -197,35 +199,36 @@ def test_open_refuses_a_changed_encryption_state(tmp_path):
 
 def test_a_rotation_keeps_the_records_readable(tmp_path):
     """A rotation leaves every record readable."""
-    store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
+    vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     try:
-        for id in ["cred-1", "cred-2", "cred-3"]:
-            put_record(store, id)
+        for record_id in ["cred-1", "cred-2", "cred-3"]:
+            put_record(vault, record_id)
 
         before = read_raw_data(str(tmp_path / "vault.db"), "cred-1")
 
-        call_rotate_dek(store)
+        call_rotate_dek(vault)
 
-        for id in ["cred-1", "cred-2", "cred-3"]:
-            got = store.get(id)
+        for record_id in ["cred-1", "cred-2", "cred-3"]:
+            got = vault.get(record_id)
             # The value is the one that was written: a rotation changes
             # the key the record is sealed under, not what it says.
-            assert got.get_string("api_key") == "value-for-" + id
+            assert got.get_string("api_key") == "value-for-" + record_id
 
         after = read_raw_data(str(tmp_path / "vault.db"), "cred-1")
         assert before != after
 
-        status = store.status()
+        status = vault.status()
         assert status.dek_version == 2
         assert status.straggler_count == 0
     finally:
-        store.close()
+        vault.close()
 
 
 def test_a_rotation_is_refused_while_one_is_in_progress(tmp_path):
+    """A rotation is refused while another rotation is in progress."""
     import sqlite3
 
-    store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
+    vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     try:
         conn = sqlite3.connect(
             str(tmp_path / "vault.db"), isolation_level=None, timeout=5.0
@@ -238,9 +241,9 @@ def test_a_rotation_is_refused_while_one_is_in_progress(tmp_path):
         from security_gateway.vault import RotationInProgressError
 
         with pytest.raises(RotationInProgressError):
-            call_rotate_dek(store)
+            call_rotate_dek(vault)
     finally:
-        store.close()
+        vault.close()
 
 
 def test_get_of_a_corrupted_record_is_undecryptable_not_not_found(tmp_path):
@@ -249,9 +252,9 @@ def test_get_of_a_corrupted_record_is_undecryptable_not_not_found(tmp_path):
     Reporting it as absent would let a caller cache a negative answer for a
     live secret.
     """
-    store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
+    vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     try:
-        store.put(
+        vault.put(
             Record(id="cred-1", fields={"api_key": Value.new_string("stored-value")})
         )
         db_path = str(tmp_path / "vault.db")
@@ -262,10 +265,10 @@ def test_get_of_a_corrupted_record_is_undecryptable_not_not_found(tmp_path):
         write_raw_data(db_path, "cred-1", bytes(data))
 
         with pytest.raises(UndecryptableError) as excinfo:
-            store.get("cred-1")
+            vault.get("cred-1")
         assert not isinstance(excinfo.value, NotFoundError)
     finally:
-        store.close()
+        vault.close()
 
 
 def test_status_reports_the_store_state(vault):
@@ -282,13 +285,14 @@ def test_status_reports_the_store_state(vault):
 
 
 def test_open_fails_when_the_key_material_is_missing(tmp_path):
-    store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
-    store.put(
+    """Opening fails when the key material file is missing."""
+    vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
+    vault.put(
         Record(id="cred-1", fields={"api_key": Value.new_string("stored-value")})
     )
-    store.close()
+    vault.close()
 
-    # A database without the shard that completes the key is a store whose
+    # A database without the shard that completes the key is a vault whose
     # key material does not match, which is a different thing from corrupt
     # data.
     other = tmp_path / "other"
@@ -300,13 +304,14 @@ def test_open_fails_when_the_key_material_is_missing(tmp_path):
 
 
 def test_open_refuses_a_store_with_records_but_no_key_metadata(tmp_path):
+    """Opening refuses records that have no key metadata."""
     import sqlite3
 
-    store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
-    store.put(
+    vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
+    vault.put(
         Record(id="cred-1", fields={"api_key": Value.new_string("stored-value")})
     )
-    store.close()
+    vault.close()
 
     conn = sqlite3.connect(
         str(tmp_path / "vault.db"), isolation_level=None, timeout=5.0
@@ -331,14 +336,14 @@ def test_open_accepts_a_sticky_data_directory(tmp_path):
     """The sticky bit stops anyone from removing what belongs to somebody
     else, which is what makes a shared directory safe."""
     os.chmod(tmp_path, 0o1777)
-    store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
-    store.close()
+    vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
+    vault.close()
 
 
 def test_the_database_file_is_not_world_readable(tmp_path):
-    store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
+    vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     try:
-        store.put(
+        vault.put(
             Record(
                 id="id-1",
                 fields={"endpoint": Value.new_string("https://example.com")},
@@ -347,7 +352,7 @@ def test_the_database_file_is_not_world_readable(tmp_path):
         mode = stat.S_IMODE(os.stat(tmp_path / "vault.db").st_mode)
         assert mode & 0o077 == 0
     finally:
-        store.close()
+        vault.close()
 
 
 def test_the_store_holds_whatever_shape_it_is_given(tmp_path):
@@ -362,9 +367,9 @@ def test_the_store_holds_whatever_shape_it_is_given(tmp_path):
             FieldDef(name="on", type=Type.BOOL),
         ],
     )
-    store = Vault.open(Config(data_dir=str(tmp_path)), schema)
+    vault = Vault.open(Config(data_dir=str(tmp_path)), schema)
     try:
-        store.put(
+        vault.put(
             Record(
                 id="thing/one",
                 fields={
@@ -375,30 +380,30 @@ def test_the_store_holds_whatever_shape_it_is_given(tmp_path):
                 },
             )
         )
-        got = store.get("thing/one")
+        got = vault.get("thing/one")
         assert got.get_string("label") == "a-label"
         assert got.get_bytes("secret") == b"abc"
         assert got.get_int64("count") == 7
         assert got.get_bool("on") is True
     finally:
-        store.close()
+        vault.close()
 
 
 def test_a_record_may_omit_a_field(tmp_path):
     """A field that is absent is not the same as a field that is empty."""
-    store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
+    vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     try:
-        store.put(
+        vault.put(
             Record(id="cred-1", fields={"endpoint": Value.new_string("https://x")})
         )
-        got = store.get("cred-1")
+        got = vault.get("cred-1")
         assert got.get("api_key") is None
         assert got.get_string("endpoint") == "https://x"
     finally:
-        store.close()
+        vault.close()
 
 
 def test_close_is_idempotent(tmp_path):
-    store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
-    store.close()
-    store.close()
+    vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
+    vault.close()
+    vault.close()

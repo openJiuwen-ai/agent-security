@@ -239,14 +239,15 @@ def test_the_schema_entries_are_read_back_in_version_order(tmp_path):
 
 
 def test_the_prefix_scan_brackets_exactly_the_prefix_set(tmp_path):
+    """The prefix scan brackets exactly the prefix set."""
     db = open_db(str(tmp_path / "vault.db"))
     try:
         bootstrap_schema(db)
-        for id in ["a", "ab", "abc", "b", "ba"]:
+        for record_id in ["a", "ab", "abc", "b", "ba"]:
             put_record(
                 db,
                 RecordRow(
-                    id=id, schema_version=1, data=b"x", dek_version=1
+                    id=record_id, schema_version=1, data=b"x", dek_version=1
                 ),
             )
         assert [r.id for r in list_records(db, "a")] == ["a", "ab", "abc"]
@@ -268,11 +269,11 @@ def test_the_prefix_scan_works_with_a_non_ascii_prefix(tmp_path):
     db = open_db(str(tmp_path / "vault.db"))
     try:
         bootstrap_schema(db)
-        for id in ["é", "éx", "ê", "f"]:
+        for record_id in ["é", "éx", "ê", "f"]:
             put_record(
                 db,
                 RecordRow(
-                    id=id, schema_version=1, data=b"x", dek_version=1
+                    id=record_id, schema_version=1, data=b"x", dek_version=1
                 ),
             )
         assert [r.id for r in list_records(db, "é")] == ["é", "éx"]

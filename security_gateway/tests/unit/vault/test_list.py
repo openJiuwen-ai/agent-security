@@ -11,8 +11,8 @@ from .conftest import put_record
 
 
 def test_list_returns_only_the_records_under_the_prefix(vault):
-    for id in ["a/one", "a/two", "b/one"]:
-        put_record(vault, id)
+    for record_id in ["a/one", "a/two", "b/one"]:
+        put_record(vault, record_id)
 
     entries = vault.list("a/")
     assert len(entries) == 2
@@ -21,8 +21,8 @@ def test_list_returns_only_the_records_under_the_prefix(vault):
 
 
 def test_list_with_an_empty_prefix_returns_everything(vault):
-    for id in ["a", "ab", "b"]:
-        put_record(vault, id)
+    for record_id in ["a", "ab", "b"]:
+        put_record(vault, record_id)
 
     entries = vault.list("")
     assert len(entries) == 3
@@ -35,8 +35,8 @@ def test_list_prefix_boundary(vault):
     The ids here are chosen to sit on both sides of that boundary: "ab" is
     under the prefix "a", and "b" is the first id that is not.
     """
-    for id in ["a", "ab", "abc", "b", "ba"]:
-        put_record(vault, id)
+    for record_id in ["a", "ab", "abc", "b", "ba"]:
+        put_record(vault, record_id)
 
     entries = vault.list("a")
     assert [entry.id for entry in entries] == ["a", "ab", "abc"]
@@ -73,9 +73,9 @@ def test_the_vault_holds_whatever_shape_it_is_given(tmp_path):
             FieldDef(name="on", type=Type.BOOL),
         ],
     )
-    store = Vault.open(Config(data_dir=str(tmp_path)), schema)
+    vault = Vault.open(Config(data_dir=str(tmp_path)), schema)
     try:
-        store.put(
+        vault.put(
             Record(
                 id="thing/one",
                 fields={
@@ -87,9 +87,9 @@ def test_the_vault_holds_whatever_shape_it_is_given(tmp_path):
             )
         )
 
-        entries = store.list("thing/")
+        entries = vault.list("thing/")
         assert len(entries) == 1
         assert "secret" not in entries[0].fields
         assert "label" in entries[0].fields
     finally:
-        store.close()
+        vault.close()

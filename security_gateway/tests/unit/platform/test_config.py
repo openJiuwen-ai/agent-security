@@ -312,6 +312,7 @@ def test_the_shared_token_and_the_clients_are_mutually_exclusive():
 
 
 def test_the_clients_are_read():
+    """The client entries are read from the config."""
     config = Config.from_dict({
         "vault": {"data_dir": "/srv/vault",
                   "rpc": {"tcp_addr": _loopback() + ":19000",
