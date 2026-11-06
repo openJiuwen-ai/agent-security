@@ -1845,7 +1845,9 @@ analyze(model_data):
         risk_level:          risk_level,
         risk_type:           risk_type,
         risk_score:          level_to_score(risk_level),
-        confidence:          1.0,
+        # 置信度表示"拒绝场景分类"的确定性：policy_deny=0.9（前缀精确匹配），
+        # user_reject=0.75（排除法推断），unknown/缺失=0.6（决策缺失保守回退）
+        confidence:          deny_reason_to_confidence(deny_reason),
         detected_threats:   [risk_type],
         recommended_actions: recommended_actions,
         evidence:            evidence,
@@ -2583,7 +2585,7 @@ AgentSSASCore 子系统基于 OCSF 1.8.0+ 的 Detection Finding 事件类（clas
         "created_time_dt": "2024-05-06T12:53:21.000Z",
         "confidence_id": 3,
         "confidence": "High",
-        "confidence_score": 100,
+        "confidence_score": 90,
         "types": ["tool_permission_denied"],
         "analytic": {
             "type_id": 1,
