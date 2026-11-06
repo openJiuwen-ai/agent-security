@@ -13,12 +13,15 @@ import base64
 import binascii
 import json
 import logging
+import os
+import sys
 import textwrap
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from jiuwenbox.logging_config import configure_logging
 from jiuwenbox.models.common import AuditEventType
@@ -133,6 +136,19 @@ class SandboxStateError(Exception):
 
 class SandboxConflictError(Exception):
     """Raised for expected request conflicts such as duplicate sandbox IDs."""
+
+
+class CodePolicyDenialError(Exception):
+    """Raised when code-level policy enforcement denies a file operation.
+
+    Fallback defense when ACL/Landlock cannot be applied (e.g. Windows ACL
+    WRITE_DAC denied on owner-mismatched folders like D:/software where
+    SetNamedSecurityInfo fails with WinError 5). See ``_enforce_path_policy``.
+    """
+
+    def __init__(self, *args: object) -> None:
+        super().__init__(*args)
+        logger.warning("%s: %s", self.__class__.__name__, str(self))
 
 
 class SandboxManager:
@@ -925,6 +941,39 @@ class SandboxManager:
         )
         return result
 
+    async def file_snapshot(
+        self,
+        sandbox_id: str,
+        payload: dict[str, Any],
+        content: bytes = b"",
+    ) -> tuple[dict[str, Any], bytes]:
+        async with self._lock:
+            ref = self._get_sandbox(sandbox_id)
+            if ref.phase != SandboxPhase.READY:
+                raise SandboxStateError(
+                    f"Cannot access snapshot in sandbox '{sandbox_id}': state is {ref.phase.value}"
+                )
+            self._mark_active(ref)
+        operation = payload["operation"]
+        await self._enforce_path_policy(
+            sandbox_id,
+            payload["path"],
+            op="write" if operation == "compare_replace" else "read",
+        )
+        response, raw = await self.runtime.file_snapshot(sandbox_id, payload, content)
+        self.audit.log(
+            AuditEventType.FILE_TRANSFER,
+            sandbox_id,
+            direction="upload" if operation == "compare_replace" else "download",
+            operation=operation,
+            sandbox_path=payload["path"],
+            size=len(content) if content else len(raw),
+            ok=response.get("ok") is True,
+            error=response.get("error"),
+            path="snapshot_ipc",
+        )
+        return response, raw
+
     async def upload_file_to_sandbox(
         self,
         sandbox_id: str,
@@ -1393,6 +1442,57 @@ class SandboxManager:
         async with self._lock:
             self._get_sandbox(sandbox_id)
             return self.audit.read_logs_raw(sandbox_id)
+
+    @staticmethod
+    def _normalize_policy_path(path: str) -> str:
+        """Normalize a path for case-insensitive matching."""
+        p = os.path.normpath(path)
+        if sys.platform == "win32":
+            p = p.lower()
+        return p
+
+    @staticmethod
+    def _path_matches_rule(path_norm: str, rule_norm: str) -> bool:
+        """Return whether *path_norm* is the rule path or a child of it."""
+        if path_norm == rule_norm:
+            return True
+        return path_norm.startswith(rule_norm + os.sep)
+
+    async def _enforce_path_policy(
+        self,
+        sandbox_id: str,
+        sandbox_path: str,
+        op: str,
+    ) -> None:
+        """Code-level path policy check used when ACL/Landlock is unavailable."""
+        if op not in ("read", "write"):
+            raise ValueError(f"invalid op {op!r}, must be 'read' or 'write'")
+
+        policy = await self.get_policy(sandbox_id)
+        if policy is None:
+            return
+
+        windows = getattr(policy, "windows", None)
+        fs = getattr(windows, "filesystem", None) if windows else None
+        if fs is None:
+            return
+
+        if op == "read":
+            deny_rules = list(getattr(fs, "deny_read", None) or [])
+        else:
+            deny_rules = list(getattr(fs, "deny_write", None) or [])
+
+        deny_rules = [r for r in deny_rules if r and "{{" not in r]
+        if not deny_rules:
+            return
+
+        target_norm = self._normalize_policy_path(sandbox_path)
+        for rule in deny_rules:
+            if self._path_matches_rule(target_norm, self._normalize_policy_path(rule)):
+                raise CodePolicyDenialError(
+                    f"Code-enforced policy denial: {op} '{sandbox_path}' "
+                    f"matched deny rule '{rule}' (sandbox={sandbox_id})"
+                )
 
     async def get_policy(self, sandbox_id: str) -> SecurityPolicy | None:
         async with self._lock:
