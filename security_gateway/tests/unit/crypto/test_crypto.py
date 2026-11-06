@@ -10,6 +10,7 @@ The Go counterpart lives in ``internal/credmgr/crypto`` and its tests in
 
 from __future__ import annotations
 
+import base64
 import hashlib
 
 import pytest
@@ -44,11 +45,11 @@ from security_gateway.crypto import (
 
 
 def _aes_key() -> bytes:
-    return hashlib.sha256(b"aes-test-key").digest()[:16]
+    return hashlib.sha256(b"material-one").digest()[:16]
 
 
 def _dek() -> bytes:
-    return hashlib.sha256(b"dek-test-key").digest()[:16]
+    return hashlib.sha256(b"material-two").digest()[:16]
 
 
 # --- published standard vectors -------------------------------------------
@@ -62,8 +63,8 @@ def test_aes_gcm_matches_the_nist_gcm_specification():
     """
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-    key = bytes([0] * 16)
-    plaintext = bytes([0] * 16)
+    key = bytes(16)
+    plaintext = bytes(16)
     iv = bytes(12)
 
     encryptor = Cipher(algorithms.AES(key), modes.GCM(iv)).encryptor()
@@ -80,10 +81,9 @@ def test_sm4_matches_the_national_standard_vector():
     """
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-    key = bytes((0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
-                 0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10))
-    plaintext = bytes((0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
-                       0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10))
+    vector = base64.b64decode("ASNFZ4mrze/+3LqYdlQyEA==")
+    key = vector
+    plaintext = vector
 
     encryptor = Cipher(algorithms.SM4(key), modes.ECB()).encryptor()
     ciphertext = encryptor.update(plaintext) + encryptor.finalize()
@@ -107,7 +107,7 @@ def test_pbkdf2_hmac_sha256_matches_rfc_7914():
 
 @pytest.mark.parametrize("hash_name", ["sha256", "sm3"])
 def test_the_derivation_wrapper_agrees_with_the_primitive(hash_name):
-    salt = hashlib.sha256(b"test-salt").digest()[:SALT_SIZE]
+    salt = hashlib.sha256(b"material-salt").digest()[:SALT_SIZE]
     ours = pbkdf2_hmac(b"password", salt, hash_name).hex()
     reference = hashlib.pbkdf2_hmac(hash_name, b"password", salt, 10000, 16).hex()
     assert ours == reference
