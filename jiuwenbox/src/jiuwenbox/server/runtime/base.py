@@ -106,6 +106,15 @@ class RuntimeAdapter(abc.ABC):
         """
         return RuntimeCapabilities(runtime_name=self.runtime_name)
 
+    async def file_snapshot(
+        self,
+        sandbox_id: str,
+        payload: dict[str, Any],
+        content: bytes = b"",
+    ) -> tuple[dict[str, Any], bytes]:
+        """Snapshot protocol is opt-in; ordinary upload is never a fallback."""
+        return {"ok": False, "error": "unsupported", "atomic_compare_replace": False}, b""
+
     @abc.abstractmethod
     async def create(
         self,
