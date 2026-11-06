@@ -345,7 +345,8 @@ def test_open_refuses_a_data_directory_others_can_write_to(tmp_path):
 
 def test_open_accepts_a_sticky_data_directory(tmp_path):
     """The sticky bit stops anyone from removing what belongs to somebody
-    else, which is what makes a shared directory safe."""
+    else, which is what makes a shared directory safe.
+    """
     os.chmod(tmp_path, 0o1777)
     vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     vault.close()
@@ -369,7 +370,8 @@ def test_the_database_file_is_not_world_readable(tmp_path):
 
 def test_the_store_holds_whatever_shape_it_is_given(tmp_path):
     """Nothing in the vault is quietly built around a particular set of
-    field names."""
+    field names.
+    """
     schema = Schema(
         version=1,
         fields=[

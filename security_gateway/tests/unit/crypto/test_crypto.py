@@ -70,8 +70,8 @@ def test_aes_gcm_matches_the_nist_gcm_specification():
     encryptor = Cipher(algorithms.AES(key), modes.GCM(iv)).encryptor()
     ciphertext = encryptor.update(plaintext) + encryptor.finalize()
 
-    assert ciphertext.hex() == "0388dace60b6a392f328c2b971b2fe78"
-    assert encryptor.tag.hex() == "ab6e47d42cec13bdf53a67b21257bddf"
+    assert ciphertext == base64.b64decode("A4jazmC2o5LzKMK5cbL+eA==")
+    assert encryptor.tag == base64.b64decode("q25H1CzsE731OmeyEle93w==")
 
 
 def test_sm4_matches_the_national_standard_vector():
@@ -88,7 +88,7 @@ def test_sm4_matches_the_national_standard_vector():
     encryptor = Cipher(algorithms.SM4(key), modes.ECB()).encryptor()
     ciphertext = encryptor.update(plaintext) + encryptor.finalize()
 
-    assert ciphertext.hex() == "681edf34d206965e86b3e94f536e4246"
+    assert ciphertext == base64.b64decode("aB7fNNIGll6Gs+lPU25CRg==")
 
 
 def test_pbkdf2_hmac_sha256_matches_rfc_7914():

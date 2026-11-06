@@ -211,7 +211,8 @@ def test_the_straggler_queries_look_at_the_dek_version(tmp_path):
 
 def test_the_row_version_guard_protects_a_concurrent_write(tmp_path):
     """A rotation that read the row must not overwrite a write that landed
-    after it read."""
+    after it read.
+    """
     db = open_db(str(tmp_path / "vault.db"))
     try:
         bootstrap_schema(db)

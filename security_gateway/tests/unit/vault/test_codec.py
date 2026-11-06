@@ -113,7 +113,8 @@ def test_decode_container_rejects_a_truncated_blob():
 
 def test_decode_container_rejects_a_count_larger_than_the_data():
     """A field count that claims more fields than the blob holds must be an
-    error, not a read past the end of the buffer."""
+    error, not a read past the end of the buffer.
+    """
     data = CONTAINER_MAGIC + bytes([CONTAINER_FORMAT]) + b"\xff\xff"
     with pytest.raises(InvalidRecordError):
         decode_container(data)
@@ -121,7 +122,8 @@ def test_decode_container_rejects_a_count_larger_than_the_data():
 
 def test_decode_container_rejects_a_hostile_length():
     """A length field that claims more bytes than the blob holds must be an
-    error, not an out-of-range read."""
+    error, not an out-of-range read.
+    """
     data = (
         CONTAINER_MAGIC
         + bytes([CONTAINER_FORMAT])
