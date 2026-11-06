@@ -16,10 +16,8 @@ operating system's business.  What is the code's business is that it
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
-import textwrap
 
 import pytest
 from security_gateway.crypto.keybytes import KeyBytes
@@ -166,26 +164,20 @@ def test_core_dumps_are_forbidden():
     again once it has been lowered, and the test runner has no business
     losing its core dumps for the rest of the run.
     """
-    script = textwrap.dedent(
-        """
-        import resource, sys
-        sys.path.insert(0, %r)
-        from security_gateway.platform import memlock
-        memlock.disable_core_dumps()
-        soft, hard = resource.getrlimit(resource.RLIMIT_CORE)
-        print(soft, hard)
-        """
-    ) % os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(
-            os.path.dirname(os.path.abspath(__file__))))),
-        "src",
-    )
+    script = "\n".join((
+        "import resource, sys",
+        "from security_gateway.platform import memlock",
+        "memlock.disable_core_dumps()",
+        "soft, hard = resource.getrlimit(resource.RLIMIT_CORE)",
+        'sys.stderr.write(f"{soft} {hard}\\n")',
+    ))
 
     done = subprocess.run(
         [sys.executable, "-c", script],
-        capture_output=True, text=True, timeout=30, check=True)
+        capture_output=True, text=True, timeout=30, check=False)
+    assert done.returncode == 0, done.stderr
 
-    soft, hard = done.stdout.strip().split()
+    soft, hard = done.stderr.strip().split()
     assert soft == "0"
     assert hard == "0"
 

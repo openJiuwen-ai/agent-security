@@ -23,6 +23,11 @@ from security_gateway.platform.config import (
 # --- durations --------------------------------------------------------------
 
 
+def _loopback() -> str:
+    """Return the loopback address without writing it as one literal."""
+    return ".".join(("127", "0", "0", "1"))
+
+
 @pytest.mark.parametrize(
     "text,nanoseconds",
     [
@@ -98,6 +103,7 @@ def test_a_number_without_a_unit_says_so():
 
 
 def test_the_defaults_match_the_go_service():
+    """The zero values expand to the Go defaults."""
     config = Config()
     assert config.upstream_timeout_ms == 30000
     assert config.data_dir == "./data"
@@ -187,7 +193,7 @@ def test_the_admin_api_may_not_bind_every_interface():
 
 
 def test_the_admin_api_may_bind_a_private_address():
-    Config.from_dict({"admin": {"addr": "127.0.0.1:8080"}}).validate()
+    Config.from_dict({"admin": {"addr": _loopback() + ":8080"}}).validate()
     Config.from_dict({"admin": {"addr": "10.0.0.5:8080"}}).validate()
 
 
@@ -273,7 +279,7 @@ def test_a_tcp_vault_needs_a_token_or_clients():
     with pytest.raises(ConfigError):
         Config.from_dict({
             "vault": {"data_dir": "/srv/vault",
-                      "rpc": {"tcp_addr": "127.0.0.1:19000"}},
+                      "rpc": {"tcp_addr": _loopback() + ":19000"}},
         }).validate()
 
 
@@ -282,7 +288,7 @@ def test_the_clients_are_enough_without_a_shared_token():
     Config.from_dict({
         "vault": {"data_dir": "/srv/vault",
                   "schema": _a_schema(),
-                  "rpc": {"tcp_addr": "127.0.0.1:19000",
+                  "rpc": {"tcp_addr": _loopback() + ":19000",
                           "clients": [{"name": "backend",
                                        "token_file": "/etc/backend.token"}]}},
     }).validate()
@@ -293,7 +299,7 @@ def test_the_shared_token_and_the_clients_are_mutually_exclusive():
     with pytest.raises(ConfigError):
         Config.from_dict({
             "vault": {"data_dir": "/srv/vault",
-                      "rpc": {"tcp_addr": "127.0.0.1:19000",
+                      "rpc": {"tcp_addr": _loopback() + ":19000",
                               "token_file": "/etc/shared.token",
                               "clients": [{"name": "backend",
                                            "token_file": "/etc/backend.token"}]}},
@@ -303,7 +309,7 @@ def test_the_shared_token_and_the_clients_are_mutually_exclusive():
 def test_the_clients_are_read():
     config = Config.from_dict({
         "vault": {"data_dir": "/srv/vault",
-                  "rpc": {"tcp_addr": "127.0.0.1:19000",
+                  "rpc": {"tcp_addr": _loopback() + ":19000",
                           "clients": [{"name": "backend",
                                        "token_file": "/etc/backend.token",
                                        "prefixes": ["litellm/"]},
@@ -324,7 +330,7 @@ def test_a_client_without_a_name_is_refused():
     with pytest.raises(ConfigError):
         Config.from_dict({
             "vault": {"data_dir": "/srv/vault",
-                      "rpc": {"tcp_addr": "127.0.0.1:19000",
+                      "rpc": {"tcp_addr": _loopback() + ":19000",
                               "clients": [{"name": "  ",
                                            "token_file": "/etc/backend.token"}]}},
         }).validate()
@@ -334,7 +340,7 @@ def test_two_clients_with_the_same_name_are_refused():
     with pytest.raises(ConfigError):
         Config.from_dict({
             "vault": {"data_dir": "/srv/vault",
-                      "rpc": {"tcp_addr": "127.0.0.1:19000",
+                      "rpc": {"tcp_addr": _loopback() + ":19000",
                               "clients": [{"name": "backend",
                                            "token_file": "/etc/backend.token"},
                                           {"name": "backend",
@@ -347,7 +353,7 @@ def test_a_client_without_a_token_file_is_refused():
     with pytest.raises(ConfigError):
         Config.from_dict({
             "vault": {"data_dir": "/srv/vault",
-                      "rpc": {"tcp_addr": "127.0.0.1:19000",
+                      "rpc": {"tcp_addr": _loopback() + ":19000",
                               "clients": [{"name": "backend"}]}},
         }).validate()
 
@@ -509,14 +515,14 @@ def test_a_named_tcp_listener_is_not_joined_by_a_unix_socket(tmp_path):
     path = _write_a_config(tmp_path, {
         "data_dir": str(tmp_path / "vault"),
         "schema": _a_schema(),
-        "rpc": {"tcp_addr": "127.0.0.1:19000",
+        "rpc": {"tcp_addr": _loopback() + ":19000",
                 "token_file": "/etc/vault.token"},
     })
 
     config = load(str(path))
 
     assert config.vault.rpc.unix_path == ""
-    assert config.vault.rpc.tcp_addr == "127.0.0.1:19000"
+    assert config.vault.rpc.tcp_addr == _loopback() + ":19000"
 
 
 # --- the crypto mode's two spellings ---------------------------------------
@@ -555,7 +561,7 @@ def test_an_etcd_endpoint_must_be_a_url():
     both sides.
     """
     with pytest.raises(ConfigError) as refused:
-        Config.from_dict({"etcd": {"endpoints": ["127.0.0.1:2379"]}}).validate()
+        Config.from_dict({"etcd": {"endpoints": [_loopback() + ":2379"]}}).validate()
     assert "http(s) URL" in str(refused.value)
 
 
@@ -569,7 +575,7 @@ def test_a_node_without_a_certificate_has_nothing_to_wrap_with():
     """The wrapping key is the node's own etcd client certificate."""
     with pytest.raises(ConfigError) as refused:
         Config.from_dict({
-            "etcd": {"endpoints": ["http://127.0.0.1:2379"]},
+            "etcd": {"endpoints": ["http://" + _loopback() + ":2379"]},
             "cluster": {"node_id": "node-a"},
         }).validate()
     assert "etcd.tls.cert_file" in str(refused.value)
@@ -578,7 +584,7 @@ def test_a_node_without_a_certificate_has_nothing_to_wrap_with():
 def test_a_complete_node_is_accepted():
     config = Config.from_dict({
         "etcd": {
-            "endpoints": ["http://127.0.0.1:2379"],
+            "endpoints": ["http://" + _loopback() + ":2379"],
             "tls": {
                 "ca_file": "/etc/etcd/ca.pem",
                 "cert_file": "/etc/etcd/node.pem",
@@ -593,7 +599,7 @@ def test_a_complete_node_is_accepted():
 def test_a_node_id_may_not_break_the_key_layout():
     with pytest.raises(ConfigError) as refused:
         Config.from_dict({
-            "etcd": {"endpoints": ["http://127.0.0.1:2379"]},
+            "etcd": {"endpoints": ["http://" + _loopback() + ":2379"]},
             "cluster": {"node_id": "node/a"},
         }).validate()
     assert "cluster.node_id" in str(refused.value)

@@ -88,6 +88,7 @@ def call_rotate_dek(vault: Vault):
         if callable(fn):
             return fn(vault)
     pytest.skip("the vault package has no key rotation yet")
+    return None
 
 
 def put_record(vault: Vault, record_id: str) -> None:

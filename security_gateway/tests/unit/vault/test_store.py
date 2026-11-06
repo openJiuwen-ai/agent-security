@@ -31,6 +31,7 @@ from security_gateway.vault.store import RecordRow, SchemaEntry, table_columns
 
 
 def test_the_four_tables_are_created(tmp_path):
+    """Opening a new store creates the four tables."""
     db = open_db(str(tmp_path / "vault.db"))
     try:
         bootstrap_schema(db)
@@ -137,6 +138,7 @@ def test_a_prefix_of_only_ff_bytes_has_no_upper_bound():
 
 
 def test_the_crud_round_trip(tmp_path):
+    """The record and schema helpers round-trip their rows."""
     db = open_db(str(tmp_path / "vault.db"))
     try:
         bootstrap_schema(db)
@@ -182,6 +184,7 @@ def test_the_crud_round_trip(tmp_path):
 
 
 def test_the_straggler_queries_look_at_the_dek_version(tmp_path):
+    """The straggler queries select by DEK generation."""
     db = open_db(str(tmp_path / "vault.db"))
     try:
         bootstrap_schema(db)

@@ -196,6 +196,7 @@ def test_open_refuses_a_changed_encryption_state(tmp_path):
 
 
 def test_a_rotation_keeps_the_records_readable(tmp_path):
+    """A rotation leaves every record readable."""
     store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     try:
         for id in ["cred-1", "cred-2", "cred-3"]:

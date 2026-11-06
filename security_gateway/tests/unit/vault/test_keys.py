@@ -44,10 +44,10 @@ from security_gateway.vault.keys import (
 #        0x76, 0x61, 0x75, 0x6c, 0x74, 0x2d, 0x6b, 0x65,
 #        ...
 #    }
-GOLDEN_S3_SHARD = bytes.fromhex(
+GOLDEN_SHARD_BYTES = bytes.fromhex(
     "5661756c745368617264334b65794d6174657269616c323032362d534d332d46"
 )
-GOLDEN_DERIVATION_SALT = bytes.fromhex("7661756c742d6b656b2d73616c742d76")
+GOLDEN_SALT_BYTES = bytes.fromhex("7661756c742d6b656b2d73616c742d76")
 
 # The Go source this package is a port of. It is not needed to run the
 # tests, but when it is there the constants are checked against it rather
@@ -72,12 +72,12 @@ def _go_literal(name: str) -> bytes:
 
 
 def test_the_s3_shard_is_the_golden_vector():
-    assert S3_SHARD == GOLDEN_S3_SHARD
+    assert S3_SHARD == GOLDEN_SHARD_BYTES
     assert len(S3_SHARD) == 32
 
 
 def test_the_kek_salt_is_the_golden_vector():
-    assert KEK_SALT == GOLDEN_DERIVATION_SALT
+    assert KEK_SALT == GOLDEN_SALT_BYTES
     assert len(KEK_SALT) == 16
 
 
