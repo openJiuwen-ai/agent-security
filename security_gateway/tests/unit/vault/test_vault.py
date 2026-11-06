@@ -36,6 +36,7 @@ from .conftest import (
 
 
 def test_open_creates_key_material(tmp_path):
+    """Test open creates key material."""
     vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     try:
         s1 = tmp_path / "secrets" / "s1.bin.1"
@@ -47,6 +48,7 @@ def test_open_creates_key_material(tmp_path):
 
 
 def test_put_get_round_trip(vault):
+    """Test put get round trip."""
     vault.put(
         Record(
             id="cred-1",
@@ -83,11 +85,13 @@ def test_the_encrypted_field_is_not_stored_in_the_clear(tmp_path):
 
 
 def test_get_of_an_unknown_id_is_not_found(vault):
+    """Test get of an unknown id is not found."""
     with pytest.raises(NotFoundError):
         vault.get("nope")
 
 
 def test_delete_record(vault):
+    """Test delete record."""
     vault.put(
         Record(id="cred-1", fields={"api_key": Value.new_string("stored-value")})
     )
@@ -99,6 +103,7 @@ def test_delete_record(vault):
 
 
 def test_put_rejects_a_field_outside_the_schema(vault):
+    """Test put rejects a field outside the schema."""
     record = Record(
         id="cred-1",
         fields={
@@ -111,6 +116,7 @@ def test_put_rejects_a_field_outside_the_schema(vault):
 
 
 def test_put_rejects_the_wrong_field_type(vault):
+    """Test put rejects the wrong field type."""
     record = Record(
         id="cred-1", fields={"api_key": Value.new_bytes(b"stored-value")}
     )
@@ -119,6 +125,7 @@ def test_put_rejects_the_wrong_field_type(vault):
 
 
 def test_open_refuses_a_schema_older_than_the_store(tmp_path):
+    """Test open refuses a schema older than the store."""
     newer = make_test_schema()
     newer.version = 2
     vault = Vault.open(Config(data_dir=str(tmp_path)), newer)
@@ -131,6 +138,7 @@ def test_open_refuses_a_schema_older_than_the_store(tmp_path):
 
 
 def test_open_refuses_a_schema_change_without_a_version_bump(tmp_path):
+    """Test open refuses a schema change without a version bump."""
     vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     vault.close()
 
@@ -163,6 +171,7 @@ def test_open_accepts_an_additive_schema_change(tmp_path):
 
 
 def test_open_refuses_a_non_additive_schema_change(tmp_path):
+    """Test open refuses a non additive schema change."""
     vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     vault.close()
 
@@ -272,6 +281,7 @@ def test_get_of_a_corrupted_record_is_undecryptable_not_not_found(tmp_path):
 
 
 def test_status_reports_the_store_state(vault):
+    """Test status reports the store state."""
     vault.put(
         Record(id="cred-1", fields={"api_key": Value.new_string("stored-value")})
     )
@@ -326,6 +336,7 @@ def test_open_refuses_a_store_with_records_but_no_key_metadata(tmp_path):
 
 
 def test_open_refuses_a_data_directory_others_can_write_to(tmp_path):
+    """Test open refuses a data directory others can write to."""
     os.chmod(tmp_path, 0o777)
     with pytest.raises(InvalidError) as excinfo:
         Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
@@ -341,6 +352,7 @@ def test_open_accepts_a_sticky_data_directory(tmp_path):
 
 
 def test_the_database_file_is_not_world_readable(tmp_path):
+    """Test the database file is not world readable."""
     vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     try:
         vault.put(
@@ -404,6 +416,7 @@ def test_a_record_may_omit_a_field(tmp_path):
 
 
 def test_close_is_idempotent(tmp_path):
+    """Test close is idempotent."""
     vault = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     vault.close()
     vault.close()

@@ -21,6 +21,7 @@ from security_gateway.vault import (
 
 
 def _fields():
+    """Fields."""
     return [
         ContainerField(
             name="endpoint", type=Type.STRING, encrypted=False,
@@ -38,6 +39,7 @@ def _fields():
 
 
 def test_container_round_trip():
+    """Test container round trip."""
     fields = _fields()
     decoded = decode_container(encode_container(fields))
     assert len(decoded) == len(fields)
@@ -72,6 +74,7 @@ def test_the_container_bytes_are_what_the_format_says():
 
 
 def test_the_encrypted_flag_is_bit_zero():
+    """Test the encrypted flag is bit zero."""
     encoded = encode_container(
         [
             ContainerField(
@@ -93,11 +96,13 @@ def test_the_encrypted_flag_is_bit_zero():
     ],
 )
 def test_decode_container_rejects_malformed_input(name, data):
+    """Test decode container rejects malformed input."""
     with pytest.raises(InvalidRecordError):
         decode_container(data)
 
 
 def test_decode_container_rejects_a_truncated_blob():
+    """Test decode container rejects a truncated blob."""
     valid = encode_container(
         [ContainerField(name="a", type=Type.STRING, encrypted=False, data=b"x")]
     )

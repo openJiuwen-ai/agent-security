@@ -41,6 +41,7 @@ def _loopback() -> str:
     ],
 )
 def test_a_go_duration_string_is_parsed(text, nanoseconds):
+    """Test a go duration string is parsed."""
     assert parse_duration(text) == timedelta(microseconds=nanoseconds / 1000)
 
 
@@ -78,10 +79,12 @@ def test_a_null_duration_is_zero():
 
 
 def test_a_negative_duration_is_allowed():
+    """Test a negative duration is allowed."""
     assert parse_duration("-5m") == timedelta(minutes=-5)
 
 
 def test_a_duration_renders_the_go_way():
+    """Test a duration renders the go way."""
     assert format_duration(timedelta(hours=720)) == "720h0m0s"
     assert format_duration(timedelta(seconds=30)) == "30s"
     assert format_duration(timedelta(0)) == "0s"
@@ -89,6 +92,7 @@ def test_a_duration_renders_the_go_way():
 
 @pytest.mark.parametrize("bad", ["", "5", "5x", "h", "5 h", "00", "1.2.3s"])
 def test_a_broken_duration_is_refused(bad):
+    """Test a broken duration is refused."""
     with pytest.raises(ConfigError):
         parse_duration(bad)
 
@@ -143,6 +147,7 @@ def test_the_defaults_match_the_go_service():
 
 
 def test_the_defaults_are_a_usable_configuration():
+    """Test the defaults are a usable configuration."""
     Config().validate()
 
 
@@ -150,16 +155,19 @@ def test_the_defaults_are_a_usable_configuration():
 
 
 def test_etcd_is_on_when_endpoints_are_given():
+    """Test etcd is on when endpoints are given."""
     assert not Config().etcd.enabled()
     assert Config.from_dict({"etcd": {"endpoints": ["http://x:2379"]}}).etcd.enabled()
 
 
 def test_the_cluster_is_on_when_the_node_has_an_identity():
+    """Test the cluster is on when the node has an identity."""
     assert not Config().cluster.enabled()
     assert Config.from_dict({"cluster": {"node_id": "n1"}}).cluster.enabled()
 
 
 def test_the_vault_is_on_when_it_has_a_data_directory():
+    """Test the vault is on when it has a data directory."""
     assert not Config().vault.enabled()
     raw = {"vault": {"data_dir": "/srv/vault",
                      "rpc": {"unix_path": "/run/vault.sock"}}}
@@ -170,6 +178,7 @@ def test_the_vault_is_on_when_it_has_a_data_directory():
 
 
 def test_the_paths_are_derived_from_the_data_directories():
+    """Test the paths are derived from the data directories."""
     config = Config.from_dict({
         "data_dir": "/srv/data",
         "vault": {"data_dir": "/srv/vault",
@@ -185,6 +194,7 @@ def test_the_paths_are_derived_from_the_data_directories():
 
 
 def test_an_unknown_crypto_mode_is_refused():
+    """Test an unknown crypto mode is refused."""
     with pytest.raises(ConfigError):
         Config.from_dict({"crypto_mode": "rot13"}).validate()
 
@@ -198,11 +208,13 @@ def test_the_admin_api_may_not_bind_every_interface():
 
 
 def test_the_admin_api_may_bind_a_private_address():
+    """Test the admin api may bind a private address."""
     Config.from_dict({"admin": {"addr": _loopback() + ":8080"}}).validate()
     Config.from_dict({"admin": {"addr": _ip("10", "0", "0", "5") + ":8080"}}).validate()
 
 
 def test_an_external_address_is_required_when_the_bind_is_a_wildcard():
+    """Test an external address is required when the bind is a wildcard."""
     with pytest.raises(ConfigError):
         Config.from_dict({"server": {"bind_address": _ip("0", "0", "0", "0") + ":8080"}}).validate()
     Config.from_dict({
@@ -212,6 +224,7 @@ def test_an_external_address_is_required_when_the_bind_is_a_wildcard():
 
 
 def test_the_external_address_must_be_an_http_url():
+    """Test the external address must be an http url."""
     with pytest.raises(ConfigError):
         Config.from_dict({
             "server": {"bind_address": _ip("0", "0", "0", "0") + ":8080",
@@ -220,6 +233,7 @@ def test_the_external_address_must_be_an_http_url():
 
 
 def test_the_etcd_namespace_may_not_contain_a_slash_or_whitespace():
+    """Test the etcd namespace may not contain a slash or whitespace."""
     with pytest.raises(ConfigError):
         Config.from_dict({
             "etcd": {"endpoints": ["http://x:2379"], "namespace": "a/b"},
@@ -245,6 +259,7 @@ def test_a_partial_etcd_tls_set_is_refused():
 
 
 def test_a_vault_with_a_data_directory_needs_a_listener():
+    """Test a vault with a data directory needs a listener."""
     with pytest.raises(ConfigError):
         Config.from_dict({"vault": {"data_dir": "/srv/vault"}}).validate()
 
@@ -281,6 +296,7 @@ def test_the_vault_socket_path_must_be_absolute():
 
 
 def test_a_tcp_vault_needs_a_token_or_clients():
+    """Test a tcp vault needs a token or clients."""
     with pytest.raises(ConfigError):
         Config.from_dict({
             "vault": {"data_dir": "/srv/vault",
@@ -343,6 +359,7 @@ def test_a_client_without_a_name_is_refused():
 
 
 def test_two_clients_with_the_same_name_are_refused():
+    """Test two clients with the same name are refused."""
     with pytest.raises(ConfigError):
         Config.from_dict({
             "vault": {"data_dir": "/srv/vault",
@@ -365,6 +382,7 @@ def test_a_client_without_a_token_file_is_refused():
 
 
 def test_two_scopes_for_the_same_uid_are_refused():
+    """Test two scopes for the same uid are refused."""
     with pytest.raises(ConfigError):
         Config.from_dict({
             "vault": {"data_dir": "/srv/vault",
@@ -376,6 +394,7 @@ def test_two_scopes_for_the_same_uid_are_refused():
 
 
 def test_the_socket_mode_must_be_octal_and_within_the_permission_bits():
+    """Test the socket mode must be octal and within the permission bits."""
     with pytest.raises(ConfigError):
         Config.from_dict({
             "vault": {"data_dir": "/srv/vault",
@@ -394,6 +413,7 @@ def test_the_socket_mode_must_be_octal_and_within_the_permission_bits():
 
 
 def test_the_auth_rules_are_read():
+    """Test the auth rules are read."""
     config = Config.from_dict({
         "admin": {"auth_types": {"my_type": {"header": "X-Key",
                                              "prefix": "Bearer ",
@@ -544,6 +564,7 @@ def test_the_crypto_mode_is_normalized_to_what_the_cipher_speaks(tmp_path):
     import yaml
 
     def a_config_with(mode: str):
+        """A config with."""
         path = tmp_path / f"{mode}.yaml"
         path.write_text(
             yaml.safe_dump({"crypto_mode": mode}), encoding="utf-8")
@@ -572,6 +593,7 @@ def test_an_etcd_endpoint_must_be_a_url():
 
 
 def test_a_node_without_a_roster_is_refused():
+    """Test a node without a roster is refused."""
     with pytest.raises(ConfigError) as refused:
         Config.from_dict({"cluster": {"node_id": "node-a"}}).validate()
     assert "etcd.endpoints is empty" in str(refused.value)
@@ -588,6 +610,7 @@ def test_a_node_without_a_certificate_has_nothing_to_wrap_with():
 
 
 def test_a_complete_node_is_accepted():
+    """Test a complete node is accepted."""
     config = Config.from_dict({
         "etcd": {
             "endpoints": ["http://" + _loopback() + ":2379"],
@@ -603,6 +626,7 @@ def test_a_complete_node_is_accepted():
 
 
 def test_a_node_id_may_not_break_the_key_layout():
+    """Test a node id may not break the key layout."""
     with pytest.raises(ConfigError) as refused:
         Config.from_dict({
             "etcd": {"endpoints": ["http://" + _loopback() + ":2379"]},

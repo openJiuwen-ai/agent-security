@@ -77,6 +77,7 @@ def test_the_four_tables_are_created(tmp_path):
 
 
 def test_the_bootstrap_is_idempotent(tmp_path):
+    """Test the bootstrap is idempotent."""
     db = open_db(str(tmp_path / "vault.db"))
     try:
         bootstrap_schema(db)
@@ -97,6 +98,7 @@ def test_the_ddl_is_the_go_ddl():
 
 
 def test_the_database_file_is_not_world_readable(tmp_path):
+    """Test the database file is not world readable."""
     import os
     import stat
 
@@ -116,6 +118,7 @@ def test_the_database_file_is_not_world_readable(tmp_path):
     ],
 )
 def test_prefix_upper_bound(prefix, expected):
+    """Test prefix upper bound."""
     upper, ok = prefix_upper_bound(prefix)
     assert ok is True
     assert upper == expected
@@ -227,6 +230,7 @@ def test_the_row_version_guard_protects_a_concurrent_write(tmp_path):
 
 
 def test_the_schema_entries_are_read_back_in_version_order(tmp_path):
+    """Test the schema entries are read back in version order."""
     db = open_db(str(tmp_path / "vault.db"))
     try:
         bootstrap_schema(db)
