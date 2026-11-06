@@ -31,7 +31,7 @@ import threading
 import time
 from dataclasses import dataclass
 
-from cred_router.crypto import (
+from security_gateway.crypto import (
     DEK_SIZE,
     MODE_HASH,
     SHARD_SIZE,
@@ -43,7 +43,7 @@ from cred_router.crypto import (
     unwrap_dek,
     wrap_dek,
 )
-from cred_router.crypto.errors import CryptoError
+from security_gateway.crypto.errors import CryptoError
 
 from .errors import KeyMismatchError
 from .store import KEY_META_DDL, Database

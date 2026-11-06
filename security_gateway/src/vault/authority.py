@@ -38,11 +38,11 @@ class AuthorityMixin:
         """Record when the fleet's rotation gate was last passed, if it has none yet."""
         from datetime import datetime, timezone
 
-        from cred_router.credmgr.etcdstore import (
+        from security_gateway.credmgr.etcdstore import (
             last_rotation_at,
             set_last_rotation_at,
         )
-        from cred_router.credmgr.etcdstore.errors import NotFoundError
+        from security_gateway.credmgr.etcdstore.errors import NotFoundError
 
         store = self.authority.store
         try:
@@ -162,8 +162,8 @@ class AuthorityMixin:
 
     def adopt_cluster_dek(self, dek: bytes, generation: int) -> None:
         """Install the fleet's newer generation on this node."""
-        from cred_router.crypto import KeyBytes, parse_mode, wrap_dek
-        from cred_router.vault.keys import (
+        from security_gateway.crypto import KeyBytes, parse_mode, wrap_dek
+        from security_gateway.vault.keys import (
             KeySnapshot,
             derive_kek,
             load_s1_from_file,
