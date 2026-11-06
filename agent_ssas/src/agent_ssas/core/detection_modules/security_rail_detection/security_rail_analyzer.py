@@ -133,7 +133,7 @@ class SecurityRailAnalyzer:
             "risk_level": risk_level,
             "risk_type": risk_type,
             "risk_score": self._level_to_score(risk_level),
-            "confidence": 1.0,
+            "confidence": self._deny_reason_to_confidence(deny_reason),
             "detected_threats": [risk_type] if risk_type else [],
             "recommended_actions": recommended_actions,
             "analytic_name": analytic_name,
@@ -162,6 +162,32 @@ class SecurityRailAnalyzer:
             "evidence": {},
             "module_name": "security_rail_detection",
         }
+
+    @staticmethod
+    def _deny_reason_to_confidence(deny_reason: str) -> float:
+        """按拒绝场景映射置信度(拒绝场景分类的确定性)。
+
+        置信度表示"拒绝场景分类"的确定性,而非"拒绝事件发生"的确定性
+        (拒绝事件本身由安全护栏记录,是确定事实):
+
+        - policy_deny(0.9): PermissionInterruptRail 的 [PERMISSION_DENIED]
+          拒绝理由前缀精确匹配,分类确定性最高;
+        - user_reject(0.75): ask 模式下用户主动拒绝,由排除法推断
+          (非策略拒绝前缀的拒绝),分类存在歧义;
+        - unknown(0.6): 决策信息缺失时的保守回退分类,确定性最低。
+
+        Args:
+            deny_reason: 拒绝场景(policy_deny/user_reject),缺失或未知
+                时按 unknown 处理。
+
+        Returns:
+            置信度(0-1),对应 OCSF 呈现层 High(>=0.9)/Medium(>=0.7)/Low(>0)。
+        """
+        mapping = {
+            "policy_deny": 0.9,
+            "user_reject": 0.75,
+        }
+        return mapping.get(deny_reason, 0.6)
 
     @staticmethod
     def _level_to_score(risk_level: str) -> float:
