@@ -10,7 +10,6 @@ import importlib
 import sqlite3
 
 import pytest
-
 from security_gateway.vault import Config, FieldDef, Record, Schema, Type, Value, Vault
 
 
@@ -47,25 +46,25 @@ def vault(data_dir: str, schema: Schema):
         store.close()
 
 
-def read_raw_data(db_path: str, id: str) -> bytes:
+def read_raw_data(db_path: str, record_id: str) -> bytes:
     """A record's stored bytes, straight out of the database."""
     conn = sqlite3.connect(db_path, isolation_level=None, timeout=5.0)
     try:
         row = conn.execute(
-            "SELECT data FROM vault_record WHERE id = ?", (id,)
+            "SELECT data FROM vault_record WHERE id = ?", (record_id,)
         ).fetchone()
     finally:
         conn.close()
     if row is None:
-        raise AssertionError(f"the store holds no record {id!r}")
+        raise AssertionError(f"the store holds no record {record_id!r}")
     return bytes(row[0])
 
 
-def write_raw_data(db_path: str, id: str, data: bytes) -> None:
+def write_raw_data(db_path: str, record_id: str, data: bytes) -> None:
     """Overwrite a record's stored bytes."""
     conn = sqlite3.connect(db_path, isolation_level=None, timeout=5.0)
     try:
-        conn.execute("UPDATE vault_record SET data = ? WHERE id = ?", (data, id))
+        conn.execute("UPDATE vault_record SET data = ? WHERE id = ?", (data, record_id))
     finally:
         conn.close()
 
@@ -91,14 +90,14 @@ def call_rotate_dek(vault: Vault):
     pytest.skip("the vault package has no key rotation yet")
 
 
-def put_record(vault: Vault, id: str) -> None:
+def put_record(vault: Vault, record_id: str) -> None:
     """Write a record with both fields set."""
     vault.put(
         Record(
-            id=id,
+            id=record_id,
             fields={
                 "endpoint": Value.new_string("https://example.test"),
-                "api_key": Value.new_string("secret-for-" + id),
+                "api_key": Value.new_string("value-for-" + record_id),
             },
         )
     )

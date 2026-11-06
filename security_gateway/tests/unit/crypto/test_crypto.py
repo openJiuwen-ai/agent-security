@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-
 from security_gateway.crypto import (
     DEK_SIZE,
     NONCE_SIZE,
@@ -43,8 +42,13 @@ from security_gateway.crypto import (
     wrap_dek,
 )
 
-AES_KEY = bytes(range(16))
-DEK = bytes(range(16, 32))
+
+def _aes_key() -> bytes:
+    return bytes(range(16))
+
+
+def _dek() -> bytes:
+    return bytes(range(16, 32))
 
 
 # --- published standard vectors -------------------------------------------
@@ -141,10 +145,10 @@ def test_the_sizes_are_the_ones_the_format_defines():
     [(aes_encrypt, aes_decrypt), (sm4_encrypt, sm4_decrypt)],
 )
 def test_a_round_trip_returns_the_plaintext(encrypt, decrypt):
-    nonce, ciphertext = encrypt(AES_KEY, b"sk-secret")
+    nonce, ciphertext = encrypt(_aes_key(), b"stored-value")
     assert len(nonce) == NONCE_SIZE
-    assert len(ciphertext) == len(b"sk-secret") + TAG_SIZE
-    assert decrypt(AES_KEY, nonce, ciphertext) == b"sk-secret"
+    assert len(ciphertext) == len(b"stored-value") + TAG_SIZE
+    assert decrypt(_aes_key(), nonce, ciphertext) == b"stored-value"
 
 
 @pytest.mark.parametrize(
@@ -152,8 +156,8 @@ def test_a_round_trip_returns_the_plaintext(encrypt, decrypt):
     [(aes_encrypt, aes_decrypt), (sm4_encrypt, sm4_decrypt)],
 )
 def test_an_empty_plaintext_is_allowed(encrypt, decrypt):
-    nonce, ciphertext = encrypt(AES_KEY, b"")
-    assert decrypt(AES_KEY, nonce, ciphertext) == b""
+    nonce, ciphertext = encrypt(_aes_key(), b"")
+    assert decrypt(_aes_key(), nonce, ciphertext) == b""
 
 
 @pytest.mark.parametrize(
@@ -173,7 +177,7 @@ def test_a_key_of_the_wrong_length_is_refused(encrypt, decrypt):
 )
 def test_a_nonce_of_the_wrong_length_is_refused(encrypt, decrypt):
     with pytest.raises(InvalidNonceSizeError):
-        decrypt(AES_KEY, bytes(11), bytes(32))
+        decrypt(_aes_key(), bytes(11), bytes(32))
 
 
 @pytest.mark.parametrize(
@@ -182,7 +186,7 @@ def test_a_nonce_of_the_wrong_length_is_refused(encrypt, decrypt):
 )
 def test_a_ciphertext_too_short_for_a_tag_is_refused(encrypt, decrypt):
     with pytest.raises(InvalidCiphertextError):
-        decrypt(AES_KEY, bytes(12), bytes(15))
+        decrypt(_aes_key(), bytes(12), bytes(15))
 
 
 @pytest.mark.parametrize(
@@ -190,15 +194,15 @@ def test_a_ciphertext_too_short_for_a_tag_is_refused(encrypt, decrypt):
     [(aes_encrypt, aes_decrypt), (sm4_encrypt, sm4_decrypt)],
 )
 def test_a_tampered_ciphertext_does_not_decrypt(encrypt, decrypt):
-    nonce, ciphertext = encrypt(AES_KEY, b"sk-secret")
+    nonce, ciphertext = encrypt(_aes_key(), b"stored-value")
     tampered = bytearray(ciphertext)
     tampered[0] ^= 0xFF
     with pytest.raises(InvalidCiphertextError):
-        decrypt(AES_KEY, nonce, bytes(tampered))
+        decrypt(_aes_key(), nonce, bytes(tampered))
 
 
 def test_the_wrong_key_does_not_decrypt():
-    nonce, ciphertext = aes_encrypt(AES_KEY, b"sk-secret")
+    nonce, ciphertext = aes_encrypt(_aes_key(), b"stored-value")
     with pytest.raises(InvalidCiphertextError):
         aes_decrypt(bytes(range(1, 17)), nonce, ciphertext)
 
@@ -208,65 +212,65 @@ def test_the_wrong_key_does_not_decrypt():
 
 @pytest.mark.parametrize("mode", [Mode.AES, Mode.SM4])
 def test_a_credential_blob_has_the_format_the_store_expects(mode):
-    blob = encrypt_credential(mode, DEK, b"sk-secret")
+    blob = encrypt_credential(mode, _dek(), b"stored-value")
     # format(1) + nonce(12) + ciphertext + tag(16)
-    assert len(blob) == 1 + NONCE_SIZE + len(b"sk-secret") + TAG_SIZE
+    assert len(blob) == 1 + NONCE_SIZE + len(b"stored-value") + TAG_SIZE
     assert blob[0] == int(mode)
 
 
 @pytest.mark.parametrize("mode", [Mode.AES, Mode.SM4])
 def test_a_credential_round_trips(mode):
-    blob = encrypt_credential(mode, DEK, b"sk-secret")
-    assert decrypt_credential(mode, DEK, blob) == b"sk-secret"
+    blob = encrypt_credential(mode, _dek(), b"stored-value")
+    assert decrypt_credential(mode, _dek(), blob) == b"stored-value"
 
 
 def test_a_credential_written_under_another_cipher_is_refused():
-    blob = encrypt_credential(Mode.AES, DEK, b"sk-secret")
+    blob = encrypt_credential(Mode.AES, _dek(), b"stored-value")
     with pytest.raises(UnsupportedCipherFormatError):
-        decrypt_credential(Mode.SM4, DEK, blob)
+        decrypt_credential(Mode.SM4, _dek(), blob)
 
 
 def test_a_credential_too_short_to_carry_a_tag_is_refused():
     with pytest.raises(InvalidCiphertextError):
-        decrypt_credential(Mode.AES, DEK, bytes(20))
+        decrypt_credential(Mode.AES, _dek(), bytes(20))
 
 
 def test_an_unknown_mode_cannot_decrypt():
     with pytest.raises(InvalidModeError):
-        decrypt_credential(0x09, DEK, bytes(64))
+        decrypt_credential(0x09, _dek(), bytes(64))
 
 
-# --- the wrapped DEK --------------------------------------------------------
+# --- the wrapped _dek() --------------------------------------------------------
 
 
 @pytest.mark.parametrize("mode", [Mode.AES, Mode.SM4])
 def test_a_wrapped_dek_is_forty_four_bytes(mode):
-    wrapped = wrap_dek(mode, AES_KEY, DEK)
+    wrapped = wrap_dek(mode, _aes_key(), _dek())
     assert len(wrapped) == WRAPPED_DEK_SIZE == 44
-    assert unwrap_dek(mode, AES_KEY, wrapped) == DEK
+    assert unwrap_dek(mode, _aes_key(), wrapped) == _dek()
 
 
 @pytest.mark.parametrize("mode", [Mode.AES, Mode.SM4])
 def test_the_probe_accepts_a_good_wrap(mode):
-    wrapped = wrap_dek(mode, AES_KEY, DEK)
-    assert probe_unwrap_dek(mode, AES_KEY, DEK, wrapped) is None
+    wrapped = wrap_dek(mode, _aes_key(), _dek())
+    assert probe_unwrap_dek(mode, _aes_key(), _dek(), wrapped) is None
 
 
 @pytest.mark.parametrize("mode", [Mode.AES, Mode.SM4])
 def test_the_probe_rejects_a_wrap_of_another_dek(mode):
-    wrapped = wrap_dek(mode, AES_KEY, DEK)
+    wrapped = wrap_dek(mode, _aes_key(), _dek())
     with pytest.raises(Exception):
-        probe_unwrap_dek(mode, AES_KEY, bytes(16), wrapped)
+        probe_unwrap_dek(mode, _aes_key(), bytes(16), wrapped)
 
 
 def test_a_dek_of_the_wrong_length_cannot_be_wrapped():
     with pytest.raises(InvalidDekSizeError):
-        wrap_dek(Mode.AES, AES_KEY, bytes(15))
+        wrap_dek(Mode.AES, _aes_key(), bytes(15))
 
 
 def test_a_wrapped_dek_of_the_wrong_length_cannot_be_unwrapped():
     with pytest.raises(InvalidWrappedDekLengthError):
-        unwrap_dek(Mode.AES, AES_KEY, bytes(43))
+        unwrap_dek(Mode.AES, _aes_key(), bytes(43))
 
 
 # --- the derivation ---------------------------------------------------------

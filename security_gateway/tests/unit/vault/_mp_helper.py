@@ -35,7 +35,7 @@ CLAIMED_FILE = "claimed"
 PROCEED_FILE = "proceed"
 
 
-def test_schema():
+def helper_schema():
     """The schema the Go tests use.
 
     One plaintext field and one encrypted one — the same shape as
@@ -56,7 +56,7 @@ def open_store(directory: str):
     """Open a store on a directory."""
     from security_gateway.vault.vault import Config, Vault
 
-    return Vault.open(Config(data_dir=directory), test_schema())
+    return Vault.open(Config(data_dir=directory), helper_schema())
 
 
 def multi_process_record(record_id: str, endpoint: str, secret: str):
@@ -118,9 +118,9 @@ def claim_pending(vault) -> int:
     target = km.active_dek_version + 1
     cur = vault.db.execute(
         """
-		UPDATE vault_key_metadata
-		   SET pending_dek_version = ?, pending_wrapped_dek = ?, updated_at = ?
-		 WHERE id = 1 AND pending_dek_version = 0""",
+        UPDATE vault_key_metadata
+           SET pending_dek_version = ?, pending_wrapped_dek = ?, updated_at = ?
+         WHERE id = 1 AND pending_dek_version = 0""",
         (target, wrapped, int(time.time())),
     )
     if cur.rowcount != 1:
@@ -150,8 +150,7 @@ def main(argv: list[str]) -> int:
     role = os.environ.get(ROLE_ENV, "")
     directory = os.environ.get(DIR_ENV, "")
     if not role or not directory:
-        print(f"usage: {argv[0]} (needs {ROLE_ENV} and {DIR_ENV})",
-              file=sys.stderr)
+        sys.stderr.write(f"usage: {argv[0]} (needs {ROLE_ENV} and {DIR_ENV})\n")
         return 2
 
     if role == ROLE_CLAIM:
@@ -176,12 +175,12 @@ def main(argv: list[str]) -> int:
         try:
             vault.put(
                 multi_process_record(
-                    "cross-process", "https://x.example.com", "secret-x"))
+                    "cross-process", "https://x.example.com", "value-x"))
         finally:
             vault.close()
         return 0
 
-    print(f"unknown helper role {role!r}", file=sys.stderr)
+    sys.stderr.write(f"unknown helper role {role!r}\n")
     return 2
 
 

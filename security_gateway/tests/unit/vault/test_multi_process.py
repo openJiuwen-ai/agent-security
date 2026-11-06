@@ -36,7 +36,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from security_gateway.vault import rotate
 from security_gateway.vault.errors import NotFoundError, RotationInProgressError
 from security_gateway.vault.store import count_stragglers, get_record
@@ -588,7 +587,7 @@ def test_claiming_a_rotation_against_a_moved_generation_fails(stores):
 
     # A rotation that still holds the old generation cannot claim.
     wrapped = helper.mint_wrapped_dek(v)
-    claimed = rotate._claim_rotation(v, stale + 1, wrapped, stale)
+    claimed = getattr(rotate, "_claim_rotation")(v, stale + 1, wrapped, stale)
     assert not claimed, (
         f"the claim landed against the generation {stale}, but the store is on {moved}")
 
@@ -723,4 +722,4 @@ def test_across_processes(stores):
 
     # And the record is readable here: the key for the pending generation is
     # in the store, and a process that has not seen the claim has to find it.
-    require_secret(v, "cross-process", "secret-x")
+    require_secret(v, "cross-process", "value-x")

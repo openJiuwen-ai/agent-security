@@ -17,9 +17,6 @@ import threading
 import time
 
 import pytest
-
-from .conftest import call_rotate_dek, put_record
-
 from security_gateway.crypto import DEK_SIZE, KeyBytes, Mode
 from security_gateway.vault import (
     NotFoundError,
@@ -30,6 +27,8 @@ from security_gateway.vault import (
     set_put_before_write_hook,
 )
 from security_gateway.vault.keys import KeySnapshot
+
+from .conftest import call_rotate_dek, put_record
 
 
 def _new_snapshot(version: int) -> KeySnapshot:
@@ -64,7 +63,7 @@ def test_a_write_across_a_key_swap_does_not_orphan_the_record(vault):
                 vault.put(
                     Record(
                         id="cred-1",
-                        fields={"api_key": Value.new_string("sk-secret")},
+                        fields={"api_key": Value.new_string("stored-value")},
                     )
                 )
             except BaseException as exc:  # noqa: BLE001 - reported below
@@ -114,16 +113,16 @@ def test_a_record_written_under_the_outgoing_key_is_still_readable(vault):
     that has not been re-encrypted yet is still under the old key.
     """
     vault.put(
-        Record(id="cred-1", fields={"api_key": Value.new_string("sk-secret")})
+        Record(id="cred-1", fields={"api_key": Value.new_string("stored-value")})
     )
 
     vault.keys.swap(_new_snapshot(2))
 
     got = vault.get("cred-1")
-    assert got.get_string("api_key") == "sk-secret"
+    assert got.get_string("api_key") == "stored-value"
 
 
-def _corrupt_ciphertext(vault, id: str) -> None:
+def _corrupt_ciphertext(vault, record_id: str) -> None:
     """Damage a record's ciphertext, leaving its container readable.
 
     The encrypted field is written last, so the last byte lands inside its
@@ -131,13 +130,13 @@ def _corrupt_ciphertext(vault, id: str) -> None:
     open.
     """
     row = vault.db.query_one(
-        "SELECT data FROM vault_record WHERE id = ?", (id,)
+        "SELECT data FROM vault_record WHERE id = ?", (record_id,)
     )
     assert row is not None
     data = bytearray(row[0])
     data[-1] ^= 0xFF
     vault.db.execute(
-        "UPDATE vault_record SET data = ? WHERE id = ?", (bytes(data), id)
+        "UPDATE vault_record SET data = ? WHERE id = ?", (bytes(data), record_id)
     )
 
 
@@ -150,7 +149,7 @@ def test_a_record_whose_generation_the_store_does_not_hold_is_stale(vault):
     bringing the store's keys up to date, the second by restoring the data.
     """
     vault.put(
-        Record(id="cred-1", fields={"api_key": Value.new_string("sk-secret")})
+        Record(id="cred-1", fields={"api_key": Value.new_string("stored-value")})
     )
 
     # The row names a generation the store has never held — a record from
@@ -172,7 +171,7 @@ def test_a_record_whose_generation_is_held_but_damaged_is_undecryptable(vault):
     does not open under it: the data is damaged, and no reload will help.
     """
     vault.put(
-        Record(id="cred-1", fields={"api_key": Value.new_string("sk-secret")})
+        Record(id="cred-1", fields={"api_key": Value.new_string("stored-value")})
     )
     _corrupt_ciphertext(vault, "cred-1")
 
@@ -192,11 +191,11 @@ def test_a_write_during_a_rotation_leaves_every_record_readable(vault):
     def writer():
         i = 0
         while not stop.is_set():
-            id = f"writer-{i % 10}"
+            record_id = f"writer-{i % 10}"
             try:
                 vault.put(
                     Record(
-                        id=id, fields={"api_key": Value.new_string("sk-" + id)}
+                        id=record_id, fields={"api_key": Value.new_string("value-" + record_id)}
                     )
                 )
             except BaseException as exc:  # noqa: BLE001 - reported below
@@ -216,7 +215,7 @@ def test_a_write_during_a_rotation_leaves_every_record_readable(vault):
         got = vault.get(f"seed-{i}")
         # The seeded records carry the helper's value, not the writer
         # thread's: the rotation must leave every one of them readable.
-        assert got.get_string("api_key") == f"secret-for-seed-{i}"
+        assert got.get_string("api_key") == f"value-for-seed-{i}"
 
     status = vault.status()
     assert status.straggler_count == 0

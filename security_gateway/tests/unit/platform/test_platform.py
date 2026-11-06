@@ -9,7 +9,6 @@ import os
 import time
 
 import pytest
-
 from security_gateway.platform.errs import (
     Code,
     code_of,
@@ -23,7 +22,6 @@ from security_gateway.platform.singleinstance import (
     open_lock_file,
     write_pid_file,
 )
-
 
 # --- the envelope -----------------------------------------------------------
 

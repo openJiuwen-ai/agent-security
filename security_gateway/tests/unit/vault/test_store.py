@@ -8,7 +8,6 @@ tables and their columns are checked here.
 from __future__ import annotations
 
 import pytest
-
 from security_gateway.vault import (
     KEY_META_DDL,
     RECORD_DDL,

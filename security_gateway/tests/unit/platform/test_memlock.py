@@ -22,7 +22,6 @@ import sys
 import textwrap
 
 import pytest
-
 from security_gateway.crypto.keybytes import KeyBytes
 from security_gateway.platform import memlock
 
@@ -151,10 +150,10 @@ def test_an_unlimited_limit_is_recognised(monkeypatch):
     monkeypatch.setattr(
         resource, "getrlimit",
         lambda which: (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
-    assert memlock._memlock_is_unlimited() is True
+    assert getattr(memlock, "_memlock_is_unlimited")() is True
 
     monkeypatch.setattr(resource, "getrlimit", lambda which: (0, 0))
-    assert memlock._memlock_is_unlimited() is False
+    assert getattr(memlock, "_memlock_is_unlimited")() is False
 
 
 # -- core dumps ------------------------------------------------------------

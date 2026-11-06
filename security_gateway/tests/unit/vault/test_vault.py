@@ -10,15 +10,6 @@ import shutil
 import stat
 
 import pytest
-
-from .conftest import (
-    call_rotate_dek,
-    make_test_schema,
-    put_record,
-    read_raw_data,
-    write_raw_data,
-)
-
 from security_gateway.vault import (
     Config,
     FieldDef,
@@ -33,6 +24,14 @@ from security_gateway.vault import (
     UndecryptableError,
     Value,
     Vault,
+)
+
+from .conftest import (
+    call_rotate_dek,
+    make_test_schema,
+    put_record,
+    read_raw_data,
+    write_raw_data,
 )
 
 
@@ -53,14 +52,14 @@ def test_put_get_round_trip(vault):
             id="cred-1",
             fields={
                 "endpoint": Value.new_string("https://api.example.com/v1"),
-                "api_key": Value.new_string("sk-super-secret"),
+                "api_key": Value.new_string("stored-value"),
             },
         )
     )
 
     got = vault.get("cred-1")
     assert got.get_string("endpoint") == "https://api.example.com/v1"
-    assert got.get_string("api_key") == "sk-super-secret"
+    assert got.get_string("api_key") == "stored-value"
 
 
 def test_the_encrypted_field_is_not_stored_in_the_clear(tmp_path):
@@ -71,12 +70,12 @@ def test_the_encrypted_field_is_not_stored_in_the_clear(tmp_path):
                 id="cred-1",
                 fields={
                     "endpoint": Value.new_string("https://api.example.com/v1"),
-                    "api_key": Value.new_string("sk-super-secret"),
+                    "api_key": Value.new_string("stored-value"),
                 },
             )
         )
         data = read_raw_data(str(tmp_path / "vault.db"), "cred-1")
-        assert b"sk-super-secret" not in data
+        assert b"stored-value" not in data
         assert b"https://api.example.com/v1" in data
     finally:
         store.close()
@@ -89,7 +88,7 @@ def test_get_of_an_unknown_id_is_not_found(vault):
 
 def test_delete_record(vault):
     vault.put(
-        Record(id="cred-1", fields={"api_key": Value.new_string("sk-secret")})
+        Record(id="cred-1", fields={"api_key": Value.new_string("stored-value")})
     )
     vault.delete("cred-1")
     with pytest.raises(NotFoundError):
@@ -102,7 +101,7 @@ def test_put_rejects_a_field_outside_the_schema(vault):
     record = Record(
         id="cred-1",
         fields={
-            "api_key": Value.new_string("sk-secret"),
+            "api_key": Value.new_string("stored-value"),
             "not_in_schema": Value.new_string("x"),
         },
     )
@@ -112,7 +111,7 @@ def test_put_rejects_a_field_outside_the_schema(vault):
 
 def test_put_rejects_the_wrong_field_type(vault):
     record = Record(
-        id="cred-1", fields={"api_key": Value.new_bytes(b"sk-secret")}
+        id="cred-1", fields={"api_key": Value.new_bytes(b"stored-value")}
     )
     with pytest.raises(InvalidRecordError):
         vault.put(record)
@@ -143,7 +142,7 @@ def test_open_refuses_a_schema_change_without_a_version_bump(tmp_path):
 def test_open_accepts_an_additive_schema_change(tmp_path):
     store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     store.put(
-        Record(id="cred-1", fields={"api_key": Value.new_string("sk-secret")})
+        Record(id="cred-1", fields={"api_key": Value.new_string("stored-value")})
     )
     store.close()
 
@@ -154,7 +153,7 @@ def test_open_accepts_an_additive_schema_change(tmp_path):
     store2 = Vault.open(Config(data_dir=str(tmp_path)), extended)
     try:
         got = store2.get("cred-1")
-        assert got.get_string("api_key") == "sk-secret"
+        assert got.get_string("api_key") == "stored-value"
         # A record written under the old schema does not have the new field.
         assert got.get("region") is None
     finally:
@@ -210,7 +209,7 @@ def test_a_rotation_keeps_the_records_readable(tmp_path):
             got = store.get(id)
             # The value is the one that was written: a rotation changes
             # the key the record is sealed under, not what it says.
-            assert got.get_string("api_key") == "secret-for-" + id
+            assert got.get_string("api_key") == "value-for-" + id
 
         after = read_raw_data(str(tmp_path / "vault.db"), "cred-1")
         assert before != after
@@ -252,7 +251,7 @@ def test_get_of_a_corrupted_record_is_undecryptable_not_not_found(tmp_path):
     store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     try:
         store.put(
-            Record(id="cred-1", fields={"api_key": Value.new_string("sk-secret")})
+            Record(id="cred-1", fields={"api_key": Value.new_string("stored-value")})
         )
         db_path = str(tmp_path / "vault.db")
         data = bytearray(read_raw_data(db_path, "cred-1"))
@@ -270,7 +269,7 @@ def test_get_of_a_corrupted_record_is_undecryptable_not_not_found(tmp_path):
 
 def test_status_reports_the_store_state(vault):
     vault.put(
-        Record(id="cred-1", fields={"api_key": Value.new_string("sk-secret")})
+        Record(id="cred-1", fields={"api_key": Value.new_string("stored-value")})
     )
 
     status = vault.status()
@@ -284,7 +283,7 @@ def test_status_reports_the_store_state(vault):
 def test_open_fails_when_the_key_material_is_missing(tmp_path):
     store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     store.put(
-        Record(id="cred-1", fields={"api_key": Value.new_string("sk-secret")})
+        Record(id="cred-1", fields={"api_key": Value.new_string("stored-value")})
     )
     store.close()
 
@@ -304,7 +303,7 @@ def test_open_refuses_a_store_with_records_but_no_key_metadata(tmp_path):
 
     store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     store.put(
-        Record(id="cred-1", fields={"api_key": Value.new_string("sk-secret")})
+        Record(id="cred-1", fields={"api_key": Value.new_string("stored-value")})
     )
     store.close()
 
@@ -369,7 +368,7 @@ def test_the_store_holds_whatever_shape_it_is_given(tmp_path):
                 id="thing/one",
                 fields={
                     "label": Value.new_string("a-label"),
-                    "secret": Value.new_bytes(b"sk-abc"),
+                    "secret": Value.new_bytes(b"abc"),
                     "count": Value.new_int64(7),
                     "on": Value.new_bool(True),
                 },
@@ -377,7 +376,7 @@ def test_the_store_holds_whatever_shape_it_is_given(tmp_path):
         )
         got = store.get("thing/one")
         assert got.get_string("label") == "a-label"
-        assert got.get_bytes("secret") == b"sk-abc"
+        assert got.get_bytes("secret") == b"abc"
         assert got.get_int64("count") == 7
         assert got.get_bool("on") is True
     finally:

@@ -8,7 +8,6 @@ change here is a change to every file the store has ever written.
 from __future__ import annotations
 
 import pytest
-
 from security_gateway.vault import (
     CONTAINER_FORMAT,
     CONTAINER_HEADER_SIZE,
