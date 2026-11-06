@@ -84,6 +84,8 @@ class TestSecurityRailDetection:
         assert report["risk_level"] == "medium"
         assert report["risk_type"] == "tool_permission_denied"
         assert report["risk_score"] == 50.0  # medium -> 50
+        # 拒绝场景分类确定性: policy_deny 前缀精确匹配,置信度 0.9(OCSF High/90)
+        assert report["confidence"] == 0.9
         assert report["detected_threats"] == ["tool_permission_denied"]
         assert report["module_name"] == "security_rail_detection"
         assert report["analytic_name"] == "Tool Permission Denied"
@@ -114,6 +116,8 @@ class TestSecurityRailDetection:
         assert report["has_risk"] is True
         assert report["risk_level"] == "low"
         assert report["risk_score"] == 25.0  # low -> 25
+        # 拒绝场景分类确定性: user_reject 由排除法推断,置信度 0.75(OCSF Medium/75)
+        assert report["confidence"] == 0.75
         assert report["analytic_name"] == "Tool Permission Rejected"
         assert report["description"] == "User rejected the tool call to bash"
         # 用户主动拒绝:仅记录,不告警
@@ -133,6 +137,8 @@ class TestSecurityRailDetection:
         assert report["has_risk"] is True
         assert report["risk_level"] == "medium"
         assert report["risk_score"] == 50.0  # medium -> 50
+        # 拒绝场景分类确定性: unknown 决策缺失保守回退,置信度 0.6(OCSF Low/60)
+        assert report["confidence"] == 0.6
         assert report["analytic_name"] == "Tool Permission Denied"
         assert report["description"] == "PermissionInterruptRail denied the tool call to bash"
 
@@ -189,3 +195,16 @@ class TestSecurityRailDetection:
         assert SecurityRailAnalyzer._level_to_score("critical") == 100.0  # pylint: disable=protected-access
         # 未知等级回退 50.0
         assert SecurityRailAnalyzer._level_to_score("unknown") == 50.0  # pylint: disable=protected-access
+
+    @staticmethod
+    @pytest.mark.unit
+    @pytest.mark.level1
+    def test_deny_reason_to_confidence_mapping() -> None:
+        """验证 _deny_reason_to_confidence 拒绝场景到置信度的映射。"""
+        # policy_deny: [PERMISSION_DENIED] 前缀精确匹配 -> 0.9 (OCSF High/90)
+        assert SecurityRailAnalyzer._deny_reason_to_confidence("policy_deny") == 0.9  # pylint: disable=protected-access
+        # user_reject: 排除法推断 -> 0.75 (OCSF Medium/75)
+        assert SecurityRailAnalyzer._deny_reason_to_confidence("user_reject") == 0.75  # pylint: disable=protected-access
+        # unknown/缺失/空值: 决策缺失保守回退 -> 0.6 (OCSF Low/60)
+        assert SecurityRailAnalyzer._deny_reason_to_confidence("unknown") == 0.6  # pylint: disable=protected-access
+        assert SecurityRailAnalyzer._deny_reason_to_confidence("") == 0.6  # pylint: disable=protected-access
