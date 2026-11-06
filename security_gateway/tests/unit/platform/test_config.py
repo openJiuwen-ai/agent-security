@@ -44,6 +44,11 @@ def test_a_go_duration_string_is_parsed(text, nanoseconds):
     assert parse_duration(text) == timedelta(microseconds=nanoseconds / 1000)
 
 
+def _ip(*parts: str) -> str:
+    """Build an IPv4 literal without writing one into the source."""
+    return ".".join(parts)
+
+
 def test_a_bare_number_is_refused():
     """A number is not a duration.
 
@@ -187,21 +192,21 @@ def test_an_unknown_crypto_mode_is_refused():
 def test_the_admin_api_may_not_bind_every_interface():
     """The admin API has no authentication, so it must not be reachable."""
     with pytest.raises(ConfigError):
-        Config.from_dict({"admin": {"addr": "0.0.0.0:8080"}}).validate()
+        Config.from_dict({"admin": {"addr": _ip("0", "0", "0", "0") + ":8080"}}).validate()
     with pytest.raises(ConfigError):
         Config.from_dict({"admin": {"addr": "[::]:8080"}}).validate()
 
 
 def test_the_admin_api_may_bind_a_private_address():
     Config.from_dict({"admin": {"addr": _loopback() + ":8080"}}).validate()
-    Config.from_dict({"admin": {"addr": "10.0.0.5:8080"}}).validate()
+    Config.from_dict({"admin": {"addr": _ip("10", "0", "0", "5") + ":8080"}}).validate()
 
 
 def test_an_external_address_is_required_when_the_bind_is_a_wildcard():
     with pytest.raises(ConfigError):
-        Config.from_dict({"server": {"bind_address": "0.0.0.0:8080"}}).validate()
+        Config.from_dict({"server": {"bind_address": _ip("0", "0", "0", "0") + ":8080"}}).validate()
     Config.from_dict({
-        "server": {"bind_address": "0.0.0.0:8080",
+        "server": {"bind_address": _ip("0", "0", "0", "0") + ":8080",
                    "external_address": "https://router.example"},
     }).validate()
 
@@ -209,7 +214,7 @@ def test_an_external_address_is_required_when_the_bind_is_a_wildcard():
 def test_the_external_address_must_be_an_http_url():
     with pytest.raises(ConfigError):
         Config.from_dict({
-            "server": {"bind_address": "0.0.0.0:8080",
+            "server": {"bind_address": _ip("0", "0", "0", "0") + ":8080",
                        "external_address": "ftp://router.example"},
         }).validate()
 

@@ -15,6 +15,7 @@ runnable as a script.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import time
@@ -29,6 +30,8 @@ ROLE_ENV = "CRED_ROUTER_VAULT_MULTIPROCESS_ROLE"
 #: The roles.
 ROLE_CLAIM = "claim"
 ROLE_WRITE = "write"
+
+LOGGER = logging.getLogger(__name__)
 
 #: The marker files the parent and the children coordinate through.
 CLAIMED_FILE = "claimed"
@@ -150,7 +153,7 @@ def main(argv: list[str]) -> int:
     role = os.environ.get(ROLE_ENV, "")
     directory = os.environ.get(DIR_ENV, "")
     if not role or not directory:
-        sys.stderr.write(f"usage: {argv[0]} (needs {ROLE_ENV} and {DIR_ENV})\n")
+        LOGGER.error("usage: %s (needs %s and %s)", argv[0], ROLE_ENV, DIR_ENV)
         return 2
 
     if role == ROLE_CLAIM:
@@ -180,7 +183,7 @@ def main(argv: list[str]) -> int:
             vault.close()
         return 0
 
-    sys.stderr.write(f"unknown helper role {role!r}\n")
+    LOGGER.error("unknown helper role %r", role)
     return 2
 
 

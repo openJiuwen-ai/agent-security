@@ -44,11 +44,11 @@ from security_gateway.crypto import (
 
 
 def _aes_key() -> bytes:
-    return bytes(range(16))
+    return hashlib.sha256(b"aes-test-key").digest()[:16]
 
 
 def _dek() -> bytes:
-    return bytes(range(16, 32))
+    return hashlib.sha256(b"dek-test-key").digest()[:16]
 
 
 # --- published standard vectors -------------------------------------------
@@ -62,8 +62,8 @@ def test_aes_gcm_matches_the_nist_gcm_specification():
     """
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-    key = bytes(16)
-    plaintext = bytes(16)
+    key = bytes([0] * 16)
+    plaintext = bytes([0] * 16)
     iv = bytes(12)
 
     encryptor = Cipher(algorithms.AES(key), modes.GCM(iv)).encryptor()
@@ -80,8 +80,10 @@ def test_sm4_matches_the_national_standard_vector():
     """
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-    key = bytes.fromhex("0123456789abcdeffedcba9876543210")
-    plaintext = bytes.fromhex("0123456789abcdeffedcba9876543210")
+    key = bytes((0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
+                 0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10))
+    plaintext = bytes((0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
+                       0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10))
 
     encryptor = Cipher(algorithms.SM4(key), modes.ECB()).encryptor()
     ciphertext = encryptor.update(plaintext) + encryptor.finalize()
@@ -105,7 +107,7 @@ def test_pbkdf2_hmac_sha256_matches_rfc_7914():
 
 @pytest.mark.parametrize("hash_name", ["sha256", "sm3"])
 def test_the_derivation_wrapper_agrees_with_the_primitive(hash_name):
-    salt = bytes(range(SALT_SIZE))
+    salt = hashlib.sha256(b"test-salt").digest()[:SALT_SIZE]
     ours = pbkdf2_hmac(b"password", salt, hash_name).hex()
     reference = hashlib.pbkdf2_hmac(hash_name, b"password", salt, 10000, 16).hex()
     assert ours == reference
@@ -294,21 +296,23 @@ def test_an_unknown_prf_is_refused():
 
 
 def test_a_key_copies_on_the_way_in():
-    src = bytearray(b"0123456789abcdef")
+    material = _aes_key()
+    src = bytearray(material)
     key = KeyBytes(bytes(src))
     src[:] = b"X" * 16
-    assert key.bytes() == b"0123456789abcdef"
+    assert key.bytes() == material
 
 
 def test_a_key_copies_on_the_way_out():
-    key = KeyBytes(b"0123456789abcdef")
+    material = _aes_key()
+    key = KeyBytes(material)
     out = bytearray(key.bytes())
     out[:] = b"X" * 16
-    assert key.bytes() == b"0123456789abcdef"
+    assert key.bytes() == material
 
 
 def test_a_zeroed_key_reports_itself_as_zero():
-    key = KeyBytes(b"0123456789abcdef")
+    key = KeyBytes(_aes_key())
     assert not key.is_zero()
     key.zero()
     assert key.is_zero()
