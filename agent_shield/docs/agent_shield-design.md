@@ -63,7 +63,7 @@ agent_shield/                       ← 本目录自身即 agent_shield 包（fl
       inspect.py                          异步 inspect()：文本交 detection 后端评估
       adapters/jiuwenswarm/tool_result.py 从工具结果提取待检文本
   native/windows-process-guard/  C/C++ 原生实现（Detours hook + 守护进程）
-    src/  tests/  third_party/detours/（git submodule）  build.ps1  python/（二进制分发子包）
+    src/  tests/  third_party/detours/（构建期外置 checkout，非 submodule）  build.ps1  python/（二进制分发子包）
   schema/                        7 个 JSON Schema
   tests/                         Python 单元测试 + e2e（见 13.1）
 ```
@@ -1034,7 +1034,7 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 | `policy_engine/events/command_effects.py` | 命令转成 effect。分词在 `matchers/command.py` |
 | `intercepts/native_call/launch.py` | `preflight` / `wrap`、二进制定位、fail-closed |
 | `intercepts/native_call/decide_pipe.py` | `DecidePipe`：命名管道、帧协议、bind、结算分发 |
-| `native/windows-process-guard/build.ps1` | MSVC + Detours 构建（含单测门禁；Detours 为 `third_party/detours` git submodule） |
+| `native/windows-process-guard/build.ps1` | MSVC + Detours 构建（含单测门禁；Detours 经 `DETOURS_ROOT` / 外置 checkout，非 submodule） |
 | `native/.../src/process_guard_main.cpp` | 守护进程：启动、注入、broker 线程 |
 | `native/.../src/hooks.cpp` | Detours hook、ask、trash 删除、子进程 spawn |
 | `native/.../src/process_guard_startup.h` | 启动配置布局：句柄、超时、删除模式、身份、tool cause（无指针、`pack(8)`，x64/x86 一致） |

@@ -1,14 +1,24 @@
 # Microsoft Detours
 
-`detours/` is a git submodule of https://github.com/microsoft/Detours,
-pinned to `1dbd4ea281d73d478aa8d09a8b83fbd265f715f7` (4.0.1 line).
+Detours is a **build-time** dependency of `windows-process-guard` only.
+It is **not** a git submodule and is **not** required to install or import
+`agent-shield` / `jiuwenbox` (Python packages).
 
-```
-git submodule update --init -- agent_shield/native/windows-process-guard/third_party/detours
+Pin: [Microsoft Detours](https://github.com/microsoft/Detours) **v4.0.1** (MIT),
+historically `1dbd4ea281d73d478aa8d09a8b83fbd265f715f7`.
+
+```powershell
+# Default location used by build.ps1 (gitignored):
+$root = "agent_shield/native/windows-process-guard/third_party/detours"
+git clone --branch v4.0.1 --depth 1 https://github.com/microsoft/Detours $root
+
+# Or point at an existing / mirrored checkout:
+$env:DETOURS_ROOT = "D:\mirror\Detours"
+# Optional mirror URL when using build.ps1 -FetchDetours:
+$env:DETOURS_GIT_URL = "https://gitcode.com/<org>/Detours.git"
 ```
 
-The upstream MIT license is in `detours/LICENSE.md` after the submodule is
-initialized.
+The upstream MIT license is in `LICENSE.md` inside the checkout after clone.
 
 Copyright (c) Microsoft Corporation. All rights reserved.
 

@@ -27,7 +27,7 @@
 | W7 调用方迁移 | 不在本仓（jiuwenswarm / agent-core 侧） |
 | W5 沙箱接线 | 服务端在 `../jiuwenbox/`，SDK 侧接线随 W6 定 |
 
-`schema/` 是决策与 native record 的 JSON Schema，`native/windows-process-guard/` 是进程守卫的 C/C++ 实现（Microsoft Detours 为 git submodule，克隆需 `--recurse-submodules`）。三方规则经规则集接口注册。PDP 设计见 [docs/agent_shield-design.md](docs/agent_shield-design.md)。
+`schema/` 是决策与 native record 的 JSON Schema，`native/windows-process-guard/` 是进程守卫的 C/C++ 实现（Microsoft Detours 为**构建期外置依赖**，见 `native/windows-process-guard/third_party/NOTICE.md`；安装/导入 Python 包无需拉取 Detours）。三方规则经规则集接口注册。PDP 设计见 [docs/agent_shield-design.md](docs/agent_shield-design.md)。
 
 ## 环境
 
