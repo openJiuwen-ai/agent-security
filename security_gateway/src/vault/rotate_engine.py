@@ -14,11 +14,11 @@ The next open promotes the pending key, keeps the old one as the
 previous key, and finishes the re-encryption before any caller sees
 the store.
 
-It is split out of :mod:`cred_router.vault.rotate` because the
+It is split out of :mod:`security_gateway.vault.rotate` because the
 rotation's order of operations and the statements each step is made of
 are two different kinds of code: one is read top to bottom to see what
 the rotation does, the other is read to see how a step is carried out.
-The public API stays in :mod:`cred_router.vault.rotate`, which is what
+The public API stays in :mod:`security_gateway.vault.rotate`, which is what
 the rest of the package imports.
 """
 

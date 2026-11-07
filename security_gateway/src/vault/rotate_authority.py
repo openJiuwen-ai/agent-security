@@ -9,7 +9,7 @@ that says when the fleet last rotated, the generation fence the
 authority keeps, and the count of the records the authority still holds
 under an older key.
 
-It is split out of :mod:`cred_router.vault.rotate` so that everything
+It is split out of :mod:`security_gateway.vault.rotate` so that everything
 that talks to the authority sits in one place: the rotation's own order
 of operations and the authority it arbitrates with are different
 things, and the code that reads and moves the authority's fence is the
@@ -52,8 +52,8 @@ def _fleet_rotation_gate(store: Any) -> int:
     is a fleet that is due, and a caller that cannot tell the two apart
     would freeze a fresh fleet forever.
     """
-    from cred_router.credmgr.etcdstore import last_rotation_at
-    from cred_router.credmgr.etcdstore.errors import NotFoundError
+    from security_gateway.credmgr.etcdstore import last_rotation_at
+    from security_gateway.credmgr.etcdstore.errors import NotFoundError
 
     try:
         at = last_rotation_at(store.kv, store.ns)
@@ -75,7 +75,7 @@ def _record_fleet_rotation_gate(store: Any) -> None:
     """
     from datetime import datetime, timezone
 
-    from cred_router.credmgr.etcdstore import set_last_rotation_at
+    from security_gateway.credmgr.etcdstore import set_last_rotation_at
 
     try:
         set_last_rotation_at(store.kv, store.ns, datetime.now(timezone.utc))
@@ -122,7 +122,7 @@ def _advance_generation(store: Any, target: int) -> None:
     reading the old generation never sees a record written under the new
     one.
     """
-    from cred_router.credmgr.etcdstore import advance_generation
+    from security_gateway.credmgr.etcdstore import advance_generation
 
     try:
         advanced, current = advance_generation(store.kv, store.ns, target)
