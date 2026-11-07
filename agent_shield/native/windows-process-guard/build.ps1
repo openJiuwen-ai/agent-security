@@ -1,4 +1,13 @@
 # Compile the Windows process guard unit tests with the installed MSVC toolset.
+# Detours is an external checkout (DETOURS_ROOT), not a git submodule — so cloning
+# this repo / `uv sync` never needs github.com/microsoft/Detours.
+param(
+    # When set, clone Detours into DETOURS_ROOT if Makefile is missing.
+    # Off by default so CI without GitHub access fails fast with a clear message
+    # instead of hanging on github.com.
+    [switch]$FetchDetours
+)
+
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -44,14 +53,79 @@ foreach ($name in $tests) {
 Write-Output "windows process guard unit tests passed"
 
 $src = Join-Path $root "src"
-$detoursSrc = Join-Path $root "third_party\detours\src"
 $vcvarsAll = Join-Path $install "VC\Auxiliary\Build\vcvarsall.bat"
 $wheelBin = Join-Path $root "python\src\agent_security_windows_process_guard\bin\win_amd64"
 New-Item -ItemType Directory -Force -Path $wheelBin | Out-Null
 
-if (-not (Test-Path (Join-Path $detoursSrc "Makefile"))) {
-    throw "Detours submodule is missing. Run: git submodule update --init"
+# Resolve Detours the same way jiuwenbox softdelete does: external checkout only.
+$detoursRoot = $env:DETOURS_ROOT
+if (-not $detoursRoot) {
+    $detoursRoot = Join-Path $root "third_party\detours"
 }
+$detoursSrc = Join-Path $detoursRoot "src"
+$detoursGitUrl = $env:DETOURS_GIT_URL
+if (-not $detoursGitUrl) {
+    $detoursGitUrl = "https://github.com/microsoft/Detours.git"
+}
+
+function Test-DetoursCheckout([string]$Path) {
+    # A real Detours tree has src\Makefile; a git clone also has .git.
+    return (Test-Path (Join-Path $Path "src\Makefile")) -or (Test-Path (Join-Path $Path ".git"))
+}
+
+function Ensure-DetoursCheckout {
+    if (Test-Path (Join-Path $detoursSrc "Makefile")) {
+        return
+    }
+    if (-not $FetchDetours) {
+        throw @"
+Detours sources not found at: $detoursRoot
+Native build needs an external checkout (not a git submodule).
+
+  `$env:DETOURS_ROOT = '<path-to-Detours>'
+  # or clone into the default gitignored path:
+  git clone --branch v4.0.1 --depth 1 $detoursGitUrl `"$detoursRoot`"
+  # mirrors: set `$env:DETOURS_GIT_URL before cloning / use -FetchDetours
+
+See third_party/NOTICE.md.
+"@
+    }
+    Write-Output "Fetching Detours into $detoursRoot from $detoursGitUrl"
+    if (Test-Path $detoursRoot) {
+        $entries = @(Get-ChildItem -Force $detoursRoot -ErrorAction SilentlyContinue)
+        if ($entries.Count -gt 0 -and -not (Test-DetoursCheckout $detoursRoot)) {
+            throw @"
+DETOURS_ROOT=$detoursRoot exists but is not a Detours checkout (missing src\Makefile / .git).
+Refusing to delete it. Point DETOURS_ROOT at a new empty path, or at a real Detours tree.
+"@
+        }
+    }
+
+    # Clone into a temp dir first; only replace the target after src\Makefile is verified.
+    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("detours-fetch-" + [guid]::NewGuid().ToString("n"))
+    try {
+        git clone --branch v4.0.1 --depth 1 $detoursGitUrl $tmp
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $tmp "src\Makefile"))) {
+            throw "Failed to fetch Detours from $detoursGitUrl (clone missing src\Makefile)"
+        }
+        $parent = Split-Path -Parent $detoursRoot
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+        if (Test-Path $detoursRoot) {
+            # Safe: empty dir, or previously validated as a Detours-looking tree.
+            Remove-Item -Recurse -Force $detoursRoot
+        }
+        Move-Item -Path $tmp -Destination $detoursRoot
+    } finally {
+        if (Test-Path $tmp) {
+            Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+        }
+    }
+    if (-not (Test-Path (Join-Path $detoursSrc "Makefile"))) {
+        throw "Failed to place Detours at $detoursRoot"
+    }
+}
+
+Ensure-DetoursCheckout
 
 function Invoke-Vc([string]$Arch, [string]$Command) {
     cmd /c "`"$vcvarsAll`" $Arch && $Command"
@@ -74,8 +148,8 @@ $commonList = $common -join " "
 $x64 = Join-Path $out "x64"
 $x86 = Join-Path $out "x86"
 New-Item -ItemType Directory -Force -Path $x64, $x86, (Join-Path $x64 "hook"), (Join-Path $x86 "hook") | Out-Null
-$detoursX64 = Join-Path $root "third_party\detours\lib.X64\detours.lib"
-$detoursX86 = Join-Path $root "third_party\detours\lib.X86\detours.lib"
+$detoursX64 = Join-Path $detoursRoot "lib.X64\detours.lib"
+$detoursX86 = Join-Path $detoursRoot "lib.X86\detours.lib"
 
 Invoke-Vc "amd64" "cl /nologo /W4 /WX /EHsc /MD /utf-8 /I `"$src`" /I `"$detoursSrc`" /Fo`"$x64\\`" /Fe`"$out\process_guard.exe`" `"$src\process_guard_main.cpp`" $commonList /link `"$detoursX64`""
 Invoke-Vc "amd64" "cl /nologo /W4 /WX /EHsc /MT /utf-8 /LD /I `"$src`" /I `"$detoursSrc`" /Fo`"$x64\hook\\`" /Fe`"$out\process_guard_hook_x64.dll`" `"$src\hooks.cpp`" $commonList /link /DEF:`"$src\process_guard_hook.def`" `"$detoursX64`""

@@ -25,8 +25,15 @@ def patch_uvicorn_logging() -> None:
     Uvicorn uses the logger name ``uvicorn.error`` for normal server lifecycle
     messages (not errors). Rename it to ``uvicorn`` for clearer log output, and
     apply jiuwenbox's timestamped format to the default formatter.
+
+    The sandbox runner (``jiuwenbox.supervisor.win_exec``) may run on a bare
+    system Python without uvicorn installed. ``configure_logging`` calls this
+    at import time — missing uvicorn must be a no-op, not ``ModuleNotFoundError``.
     """
-    from uvicorn.config import LOGGING_CONFIG
+    try:
+        from uvicorn.config import LOGGING_CONFIG
+    except ImportError:
+        return
 
     LOGGING_CONFIG["formatters"]["default"]["fmt"] = LOG_FORMAT
     LOGGING_CONFIG["formatters"]["default"]["datefmt"] = LOG_DATE_FORMAT

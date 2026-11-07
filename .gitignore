@@ -71,11 +71,9 @@ workspace/agent/memory/*.db-wal
 # Build-time Node runtime cache used by packaging scripts.
 vendor/node/
 
-# Windows process guard build outputs and Detours artifacts
+# Windows process guard build outputs. Detours sources are an external
+# checkout (not a git submodule) so `uv sync` / pip install never hits GitHub.
 agent_shield/native/windows-process-guard/build/
-agent_shield/native/windows-process-guard/third_party/detours/lib.*
-agent_shield/native/windows-process-guard/third_party/detours/obj.*
-agent_shield/native/windows-process-guard/third_party/detours/bin.*
-agent_shield/native/windows-process-guard/third_party/detours/include/
+agent_shield/native/windows-process-guard/third_party/detours/
 agent_shield/native/windows-process-guard/python/src/agent_security_windows_process_guard/bin/win_amd64/*
 !agent_shield/native/windows-process-guard/python/src/agent_security_windows_process_guard/bin/win_amd64/.gitkeep
