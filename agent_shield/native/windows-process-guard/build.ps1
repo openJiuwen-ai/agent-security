@@ -68,6 +68,11 @@ if (-not $detoursGitUrl) {
     $detoursGitUrl = "https://github.com/microsoft/Detours.git"
 }
 
+function Test-DetoursCheckout([string]$Path) {
+    # A real Detours tree has src\Makefile; a git clone also has .git.
+    return (Test-Path (Join-Path $Path "src\Makefile")) -or (Test-Path (Join-Path $Path ".git"))
+}
+
 function Ensure-DetoursCheckout {
     if (Test-Path (Join-Path $detoursSrc "Makefile")) {
         return
@@ -86,14 +91,37 @@ See third_party/NOTICE.md.
 "@
     }
     Write-Output "Fetching Detours into $detoursRoot from $detoursGitUrl"
-    $parent = Split-Path -Parent $detoursRoot
-    New-Item -ItemType Directory -Force -Path $parent | Out-Null
     if (Test-Path $detoursRoot) {
-        Remove-Item -Recurse -Force $detoursRoot
+        $entries = @(Get-ChildItem -Force $detoursRoot -ErrorAction SilentlyContinue)
+        if ($entries.Count -gt 0 -and -not (Test-DetoursCheckout $detoursRoot)) {
+            throw @"
+DETOURS_ROOT=$detoursRoot exists but is not a Detours checkout (missing src\Makefile / .git).
+Refusing to delete it. Point DETOURS_ROOT at a new empty path, or at a real Detours tree.
+"@
+        }
     }
-    git clone --branch v4.0.1 --depth 1 $detoursGitUrl $detoursRoot
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $detoursSrc "Makefile"))) {
-        throw "Failed to fetch Detours from $detoursGitUrl into $detoursRoot"
+
+    # Clone into a temp dir first; only replace the target after src\Makefile is verified.
+    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("detours-fetch-" + [guid]::NewGuid().ToString("n"))
+    try {
+        git clone --branch v4.0.1 --depth 1 $detoursGitUrl $tmp
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $tmp "src\Makefile"))) {
+            throw "Failed to fetch Detours from $detoursGitUrl (clone missing src\Makefile)"
+        }
+        $parent = Split-Path -Parent $detoursRoot
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+        if (Test-Path $detoursRoot) {
+            # Safe: empty dir, or previously validated as a Detours-looking tree.
+            Remove-Item -Recurse -Force $detoursRoot
+        }
+        Move-Item -Path $tmp -Destination $detoursRoot
+    } finally {
+        if (Test-Path $tmp) {
+            Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+        }
+    }
+    if (-not (Test-Path (Join-Path $detoursSrc "Makefile"))) {
+        throw "Failed to place Detours at $detoursRoot"
     }
 }
 
