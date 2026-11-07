@@ -27,10 +27,10 @@ def test_patch_uvicorn_logging_noop_when_uvicorn_missing(monkeypatch) -> None:
 
     real_import = builtins.__import__
 
-    def block_uvicorn(name, globals=None, locals=None, fromlist=(), level=0):
+    def block_uvicorn(name, *args, **kwargs):
         if name == "uvicorn" or name.startswith("uvicorn."):
             raise ImportError("No module named 'uvicorn'")
-        return real_import(name, globals, locals, fromlist, level)
+        return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", block_uvicorn)
     patch_uvicorn_logging()  # must not raise
