@@ -35,8 +35,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
-from cred_router.crypto import decrypt_credential, encrypt_credential
-from cred_router.crypto.errors import CryptoError
+from security_gateway.crypto import decrypt_credential, encrypt_credential
+from security_gateway.crypto.errors import CryptoError
 
 from .clock import now_timestamp as _now_timestamp
 from .codec import ContainerField, decode_container, encode_container
@@ -56,7 +56,7 @@ from .schema import Schema
 from .store import Database
 
 if TYPE_CHECKING:
-    from cred_router.credmgr.etcdstore.entry import RecordEntry
+    from security_gateway.credmgr.etcdstore.entry import RecordEntry
 
 __all__ = [
     "AUTHORITY_BATCH_SIZE",
@@ -205,7 +205,7 @@ class EtcdAuthority:
         fence has something real to match: an absent key's value is the
         empty string, and every write would be refused against it.
         """
-        from cred_router.credmgr.etcdstore import ensure_generation
+        from security_gateway.credmgr.etcdstore import ensure_generation
 
         authority = cls.over(store, ns)
         try:
@@ -243,7 +243,7 @@ class EtcdAuthority:
 
     def generation(self) -> int:
         """The authority's current DEK generation."""
-        from cred_router.credmgr.etcdstore import read_generation
+        from security_gateway.credmgr.etcdstore import read_generation
 
         try:
             current, _present = read_generation(self._store.kv, self._ns)
@@ -255,7 +255,7 @@ class EtcdAuthority:
 
     def advance_generation(self, target: int) -> int:
         """Move the authority's generation fence to ``target``."""
-        from cred_router.credmgr.etcdstore import advance_generation
+        from security_gateway.credmgr.etcdstore import advance_generation
 
         try:
             _advanced, current = advance_generation(self._store.kv, self._ns, int(target))
@@ -280,11 +280,11 @@ class EtcdAuthority:
         A write the generation fence refuses raises
         :class:`FencedWriteError`.
         """
-        from cred_router.credmgr.etcdstore.entry import RecordEntry, Timestamp
-        from cred_router.credmgr.etcdstore.errors import (
+        from security_gateway.credmgr.etcdstore.entry import RecordEntry, Timestamp
+        from security_gateway.credmgr.etcdstore.errors import (
             ConflictError as StoreConflictError,
         )
-        from cred_router.credmgr.etcdstore.errors import (
+        from security_gateway.credmgr.etcdstore.errors import (
             NotFoundError as StoreNotFoundError,
         )
 
@@ -372,10 +372,10 @@ class EtcdAuthority:
         delete that did nothing must not report that it deleted
         something.
         """
-        from cred_router.credmgr.etcdstore.errors import (
+        from security_gateway.credmgr.etcdstore.errors import (
             ConflictError as StoreConflictError,
         )
-        from cred_router.credmgr.etcdstore.errors import (
+        from security_gateway.credmgr.etcdstore.errors import (
             NotFoundError as StoreNotFoundError,
         )
 
@@ -444,13 +444,13 @@ class EtcdAuthority:
 
 def dial_etcd(cfg: EtcdConfig) -> EtcdAuthority:
     """Connect to etcd and return the authority handle."""
-    from cred_router.credmgr.etcdstore import (
+    from security_gateway.credmgr.etcdstore import (
         Store,
         ensure_generation,
         split_endpoint,
         tls_client_kwargs,
     )
-    from cred_router.credmgr.etcdstore.cluster import generation_key
+    from security_gateway.credmgr.etcdstore.cluster import generation_key
 
     if cfg is None or not cfg.endpoints:
         raise VaultError("vault: etcd: at least one endpoint is required")
@@ -460,7 +460,7 @@ def dial_etcd(cfg: EtcdConfig) -> EtcdAuthority:
     except ImportError as exc:
         raise ImportError(
             "the etcd client is an optional extra; install it with "
-            "'pip install cred_router[etcd]'"
+            "'pip install security_gateway[etcd]'"
         ) from exc
 
     tls = cfg.tls

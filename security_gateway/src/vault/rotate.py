@@ -29,8 +29,8 @@ an argument.
 on an open store and takes it off again; a store nobody attached one to
 is never rotated.
 
-The rotation's machinery lives in :mod:`cred_router.vault.rotate_engine`
-and :mod:`cred_router.vault.rotate_authority`. This module holds the
+The rotation's machinery lives in :mod:`security_gateway.vault.rotate_engine`
+and :mod:`security_gateway.vault.rotate_authority`. This module holds the
 public API and the order the rotation runs in.
 """
 
@@ -44,7 +44,7 @@ import threading
 import time
 from typing import Any, Callable, Protocol  # noqa: F401 - re-exported
 
-from cred_router.crypto import (
+from security_gateway.crypto import (
     DEK_SIZE,
     SHARD_SIZE,
     KeyBytes,
@@ -53,7 +53,7 @@ from cred_router.crypto import (
     parse_mode,
     wrap_dek,
 )
-from cred_router.crypto.errors import CryptoError
+from security_gateway.crypto.errors import CryptoError
 
 from .codec import ContainerField, decode_container, encode_container
 from .errors import (
@@ -556,7 +556,7 @@ def _rotate_locked(
             # the fleet. A target taken from the local row would mint a key
             # for a generation the fleet has already left — two keys under
             # one generation, and records neither of them can open.
-            from cred_router.credmgr.etcdstore import read_generation
+            from security_gateway.credmgr.etcdstore import read_generation
 
             try:
                 gen, present = read_generation(store.kv, store.ns)
@@ -744,7 +744,7 @@ def _acquire_fleet_lock(store: Any, leases: Any | None) -> Any:
     for the same generation, so it is taken before anything else
     happens.
     """
-    from cred_router.credmgr.etcdstore import acquire_rotation_lock
+    from security_gateway.credmgr.etcdstore import acquire_rotation_lock
 
     if leases is None:
         leases = getattr(store, "leases", None)
@@ -753,7 +753,7 @@ def _acquire_fleet_lock(store: Any, leases: Any | None) -> Any:
             "vault: etcd: the rotation lock needs a lease factory; the lock "
             "lives on a lease and a lock without one never expires"
         )
-    from cred_router.credmgr.etcdstore.errors import RotationHeldError
+    from security_gateway.credmgr.etcdstore.errors import RotationHeldError
 
     try:
         return acquire_rotation_lock(

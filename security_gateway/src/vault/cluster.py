@@ -35,22 +35,22 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from cred_router.credmgr.clusterdek import Anchor, Fingerprint
-from cred_router.credmgr.clusterkey.clusterkey import (
+from security_gateway.credmgr.clusterdek import Anchor, Fingerprint
+from security_gateway.credmgr.clusterkey.clusterkey import (
     Config as ClusterKeyConfig,
 )
-from cred_router.credmgr.clusterkey.clusterkey import (
+from security_gateway.credmgr.clusterkey.clusterkey import (
     HeldDEK,
     Identity,
     anchor_for,
     load_identity,
     obtain_pair,
 )
-from cred_router.credmgr.clusterkey.handover import (
+from security_gateway.credmgr.clusterkey.handover import (
     answer_requests,
     ask_for_newer_key,
 )
-from cred_router.credmgr.clusterkey.wake import (
+from security_gateway.credmgr.clusterkey.wake import (
     start_rounds,
     start_ticks,
     wake,
@@ -285,7 +285,7 @@ def obtain_cluster_dek(
             anchor,
         )
     except Exception as exc:
-        from cred_router.credmgr.clusterkey.clusterkey import ErrNoPeerSealed
+        from security_gateway.credmgr.clusterkey.clusterkey import ErrNoPeerSealed
 
         if isinstance(exc, ErrNoPeerSealed):
             raise KeyMismatchError(f"{exc}") from exc

@@ -23,9 +23,9 @@ if TYPE_CHECKING:
     # manager, and both are needed for annotations only, so they are
     # imported for the type checker rather than at run time: importing
     # the credential manager here would close a cycle.
-    from cred_router.credmgr.etcdstore.entry import RecordEntry
-    from cred_router.credmgr.etcdsync.etcdsync import Listed, Listing
-    from cred_router.credmgr.etcdstore.watch import Watcher
+    from security_gateway.credmgr.etcdstore.entry import RecordEntry
+    from security_gateway.credmgr.etcdsync.etcdsync import Listed, Listing
+    from security_gateway.credmgr.etcdstore.watch import Watcher
 
 __all__ = [
     "PURGE_ALL_REVISIONS",
@@ -244,7 +244,7 @@ class RecordSource:
 
     def list_entries(self, limit: int = 0) -> "Listing[RecordEntry]":
         """Every record in the namespace, plus the snapshot revision."""
-        from cred_router.credmgr.etcdsync.etcdsync import Listed, Listing
+        from security_gateway.credmgr.etcdsync.etcdsync import Listed, Listing
 
         listed, revision = self._store.list_records(limit)
         return Listing(
@@ -258,10 +258,10 @@ class RecordSource:
     def watch(self, rev: int) -> "Watcher":
         """Stream changes after ``rev``.
 
-        Raises :class:`~cred_router.credmgr.etcdstore.watch.ErrNoWatch`
+        Raises :class:`~security_gateway.credmgr.etcdstore.watch.ErrNoWatch`
         when the source was built without a watch capability.
         """
-        from cred_router.credmgr.etcdstore.watch import ErrNoWatch
+        from security_gateway.credmgr.etcdstore.watch import ErrNoWatch
 
         if self._watch_source is None:
             raise ErrNoWatch()
@@ -269,14 +269,14 @@ class RecordSource:
 
     def key_of(self, key: str) -> str:
         """Turn a watch event's key back into the record's id."""
-        from cred_router.credmgr.etcdstore.keys import record_id_from_key
+        from security_gateway.credmgr.etcdstore.keys import record_id_from_key
 
         return record_id_from_key(self.namespace(), key)
 
     @staticmethod
     def decode(value: bytes, mod_revision: int) -> "RecordEntry":
         """Parse a value the authority wrote."""
-        from cred_router.credmgr.etcdstore.entry import unmarshal_record
+        from security_gateway.credmgr.etcdstore.entry import unmarshal_record
 
         entry = unmarshal_record(value)
         if entry.mod_revision:
@@ -296,8 +296,8 @@ def serve_mirror(
     cfg: Any = None,
 ) -> None:
     """Keep the local database in step with the authority."""
-    from cred_router.credmgr.etcdsync import Config as SyncConfig
-    from cred_router.credmgr.etcdsync import Syncer
+    from security_gateway.credmgr.etcdsync import Config as SyncConfig
+    from security_gateway.credmgr.etcdsync import Syncer
 
     source = RecordSource(store, watch_source=watch_source)
     applier = MirrorApplier(db, local_dek_version)

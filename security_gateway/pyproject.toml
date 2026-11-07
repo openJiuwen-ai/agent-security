@@ -1,19 +1,40 @@
-# The repository's development configuration.
-#
-# The package's own metadata is NOT here: it is in ``src/pyproject.toml``,
-# because ``src/`` is the installable unit — the directory a consumer
-# points at when it declares the dependency:
-#
-#     pip install "cred-router-python @ git+ssh://git@host/repo.git#subdirectory=security_gateway/src"
-#
-# Installing from this directory therefore means installing from ``src/``:
-#
-#     pip install -e src/
-#
-# Keeping the two apart is what makes the dependency above work without a
-# second copy of the metadata to keep in step.
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "security-gateway"
+version = "0.1.0"
+description = "A Python secure store and credential router"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+
+dependencies = [
+    "cryptography>=43",
+    "PyYAML>=6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+]
+
+[tool.setuptools]
+package-dir = { security_gateway = "src" }
+packages = [
+    "security_gateway",
+    "security_gateway.crypto",
+    "security_gateway.platform",
+    "security_gateway.vault",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
 asyncio_mode = "auto"
+
+[tool.ruff]
+src = ["src"]
+line-length = 120
