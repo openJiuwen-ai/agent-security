@@ -15,8 +15,8 @@ encrypted under — a record no key could ever open.
 
 The second is that "absent" and "present but unreadable" are different
 answers. A record that exists and merely cannot be decrypted is reported
-as :class:`~cred_router.vault.errors.UndecryptableError`, never as
-:class:`~cred_router.vault.errors.NotFoundError`.
+as :class:`~security_gateway.vault.errors.UndecryptableError`, never as
+:class:`~security_gateway.vault.errors.NotFoundError`.
 
 What is here is the store itself: its records, its keys, its writes and
 its read path. The parts that are not the store's own behaviour live
@@ -36,8 +36,8 @@ import time  # noqa: F401
 from dataclasses import dataclass, field  # noqa: F401
 from typing import Any, Callable
 
-from cred_router.crypto import Mode, decrypt_credential, encrypt_credential
-from cred_router.crypto.errors import CryptoError
+from security_gateway.crypto import Mode, decrypt_credential, encrypt_credential
+from security_gateway.crypto.errors import CryptoError
 
 from .authority import AuthorityMixin
 from .codec import ContainerField, encode_container
@@ -229,7 +229,7 @@ class Vault(AuthorityMixin):
                     obtain_cluster_dek,
                 )
                 from .etcd import dial_etcd
-                from cred_router.credmgr.clusterkey.authority import (
+                from security_gateway.credmgr.clusterkey.authority import (
                     KVClusterStore,
                 )
 
@@ -486,7 +486,7 @@ class Vault(AuthorityMixin):
     def delete(self, record_id: str) -> None:
         """Remove a record.
 
-        It raises :class:`~cred_router.vault.errors.NotFoundError` when
+        It raises :class:`~security_gateway.vault.errors.NotFoundError` when
         the id is unknown.
         """
         if not record_id:

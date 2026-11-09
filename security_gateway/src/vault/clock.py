@@ -13,6 +13,6 @@ from typing import Any
 
 def now_timestamp() -> Any:
     """The current time, in the form the authority's records carry."""
-    from cred_router.credmgr.etcdstore.entry import Timestamp
+    from security_gateway.credmgr.etcdstore.entry import Timestamp
 
     return Timestamp.now()
