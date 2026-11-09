@@ -89,21 +89,67 @@ KEY_FILE_MODE = 0o600
 #: Copied byte for byte from ``pkg/vault/keys.go``:
 #: Byte-for-byte copy of the Go constant, kept as plain integers so no
 #: scanner mistakes this public domain-separation shard for key material.
-S3_SHARD = bytes((
-    86, 97, 117, 108, 116, 83, 104, 97,
-    114, 100, 51, 75, 101, 121, 77, 97,
-    116, 101, 114, 105, 97, 108, 50, 48,
-    50, 54, 45, 83, 77, 51, 45, 70,
-))
+S3_SHARD = bytes(
+    (
+        86,
+        97,
+        117,
+        108,
+        116,
+        83,
+        104,
+        97,
+        114,
+        100,
+        51,
+        75,
+        101,
+        121,
+        77,
+        97,
+        116,
+        101,
+        114,
+        105,
+        97,
+        108,
+        50,
+        48,
+        50,
+        54,
+        45,
+        83,
+        77,
+        51,
+        45,
+        70,
+    )
+)
 
 #: A compile-time constant: 16 bytes fixed at build time. It is PBKDF2
 #: domain separation, not a secret — the literal is in the binary.
 #:
 #: Copied byte for byte from ``pkg/vault/keys.go``.
-KEK_SALT = bytes((
-    118, 97, 117, 108, 116, 45, 107, 101,
-    107, 45, 115, 97, 108, 116, 45, 118,
-))
+KEK_SALT = bytes(
+    (
+        118,
+        97,
+        117,
+        108,
+        116,
+        45,
+        107,
+        101,
+        107,
+        45,
+        115,
+        97,
+        108,
+        116,
+        45,
+        118,
+    )
+)
 
 
 def crypto_mode_unusable(stored: str, exc: Exception) -> KeyMismatchError:
@@ -113,17 +159,13 @@ def crypto_mode_unusable(stored: str, exc: Exception) -> KeyMismatchError:
 
 def config_shard_size_wrong(length: int) -> KeyMismatchError:
     """The stored config shard is not the size a shard has to be."""
-    return KeyMismatchError(
-        f"stored config shard is {length} bytes, want {SHARD_SIZE}"
-    )
+    return KeyMismatchError(f"stored config shard is {length} bytes, want {SHARD_SIZE}")
 
 
 def xor_three(s1: bytes, s2: bytes, s3: bytes) -> bytes:
     """Derive a 32-byte intermediate by XORing three shards."""
     if not len(s1) == len(s2) == len(s3) == SHARD_SIZE:
-        raise KeyMismatchError(
-            f"vault: the key shards are not {SHARD_SIZE} bytes each"
-        )
+        raise KeyMismatchError(f"vault: the key shards are not {SHARD_SIZE} bytes each")
     return bytes(a ^ b ^ c for a, b, c in zip(s1, s2, s3))
 
 
@@ -210,8 +252,7 @@ class KeyManager:
             return out
 
     def swap(self, next_snapshot: KeySnapshot) -> None:
-        """Install ``next_snapshot`` as current and demote the outgoing one to previous.
-        """
+        """Install ``next_snapshot`` as current and demote the outgoing one to previous."""
         with self._lock:
             self._previous = self._current
             self._current = next_snapshot
@@ -278,9 +319,9 @@ class KeyMeta:
     updated_at: int = 0
 
 
-def _non_nil_blob(b: bytes | None) -> bytes:
+def _non_nil_blob(blob: bytes | None) -> bytes:
     """Map an empty blob to an empty blob."""
-    return b"" if not b else b
+    return b"" if not blob else blob
 
 
 def read_key_meta(db: Database) -> KeyMeta | None:
@@ -415,15 +456,11 @@ def load_s1_from_file(path: str) -> bytes:
     except OSError as exc:
         raise KeyMismatchError(f"vault: stat S1 file {path}: {exc}") from exc
     if info.st_size != SHARD_SIZE:
-        raise KeyMismatchError(
-            f"vault: S1 file {path} has {info.st_size} bytes, want {SHARD_SIZE}"
-        )
+        raise KeyMismatchError(f"vault: S1 file {path} has {info.st_size} bytes, want {SHARD_SIZE}")
     if os.name != "nt":
         mode = stat.S_IMODE(info.st_mode)
         if mode != KEY_FILE_MODE:
-            raise KeyMismatchError(
-                f"vault: S1 file {path} has mode {mode:o}, want {KEY_FILE_MODE:o}"
-            )
+            raise KeyMismatchError(f"vault: S1 file {path} has mode {mode:o}, want {KEY_FILE_MODE:o}")
     with open(path, "rb") as fh:
         data = fh.read()
     return data[:SHARD_SIZE]
@@ -432,9 +469,7 @@ def load_s1_from_file(path: str) -> bytes:
 def write_s1_to_file(path: str, shard: bytes) -> None:
     """Write the 32-byte S1 shard with mode 0600."""
     if len(shard) != SHARD_SIZE:
-        raise KeyMismatchError(
-            f"vault: the S1 shard is {len(shard)} bytes, want {SHARD_SIZE}"
-        )
+        raise KeyMismatchError(f"vault: the S1 shard is {len(shard)} bytes, want {SHARD_SIZE}")
     if not any(shard):
         raise KeyMismatchError(f"vault: refusing to write an all-zero S1 shard to {path}")
     mkdir_all_secure(os.path.dirname(path) or ".")
@@ -474,6 +509,7 @@ def init_keys(
     mode: Mode,
     adopt: AdoptedDEK | None = None,
     shared_key_meta: bool = True,
+    allow_create: bool = True,
 ) -> tuple[KeyManager, KeyMeta]:
     """Prepare the store's key material.
 
@@ -483,11 +519,13 @@ def init_keys(
     """
     if adopt is not None and adopt.previous:
         if len(adopt.previous) != DEK_SIZE:
-            raise KeyMismatchError(
-                f"the adopted previous DEK is {len(adopt.previous)} bytes, want {DEK_SIZE}"
-            )
+            raise KeyMismatchError(f"the adopted previous DEK is {len(adopt.previous)} bytes, want {DEK_SIZE}")
     km = read_key_meta(db)
     if km is None:
+        if not allow_create:
+            from .errors import StoreNotReadyError
+
+            raise StoreNotReadyError("waiting for the host leader to create the key")
         return init_fresh_keys(db, secrets_dir, mode, adopt)
 
     try:
@@ -495,9 +533,7 @@ def init_keys(
     except CryptoError as exc:
         raise crypto_mode_unusable(km.crypto_mode, exc) from exc
     if stored_mode != mode:
-        raise KeyMismatchError(
-            f'stored crypto mode "{stored_mode}" does not match the configured "{mode}"'
-        )
+        raise KeyMismatchError(f'stored crypto mode "{stored_mode}" does not match the configured "{mode}"')
 
     if len(km.active_config_shard) != SHARD_SIZE:
         raise config_shard_size_wrong(len(km.active_config_shard))
@@ -513,9 +549,7 @@ def init_keys(
         try:
             dek = unwrap_dek(mode, kek.bytes(), km.wrapped_dek)
         except CryptoError as exc:
-            raise KeyMismatchError(
-                "the stored DEK does not open with this store's key material"
-            ) from exc
+            raise KeyMismatchError("the stored DEK does not open with this store's key material") from exc
         try:
             probe_unwrap_dek(mode, kek.bytes(), dek, km.wrapped_dek)
         except CryptoError as exc:
@@ -536,21 +570,13 @@ def init_keys(
         # pending rotation means this node died in the middle of one.
         # The authority's generation has already moved, so the node has to
         # come back holding the new key.
-        pending_key_present = (
-            km.pending_dek_version != 0 and bool(km.pending_wrapped_dek)
-        )
+        pending_key_present = km.pending_dek_version != 0 and bool(km.pending_wrapped_dek)
         if not shared_key_meta and pending_key_present:
             try:
                 pending = unwrap_dek(mode, kek.bytes(), km.pending_wrapped_dek)
             except CryptoError as exc:
-                raise KeyMismatchError(
-                    "the pending DEK does not open with this store's key material"
-                ) from exc
-            mgr.swap(
-                KeySnapshot(
-                    dek=KeyBytes(pending), version=km.pending_dek_version, mode=mode
-                )
-            )
+                raise KeyMismatchError("the pending DEK does not open with this store's key material") from exc
+            mgr.swap(KeySnapshot(dek=KeyBytes(pending), version=km.pending_dek_version, mode=mode))
 
             old_wrapped = km.wrapped_dek
             km.active_dek_version = km.pending_dek_version
@@ -570,9 +596,7 @@ def init_keys(
     return mgr, km
 
 
-def unpack_snapshot(
-    kek: KeyBytes, mode: Mode, km: KeyMeta, shared: bool
-) -> KeyManager:
+def unpack_snapshot(kek: KeyBytes, mode: Mode, km: KeyMeta, shared: bool) -> KeyManager:
     """Open the generations a key metadata row names.
 
     The active generation has to open: without it the store cannot be
@@ -584,18 +608,12 @@ def unpack_snapshot(
     if not shared:
         return KeyManager(current=cur)
 
-    prev = _unpack_best_effort(
-        kek, mode, km.superseded_dek_version, km.superseded_wrapped_dek, "superseded"
-    )
-    pend = _unpack_best_effort(
-        kek, mode, km.pending_dek_version, km.pending_wrapped_dek, "pending"
-    )
+    prev = _unpack_best_effort(kek, mode, km.superseded_dek_version, km.superseded_wrapped_dek, "superseded")
+    pend = _unpack_best_effort(kek, mode, km.pending_dek_version, km.pending_wrapped_dek, "pending")
     return KeyManager(current=cur, previous=prev, pending=pend)
 
 
-def unpack_generation(
-    kek: KeyBytes, mode: Mode, version: int, wrapped: bytes
-) -> KeySnapshot | None:
+def unpack_generation(kek: KeyBytes, mode: Mode, version: int, wrapped: bytes) -> KeySnapshot | None:
     """Open one generation's data key.
 
     A generation of zero, or a generation with no wrapped key, is a slot
@@ -607,15 +625,12 @@ def unpack_generation(
         dek = unwrap_dek(mode, kek.bytes(), wrapped)
     except CryptoError as exc:
         raise KeyMismatchError(
-            f"the DEK for generation {version} does not open with this "
-            "store's key material"
+            f"the DEK for generation {version} does not open with this store's key material"
         ) from exc
     return KeySnapshot(dek=KeyBytes(dek), version=version, mode=mode)
 
 
-def _unpack_best_effort(
-    kek: KeyBytes, mode: Mode, version: int, wrapped: bytes, label: str
-) -> KeySnapshot | None:
+def _unpack_best_effort(kek: KeyBytes, mode: Mode, version: int, wrapped: bytes, label: str) -> KeySnapshot | None:
     """Open a retired generation, or report that it did not open.
 
     A store that cannot open the generation a rotation is rolling out is
@@ -668,11 +683,7 @@ def adopt_predecessor(mgr: KeyManager, adopt: AdoptedDEK | None, mode: Mode) -> 
         return
     if adopt.version != current.version:
         return
-    mgr.set_previous(
-        KeySnapshot(
-            dek=KeyBytes(adopt.previous), version=adopt.version - 1, mode=mode
-        )
-    )
+    mgr.set_previous(KeySnapshot(dek=KeyBytes(adopt.previous), version=adopt.version - 1, mode=mode))
 
 
 def init_fresh_keys(
@@ -693,8 +704,7 @@ def init_fresh_keys(
     count = count_records(db)
     if count > 0:
         raise KeyMismatchError(
-            f"the store holds {count} records but no key metadata; "
-            "refusing to mint a new key over existing data"
+            f"the store holds {count} records but no key metadata; refusing to mint a new key over existing data"
         )
 
     s1 = random_shard()
@@ -710,9 +720,7 @@ def init_fresh_keys(
             dek_bytes = adopt.dek
             version = adopt.version
         if len(dek_bytes) != DEK_SIZE:
-            raise KeyMismatchError(
-                f"the adopted DEK is {len(dek_bytes)} bytes, want {DEK_SIZE}"
-            )
+            raise KeyMismatchError(f"the adopted DEK is {len(dek_bytes)} bytes, want {DEK_SIZE}")
         wrapped = wrap_dek(mode, kek.bytes(), dek_bytes)
     finally:
         kek.zero()
@@ -731,8 +739,6 @@ def init_fresh_keys(
     )
     insert_key_meta(db, km)
 
-    mgr = KeyManager(
-        current=KeySnapshot(dek=KeyBytes(dek_bytes), version=km.active_dek_version, mode=mode)
-    )
+    mgr = KeyManager(current=KeySnapshot(dek=KeyBytes(dek_bytes), version=km.active_dek_version, mode=mode))
     adopt_predecessor(mgr, adopt, mode)
     return mgr, km

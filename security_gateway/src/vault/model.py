@@ -81,6 +81,11 @@ class Config:
     #: etcd half in.
     etcd: Any = None
 
+    #: Whether processes on one host share this store. They then share
+    #: the data directory and key metadata; a host-local leader only
+    #: mints the first key. Off by default.
+    multi_process: bool = False
+
 
 @dataclass
 class Status:

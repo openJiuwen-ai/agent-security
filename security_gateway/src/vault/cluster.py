@@ -35,7 +35,7 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from security_gateway.credmgr.clusterdek import Anchor, Fingerprint
+from security_gateway.credmgr.clusterdek import Anchor, fingerprint
 from security_gateway.credmgr.clusterkey.clusterkey import (
     Config as ClusterKeyConfig,
 )
@@ -211,15 +211,16 @@ def vault_etcd_config(cfg: Any) -> EtcdConfig:
 
 
 def load_cluster_identity(cfg: EtcdConfig) -> Identity:
-    """Read this node's wrapping keypair from the etcd client certificate it already presents.
-    """
+    """Read this node's wrapping keypair from the etcd client certificate it already presents."""
     tls = cfg.tls or TLSConfig()
-    identity = load_identity(cfg.node_id, tls.cert_file, tls.key_file)
+    cert_file = cfg.identity_cert_file or tls.cert_file
+    key_file = cfg.identity_key_file or tls.key_file
+    identity = load_identity(cfg.node_id, cert_file, key_file)
     _log.info(
         "cluster identity ready",
         extra={
             "node_id": identity.node_id,
-            "cert_fingerprint_sha256": Fingerprint(identity.cert),
+            "cert_fingerprint_sha256": fingerprint(identity.cert),
         },
     )
     return identity
@@ -293,9 +294,7 @@ def obtain_cluster_dek(
     return AdoptedDEK(dek=dek, version=int(generation), previous=previous)
 
 
-def held_deks(
-    current: KeySnapshot | None, previous: KeySnapshot | None
-) -> list[HeldDEK]:
+def held_deks(current: KeySnapshot | None, previous: KeySnapshot | None) -> list[HeldDEK]:
     """List the generations of the vault's key this node can hand over."""
     held: list[HeldDEK] = []
     for snap in (current, previous):
@@ -322,16 +321,14 @@ def serve_cluster_wrapping(
     interval: float = CLUSTER_WRAP_INTERVAL,
     watch_store: Any | None = None,
 ) -> None:
-    """Answer the handover requests this node can serve, and ask for a newer generation when it holds an old one.
-    """
+    """Answer the handover requests this node can serve, and ask for a newer generation when it holds an old one."""
     if anchor is None:
         # Nothing here would ever be handed over, so running the loop
         # would only produce a warning every few seconds. Serve traffic
         # regardless: a node that holds the key can decrypt every record
         # it is asked for without handing anything to anyone.
         _log.warning(
-            "serving without a trust anchor: the vault's key will not be "
-            "handed to new peers",
+            "serving without a trust anchor: the vault's key will not be handed to new peers",
             extra={"node_id": self_identity.node_id},
         )
         return
@@ -399,9 +396,7 @@ def serve_cluster_wrapping(
                     authority,
                     self_identity,
                     asked_generation,
-                    lambda dek, generation: _adopt_newer_generation(
-                        self_identity, dek_version, dek, generation, adopt
-                    ),
+                    lambda dek, generation: _adopt_newer_generation(self_identity, dek_version, dek, generation, adopt),
                 )
             except Exception as exc:  # noqa: BLE001 - the next round retries
                 _log.warning(

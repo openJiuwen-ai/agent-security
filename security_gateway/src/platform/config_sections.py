@@ -15,7 +15,6 @@ from typing import Any
 
 from .errs import Code, ServiceError
 
-
 DEFAULT_UPSTREAM_TIMEOUT_MS = 30000
 
 
@@ -189,8 +188,8 @@ def parse_duration(value: Any) -> timedelta:
         return timedelta(0)
     if isinstance(value, bool) or not isinstance(value, str):
         raise ConfigError(
-            f"invalid duration: {value!r} is not a duration string; write it "
-            "as \"30s\", not as a bare number")
+            f'invalid duration: {value!r} is not a duration string; write it as "30s", not as a bare number'
+        )
 
     text = value.strip()
     if not text:
@@ -212,14 +211,12 @@ def parse_duration(value: Any) -> timedelta:
         match = _DURATION_PART.match(text, position)
         if match is None:
             if _DURATION_NUMBER.match(text, position):
-                raise ConfigError(
-                    f"invalid duration: {value!r} is missing a unit")
+                raise ConfigError(f"invalid duration: {value!r} is missing a unit")
             raise ConfigError(f"invalid duration: {value!r}")
         number, unit = match.group(1), match.group(2)
         factor = _DURATION_UNITS.get(unit)
         if factor is None:
-            raise ConfigError(
-                f"invalid duration: unknown unit {unit!r} in {value!r}")
+            raise ConfigError(f"invalid duration: unknown unit {unit!r} in {value!r}")
         total_ns += float(number) * factor
         position = match.end()
         matched = True
@@ -229,8 +226,7 @@ def parse_duration(value: Any) -> timedelta:
     try:
         return timedelta(microseconds=sign * total_ns / 1000.0)
     except OverflowError:
-        raise ConfigError(
-            f"invalid duration: {value!r} is out of range") from None
+        raise ConfigError(f"invalid duration: {value!r} is out of range") from None
 
 
 def _as_dict(value: Any, name: str) -> dict[str, Any]:
@@ -297,21 +293,18 @@ class RotationConfig:
     def from_dict(cls, raw: dict[str, Any]) -> "RotationConfig":
         raw = _as_dict(raw, "rotation")
         return cls(
-            period=parse_duration(
-                _get(raw, "period", DEFAULT_ROTATION_PERIOD)),
+            period=parse_duration(_get(raw, "period", DEFAULT_ROTATION_PERIOD)),
             max_phase_a_loops=_as_int(
-                _get(raw, "max_phase_a_loops",
-                      DEFAULT_ROTATION_MAX_PHASE_A_LOOPS),
-                "rotation.max_phase_a_loops"),
-            drain_timeout=parse_duration(
-                _get(raw, "drain_timeout", DEFAULT_ROTATION_DRAIN_TIMEOUT)),
+                _get(raw, "max_phase_a_loops", DEFAULT_ROTATION_MAX_PHASE_A_LOOPS), "rotation.max_phase_a_loops"
+            ),
+            drain_timeout=parse_duration(_get(raw, "drain_timeout", DEFAULT_ROTATION_DRAIN_TIMEOUT)),
             complete_drain_timeout=parse_duration(
-                _get(raw, "complete_drain_timeout",
-                     DEFAULT_ROTATION_COMPLETE_DRAIN_TIMEOUT)),
+                _get(raw, "complete_drain_timeout", DEFAULT_ROTATION_COMPLETE_DRAIN_TIMEOUT)
+            ),
             barrier_quorum_ratio=_as_float(
-                _get(raw, "barrier_quorum_ratio",
-                     DEFAULT_ROTATION_BARRIER_QUORUM_RATIO),
-                "rotation.barrier_quorum_ratio"),
+                _get(raw, "barrier_quorum_ratio", DEFAULT_ROTATION_BARRIER_QUORUM_RATIO),
+                "rotation.barrier_quorum_ratio",
+            ),
         )
 
 
@@ -325,13 +318,9 @@ class CacheConfig:
     def from_dict(cls, raw: dict[str, Any]) -> "CacheConfig":
         raw = _as_dict(raw, "cache")
         return cls(
-            max_entries=_as_int(
-                _get(raw, "max_entries", DEFAULT_CACHE_MAX_ENTRIES),
-                "cache.max_entries"),
-            tombstone_ttl=parse_duration(
-                _get(raw, "tombstone_ttl", DEFAULT_CACHE_TOMBSTONE_TTL)),
-            entry_ttl=parse_duration(
-                _get(raw, "entry_ttl", DEFAULT_CACHE_ENTRY_TTL)),
+            max_entries=_as_int(_get(raw, "max_entries", DEFAULT_CACHE_MAX_ENTRIES), "cache.max_entries"),
+            tombstone_ttl=parse_duration(_get(raw, "tombstone_ttl", DEFAULT_CACHE_TOMBSTONE_TTL)),
+            entry_ttl=parse_duration(_get(raw, "entry_ttl", DEFAULT_CACHE_ENTRY_TTL)),
         )
 
 
@@ -348,20 +337,20 @@ class ValidationConfig:
         raw = _as_dict(raw, "admin.validation")
         return cls(
             user_id_max_len=_as_int(
-                _get(raw, "user_id_max_len", DEFAULT_ADMIN_USER_ID_MAX_LEN),
-                "admin.validation.user_id_max_len"),
+                _get(raw, "user_id_max_len", DEFAULT_ADMIN_USER_ID_MAX_LEN), "admin.validation.user_id_max_len"
+            ),
             real_url_max_len=_as_int(
-                _get(raw, "real_url_max_len", DEFAULT_ADMIN_REAL_URL_MAX_LEN),
-                "admin.validation.real_url_max_len"),
+                _get(raw, "real_url_max_len", DEFAULT_ADMIN_REAL_URL_MAX_LEN), "admin.validation.real_url_max_len"
+            ),
             key_tag_max_len=_as_int(
-                _get(raw, "key_tag_max_len", DEFAULT_ADMIN_KEY_TAG_MAX_LEN),
-                "admin.validation.key_tag_max_len"),
+                _get(raw, "key_tag_max_len", DEFAULT_ADMIN_KEY_TAG_MAX_LEN), "admin.validation.key_tag_max_len"
+            ),
             api_key_max_len=_as_int(
-                _get(raw, "api_key_max_len", DEFAULT_ADMIN_API_KEY_MAX_LEN),
-                "admin.validation.api_key_max_len"),
+                _get(raw, "api_key_max_len", DEFAULT_ADMIN_API_KEY_MAX_LEN), "admin.validation.api_key_max_len"
+            ),
             auth_type_max_len=_as_int(
-                _get(raw, "auth_type_max_len", DEFAULT_ADMIN_AUTH_TYPE_MAX_LEN),
-                "admin.validation.auth_type_max_len"),
+                _get(raw, "auth_type_max_len", DEFAULT_ADMIN_AUTH_TYPE_MAX_LEN), "admin.validation.auth_type_max_len"
+            ),
         )
 
 
@@ -379,8 +368,7 @@ class AuthRule:
         return cls(
             header=_as_str(_get(raw, "header", ""), "auth_types.header"),
             prefix=_as_str(_get(raw, "prefix", ""), "auth_types.prefix"),
-            query_params=_as_str_list(
-                _get(raw, "query_params", []), "auth_types.query_params"),
+            query_params=_as_str_list(_get(raw, "query_params", []), "auth_types.query_params"),
         )
 
 
@@ -394,14 +382,10 @@ class AdminConfig:
     def from_dict(cls, raw: dict[str, Any]) -> "AdminConfig":
         raw = _as_dict(raw, "admin")
         rules_raw = _as_dict(_get(raw, "auth_types", {}), "admin.auth_types")
-        rules = {
-            name: AuthRule.from_dict(value)
-            for name, value in rules_raw.items()
-        }
+        rules = {name: AuthRule.from_dict(value) for name, value in rules_raw.items()}
         return cls(
             addr=_as_str(_get(raw, "addr", DEFAULT_ADMIN_ADDR), "admin.addr"),
-            validation=ValidationConfig.from_dict(
-                _get(raw, "validation", {})),
+            validation=ValidationConfig.from_dict(_get(raw, "validation", {})),
             auth_types=rules,
         )
 
@@ -417,15 +401,10 @@ class SSRFConfig:
     def from_dict(cls, raw: dict[str, Any]) -> "SSRFConfig":
         raw = _as_dict(raw, "ssrf")
         return cls(
-            dial_check=_as_bool(
-                _get(raw, "dial_check", DEFAULT_SSRF_DIAL_CHECK),
-                "ssrf.dial_check"),
-            allowed_hosts=_as_str_list(
-                _get(raw, "allowed_hosts", []), "ssrf.allowed_hosts"),
-            cache_ttl=parse_duration(
-                _get(raw, "cache_ttl", DEFAULT_SSRF_CACHE_TTL)),
-            timeout=parse_duration(
-                _get(raw, "timeout", DEFAULT_SSRF_TIMEOUT)),
+            dial_check=_as_bool(_get(raw, "dial_check", DEFAULT_SSRF_DIAL_CHECK), "ssrf.dial_check"),
+            allowed_hosts=_as_str_list(_get(raw, "allowed_hosts", []), "ssrf.allowed_hosts"),
+            cache_ttl=parse_duration(_get(raw, "cache_ttl", DEFAULT_SSRF_CACHE_TTL)),
+            timeout=parse_duration(_get(raw, "timeout", DEFAULT_SSRF_TIMEOUT)),
         )
 
 
@@ -445,30 +424,18 @@ class ServerConfig:
     def from_dict(cls, raw: dict[str, Any]) -> "ServerConfig":
         raw = _as_dict(raw, "server")
         return cls(
-            bind_address=_as_str(
-                _get(raw, "bind_address", DEFAULT_SERVER_BIND_ADDRESS),
-                "server.bind_address"),
-            external_address=_as_str(
-                _get(raw, "external_address", ""), "server.external_address"),
+            bind_address=_as_str(_get(raw, "bind_address", DEFAULT_SERVER_BIND_ADDRESS), "server.bind_address"),
+            external_address=_as_str(_get(raw, "external_address", ""), "server.external_address"),
             max_response_bytes=_as_int(
-                _get(raw, "max_response_bytes",
-                     DEFAULT_SERVER_MAX_RESPONSE_BYTES),
-                "server.max_response_bytes"),
+                _get(raw, "max_response_bytes", DEFAULT_SERVER_MAX_RESPONSE_BYTES), "server.max_response_bytes"
+            ),
             max_request_bytes=_as_int(
-                _get(raw, "max_request_bytes",
-                     DEFAULT_SERVER_MAX_REQUEST_BYTES),
-                "server.max_request_bytes"),
-            shutdown_zero_budget=parse_duration(
-                _get(raw, "shutdown_zero_budget",
-                     DEFAULT_SERVER_SHUTDOWN_ZERO_BUDGET)),
-            read_header_timeout=parse_duration(
-                _get(raw, "read_header_timeout",
-                     DEFAULT_SERVER_READ_HEADER_TIMEOUT)),
-            shutdown_timeout=parse_duration(
-                _get(raw, "shutdown_timeout", DEFAULT_SERVER_SHUTDOWN_TIMEOUT)),
-            idle_conn_timeout=parse_duration(
-                _get(raw, "idle_conn_timeout",
-                     DEFAULT_SERVER_IDLE_CONN_TIMEOUT)),
+                _get(raw, "max_request_bytes", DEFAULT_SERVER_MAX_REQUEST_BYTES), "server.max_request_bytes"
+            ),
+            shutdown_zero_budget=parse_duration(_get(raw, "shutdown_zero_budget", DEFAULT_SERVER_SHUTDOWN_ZERO_BUDGET)),
+            read_header_timeout=parse_duration(_get(raw, "read_header_timeout", DEFAULT_SERVER_READ_HEADER_TIMEOUT)),
+            shutdown_timeout=parse_duration(_get(raw, "shutdown_timeout", DEFAULT_SERVER_SHUTDOWN_TIMEOUT)),
+            idle_conn_timeout=parse_duration(_get(raw, "idle_conn_timeout", DEFAULT_SERVER_IDLE_CONN_TIMEOUT)),
             log_file=_as_str(_get(raw, "log_file", ""), "server.log_file"),
         )
 
@@ -483,15 +450,12 @@ class KeySnapshotConfig:
     def from_dict(cls, raw: dict[str, Any]) -> "KeySnapshotConfig":
         raw = _as_dict(raw, "backup.key_snapshot")
         return cls(
-            enabled=_as_bool(
-                _get(raw, "enabled", DEFAULT_KEY_SNAPSHOT_ENABLED),
-                "backup.key_snapshot.enabled"),
+            enabled=_as_bool(_get(raw, "enabled", DEFAULT_KEY_SNAPSHOT_ENABLED), "backup.key_snapshot.enabled"),
             filename_template=_as_str(
                 _get(raw, "filename_template", DEFAULT_KEY_SNAPSHOT_FILENAME_TPL),
-                "backup.key_snapshot.filename_template"),
-            keep=_as_int(
-                _get(raw, "keep", DEFAULT_KEY_SNAPSHOT_KEEP),
-                "backup.key_snapshot.keep"),
+                "backup.key_snapshot.filename_template",
+            ),
+            keep=_as_int(_get(raw, "keep", DEFAULT_KEY_SNAPSHOT_KEEP), "backup.key_snapshot.keep"),
         )
 
 
@@ -505,13 +469,11 @@ class BackupConfig:
     def from_dict(cls, raw: dict[str[str, Any], Any]) -> "BackupConfig":
         raw = _as_dict(raw, "backup")
         return cls(
-            keep=_as_int(_get(raw, "keep", DEFAULT_BACKUP_KEEP),
-                         "backup.keep"),
+            keep=_as_int(_get(raw, "keep", DEFAULT_BACKUP_KEEP), "backup.keep"),
             filename_template=_as_str(
-                _get(raw, "filename_template", DEFAULT_BACKUP_FILENAME_TPL),
-                "backup.filename_template"),
-            key_snapshot=KeySnapshotConfig.from_dict(
-                _get(raw, "key_snapshot", {})),
+                _get(raw, "filename_template", DEFAULT_BACKUP_FILENAME_TPL), "backup.filename_template"
+            ),
+            key_snapshot=KeySnapshotConfig.from_dict(_get(raw, "key_snapshot", {})),
         )
 
 
@@ -523,8 +485,7 @@ class RecoveryConfig:
     def from_dict(cls, raw: dict[str, Any]) -> "RecoveryConfig":
         raw = _as_dict(raw, "recovery")
         return cls(
-            max_wait=parse_duration(
-                _get(raw, "max_wait", DEFAULT_RECOVERY_MAX_WAIT)),
+            max_wait=parse_duration(_get(raw, "max_wait", DEFAULT_RECOVERY_MAX_WAIT)),
         )
 
 
@@ -539,8 +500,7 @@ class EtcdTLSConfig:
         raw = _as_dict(raw, "etcd.tls")
         return cls(
             ca_file=_as_str(_get(raw, "ca_file", ""), "etcd.tls.ca_file"),
-            cert_file=_as_str(_get(raw, "cert_file", ""),
-                              "etcd.tls.cert_file"),
+            cert_file=_as_str(_get(raw, "cert_file", ""), "etcd.tls.cert_file"),
             key_file=_as_str(_get(raw, "key_file", ""), "etcd.tls.key_file"),
         )
 
@@ -565,21 +525,14 @@ class EtcdConfig:
     def from_dict(cls, raw: dict[str, Any]) -> "EtcdConfig":
         raw = _as_dict(raw, "etcd")
         return cls(
-            endpoints=_as_str_list(
-                _get(raw, "endpoints", []), "etcd.endpoints"),
-            namespace=_as_str(
-                _get(raw, "namespace", DEFAULT_ETCD_NAMESPACE),
-                "etcd.namespace"),
-            operation_timeout=parse_duration(
-                _get(raw, "operation_timeout", DEFAULT_ETCD_OPERATION_TIMEOUT)),
-            dial_timeout=parse_duration(
-                _get(raw, "dial_timeout", DEFAULT_ETCD_DIAL_TIMEOUT)),
+            endpoints=_as_str_list(_get(raw, "endpoints", []), "etcd.endpoints"),
+            namespace=_as_str(_get(raw, "namespace", DEFAULT_ETCD_NAMESPACE), "etcd.namespace"),
+            operation_timeout=parse_duration(_get(raw, "operation_timeout", DEFAULT_ETCD_OPERATION_TIMEOUT)),
+            dial_timeout=parse_duration(_get(raw, "dial_timeout", DEFAULT_ETCD_DIAL_TIMEOUT)),
             watch_liveness_timeout=parse_duration(
-                _get(raw, "watch_liveness_timeout",
-                     DEFAULT_ETCD_WATCH_LIVENESS_TIMEOUT)),
-            list_limit=_as_int(
-                _get(raw, "list_limit", DEFAULT_ETCD_LIST_LIMIT),
-                "etcd.list_limit"),
+                _get(raw, "watch_liveness_timeout", DEFAULT_ETCD_WATCH_LIVENESS_TIMEOUT)
+            ),
+            list_limit=_as_int(_get(raw, "list_limit", DEFAULT_ETCD_LIST_LIMIT), "etcd.list_limit"),
             tls=EtcdTLSConfig.from_dict(_get(raw, "tls", {})),
         )
 
@@ -599,11 +552,8 @@ class ClusterConfig:
         raw = _as_dict(raw, "cluster")
         return cls(
             node_id=_as_str(_get(raw, "node_id", ""), "cluster.node_id"),
-            fetch_timeout=parse_duration(
-                _get(raw, "fetch_timeout", DEFAULT_CLUSTER_FETCH_TIMEOUT)),
-            trusted_cert_sha256=_as_str_list(
-                _get(raw, "trusted_cert_sha256", []),
-                "cluster.trusted_cert_sha256"),
+            fetch_timeout=parse_duration(_get(raw, "fetch_timeout", DEFAULT_CLUSTER_FETCH_TIMEOUT)),
+            trusted_cert_sha256=_as_str_list(_get(raw, "trusted_cert_sha256", []), "cluster.trusted_cert_sha256"),
         )
 
     def enabled(self) -> bool:
@@ -621,8 +571,7 @@ class VaultUIDScopeConfig:
         raw = _as_dict(raw, "vault.rpc.uid_scopes")
         return cls(
             uid=_as_int(_get(raw, "uid", 0), "vault.rpc.uid_scopes.uid"),
-            prefixes=_as_str_list(
-                _get(raw, "prefixes", []), "vault.rpc.uid_scopes.prefixes"),
+            prefixes=_as_str_list(_get(raw, "prefixes", []), "vault.rpc.uid_scopes.prefixes"),
         )
 
 
@@ -649,10 +598,8 @@ class VaultClientConfig:
         raw = _as_dict(raw, "vault.rpc.clients")
         return cls(
             name=_as_str(_get(raw, "name", ""), "vault.rpc.clients.name"),
-            token_file=_as_str(_get(raw, "token_file", ""),
-                               "vault.rpc.clients.token_file"),
-            prefixes=_as_str_list(
-                _get(raw, "prefixes", []), "vault.rpc.clients.prefixes"),
+            token_file=_as_str(_get(raw, "token_file", ""), "vault.rpc.clients.token_file"),
+            prefixes=_as_str_list(_get(raw, "prefixes", []), "vault.rpc.clients.prefixes"),
         )
 
 
@@ -678,23 +625,16 @@ class VaultRPCConfig:
         if not isinstance(clients_raw, list):
             raise ConfigError("vault.rpc.clients must be a list")
         return cls(
-            unix_path=_as_str(_get(raw, "unix_path", ""),
-                              "vault.rpc.unix_path"),
+            unix_path=_as_str(_get(raw, "unix_path", ""), "vault.rpc.unix_path"),
             tcp_addr=_as_str(_get(raw, "tcp_addr", ""), "vault.rpc.tcp_addr"),
-            token_file=_as_str(_get(raw, "token_file", ""),
-                               "vault.rpc.token_file"),
-            allowed_uids=_as_int_list(
-                _get(raw, "allowed_uids", []), "vault.rpc.allowed_uids"),
-            uid_scopes=[
-                VaultUIDScopeConfig.from_dict(item) for item in scopes_raw
-            ],
+            token_file=_as_str(_get(raw, "token_file", ""), "vault.rpc.token_file"),
+            allowed_uids=_as_int_list(_get(raw, "allowed_uids", []), "vault.rpc.allowed_uids"),
+            uid_scopes=[VaultUIDScopeConfig.from_dict(item) for item in scopes_raw],
             allow_unsafe_socket_dir=_as_bool(
-                _get(raw, "allow_unsafe_socket_dir", False),
-                "vault.rpc.allow_unsafe_socket_dir"),
-            socket_mode=_as_str(_get(raw, "socket_mode", ""),
-                                "vault.rpc.socket_mode"),
-            socket_group=_as_str(_get(raw, "socket_group", ""),
-                                 "vault.rpc.socket_group"),
+                _get(raw, "allow_unsafe_socket_dir", False), "vault.rpc.allow_unsafe_socket_dir"
+            ),
+            socket_mode=_as_str(_get(raw, "socket_mode", ""), "vault.rpc.socket_mode"),
+            socket_group=_as_str(_get(raw, "socket_group", ""), "vault.rpc.socket_group"),
             clients=[VaultClientConfig.from_dict(item) for item in clients_raw],
         )
 
@@ -711,8 +651,7 @@ class VaultFieldConfig:
         return cls(
             name=_as_str(_get(raw, "name", ""), "vault.schema.fields.name"),
             type=_as_str(_get(raw, "type", ""), "vault.schema.fields.type"),
-            encrypted=_as_bool(_get(raw, "encrypted", False),
-                               "vault.schema.fields.encrypted"),
+            encrypted=_as_bool(_get(raw, "encrypted", False), "vault.schema.fields.encrypted"),
         )
 
 
@@ -747,14 +686,14 @@ class VaultRotationConfig:
             # The default is the zero *duration*, the way the Go's
             # DefaultVaultRotationPeriod is the zero time.Duration: a bare
             # zero here would be a number, and a number is not a duration.
-            period=parse_duration(
-                _get(raw, "period", timedelta(0))).total_seconds(),
+            period=parse_duration(_get(raw, "period", timedelta(0))).total_seconds(),
         )
 
 
 @dataclass
 class VaultConfig:
     data_dir: str = ""
+    multi_process: bool = False
     rpc: VaultRPCConfig = field(default_factory=VaultRPCConfig)
     schema: VaultSchemaConfig = field(default_factory=VaultSchemaConfig)
     rotation: VaultRotationConfig = field(default_factory=VaultRotationConfig)
@@ -764,6 +703,7 @@ class VaultConfig:
         raw = _as_dict(raw, "vault")
         return cls(
             data_dir=_as_str(_get(raw, "data_dir", ""), "vault.data_dir"),
+            multi_process=_as_bool(_get(raw, "multi_process", False), "vault.multi_process"),
             rpc=VaultRPCConfig.from_dict(_get(raw, "rpc", {})),
             schema=VaultSchemaConfig.from_dict(_get(raw, "schema", {})),
             rotation=VaultRotationConfig.from_dict(_get(raw, "rotation", {})),

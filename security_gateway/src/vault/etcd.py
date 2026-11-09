@@ -35,6 +35,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
+from security_gateway.credmgr.etcdstore.errors import ConflictError as _StoreConflictError
 from security_gateway.crypto import decrypt_credential, encrypt_credential
 from security_gateway.crypto.errors import CryptoError
 
@@ -140,6 +141,11 @@ class EtcdConfig:
     #: This node's identity in the cluster.
     node_id: str = ""
 
+    #: The identity used for the fleet's key handover, separate from the
+    #: transport TLS material so a TLS-terminating proxy still works.
+    identity_cert_file: str = ""
+    identity_key_file: str = ""
+
     #: The certificate fingerprints the fleet's key may be handed to.
     trusted_cert_sha256: tuple[str, ...] = ()
 
@@ -175,7 +181,7 @@ class AuthorityConvergence(Protocol):
 #: A write that loses the create race to a delete has to try again. The
 #: bound keeps a record that keeps changing under the writer from spinning
 #: forever.
-MAX_AUTHORITY_WRITE_ATTEMPTS = 3
+MAX_AUTHORITY_WRITE_ATTEMPTS = 8
 
 
 class EtcdAuthority:
@@ -211,9 +217,7 @@ class EtcdAuthority:
         try:
             ensure_generation(authority.store.kv, authority.ns)
         except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-            raise VaultError(
-                f"vault: etcd: seed the authority's generation: {exc}"
-            ) from exc
+            raise VaultError(f"vault: etcd: seed the authority's generation: {exc}") from exc
         return authority
 
     @property
@@ -248,9 +252,7 @@ class EtcdAuthority:
         try:
             current, _present = read_generation(self._store.kv, self._ns)
         except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-            raise VaultError(
-                f"vault: etcd: read the authority's generation: {exc}"
-            ) from exc
+            raise VaultError(f"vault: etcd: read the authority's generation: {exc}") from exc
         return int(current)
 
     def advance_generation(self, target: int) -> int:
@@ -260,9 +262,7 @@ class EtcdAuthority:
         try:
             _advanced, current = advance_generation(self._store.kv, self._ns, int(target))
         except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-            raise VaultError(
-                f"vault: etcd: advance the authority's generation to {target}: {exc}"
-            ) from exc
+            raise VaultError(f"vault: etcd: advance the authority's generation to {target}: {exc}") from exc
         return int(current)
 
     # -- the records ------------------------------------------------------
@@ -307,9 +307,7 @@ class EtcdAuthority:
             except StoreNotFoundError:
                 existing = None
             except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-                raise VaultError(
-                    f"vault: etcd: read the record {record_id!r}: {exc}"
-                ) from exc
+                raise VaultError(f"vault: etcd: read the record {record_id!r}: {exc}") from exc
 
             if existing is None:
                 try:
@@ -331,12 +329,14 @@ class EtcdAuthority:
                             f"vault: etcd: read the record {record_id!r} after a conflict: {read_exc}"
                         ) from read_exc
                 except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-                    raise VaultError(
-                        f"vault: etcd: create the record {record_id!r}: {exc}"
-                    ) from exc
+                    raise VaultError(f"vault: etcd: create the record {record_id!r}: {exc}") from exc
                 else:
                     apply_mirrored_record(
-                        db, record_id, bytes(data), int(schema_version), int(dek_version),
+                        db,
+                        record_id,
+                        bytes(data),
+                        int(schema_version),
+                        int(dek_version),
                         created.mod_revision,
                     )
                     return
@@ -347,23 +347,25 @@ class EtcdAuthority:
             except StoreConflictError as exc:
                 if self._fenced(dek_version):
                     raise self._fenced_error(record_id, dek_version, exc) from exc
-                raise ConflictError(
-                    f'vault: etcd: update the record "{id}": {exc}'
-                ) from exc
+                # The record moved under this write -- normally because a
+                # rotation re-encrypted it. Read the new revision and try
+                # again; the payload is still encrypted for the generation
+                # the snapshot chose.
+                continue
             except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-                raise VaultError(
-                    f"vault: etcd: update the record {record_id!r}: {exc}"
-                ) from exc
+                raise VaultError(f"vault: etcd: update the record {record_id!r}: {exc}") from exc
 
             apply_mirrored_record(
-                db, record_id, bytes(data), int(schema_version), int(dek_version),
+                db,
+                record_id,
+                bytes(data),
+                int(schema_version),
+                int(dek_version),
                 updated.mod_revision,
             )
             return
 
-        raise VaultError(
-            f"vault: etcd: write the record {record_id!r}: it kept changing under the writer"
-        )
+        raise VaultError(f"vault: etcd: update the record {record_id!r}: the record kept changing")
 
     def delete_record(self, db: Database, record_id: str) -> None:
         """Remove a record from the authority and from the mirror.
@@ -384,22 +386,16 @@ class EtcdAuthority:
         except StoreNotFoundError as exc:
             raise NotFoundError(f'"{record_id}"') from exc
         except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-            raise VaultError(
-                f"vault: etcd: read the record {record_id!r}: {exc}"
-            ) from exc
+            raise VaultError(f"vault: etcd: read the record {record_id!r}: {exc}") from exc
 
         try:
             self._store.delete_record_cas(record_id, existing.mod_revision)
         except StoreNotFoundError as exc:
             raise NotFoundError(f'"{record_id}"') from exc
         except StoreConflictError as exc:
-            raise ConflictError(
-                f'vault: etcd: delete the record "{id}": {exc}'
-            ) from exc
+            raise ConflictError(f'vault: etcd: delete the record "{id}": {exc}') from exc
         except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-            raise VaultError(
-                f"vault: etcd: delete the record {record_id!r}: {exc}"
-            ) from exc
+            raise VaultError(f"vault: etcd: delete the record {record_id!r}: {exc}") from exc
 
         delete_mirrored_record(db, record_id, existing.mod_revision)
 
@@ -408,14 +404,11 @@ class EtcdAuthority:
         try:
             listed, _revision = self._store.list_records(0)
         except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-            raise VaultError(
-                f"vault: etcd: list the records: {exc}"
-            ) from exc
+            raise VaultError(f"vault: etcd: list the records: {exc}") from exc
         return sum(1 for record in listed if record.entry.dek_version < int(target))
 
     def converge(self, vault: AuthorityConvergence, cur: KeySnapshot) -> None:
-        """Re-encrypt every record the authority holds that is still under an older key generation.
-        """
+        """Re-encrypt every record the authority holds that is still under an older key generation."""
         converge_authority(vault, self, cur)
 
     # -- internals ---------------------------------------------------------
@@ -424,9 +417,7 @@ class EtcdAuthority:
         """Whether the authority's generation has moved past the writer's."""
         return self.generation() != int(dek_version)
 
-    def _fenced_error(
-        self, record_id: str, dek_version: int, exc: Exception
-    ) -> FencedWriteError:
+    def _fenced_error(self, record_id: str, dek_version: int, exc: Exception) -> FencedWriteError:
         """The error a fenced write raises.
 
         It names both generations and which side is wrong, because the
@@ -459,8 +450,7 @@ def dial_etcd(cfg: EtcdConfig) -> EtcdAuthority:
         import etcd3  # noqa: PLC0415 - the etcd extra is optional
     except ImportError as exc:
         raise ImportError(
-            "the etcd client is an optional extra; install it with "
-            "'pip install security_gateway[etcd]'"
+            "the etcd client is an optional extra; install it with 'pip install security_gateway[etcd]'"
         ) from exc
 
     tls = cfg.tls
@@ -488,9 +478,7 @@ def dial_etcd(cfg: EtcdConfig) -> EtcdAuthority:
     try:
         ensure_generation(store.kv, ns)
     except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-        raise VaultError(
-            f"vault: etcd: seed the authority's generation: {exc}"
-        ) from exc
+        raise VaultError(f"vault: etcd: seed the authority's generation: {exc}") from exc
     return EtcdAuthority(client, store, ns)
 
 
@@ -521,42 +509,52 @@ def converge_authority(
             return
         for record in listed:
             entry = record.entry
-            sch = vault.schema_for_version(entry.schema_version)
-            if sch is None:
-                raise SchemaMismatchError(
-                    f'the record "{record.record_id}" was written with schema '
-                    f"v{entry.schema_version}, which this store does not know"
-                )
-            src = vault.keys.by_version(entry.dek_version)
-            if src is None:
-                # The snapshot does not hold the generation this record was
-                # written with. Another node may have rotated the fleet
-                # since this one last looked: reload the key metadata and
-                # look again.
-                vault.reload_snapshot()
+            for attempt in range(5):
+                sch = vault.schema_for_version(entry.schema_version)
+                if sch is None:
+                    raise SchemaMismatchError(
+                        f'the record "{record.record_id}" was written with schema v{entry.schema_version}, which this store does not know'
+                    )
+                if int(entry.dek_version) == int(cur.version):
+                    break
                 src = vault.keys.by_version(entry.dek_version)
-            if src is None:
-                raise StaleGenerationError(
-                    f'record "{record.record_id}" is under generation '
-                    f"{entry.dek_version}, which this store does not hold "
-                    f"(it holds "
-                    f"{format_held_versions(vault.keys.held_versions())})"
-                )
-            entry.data = reencrypt_record_payload(entry.data, sch, src, cur)
-            entry.dek_version = int(cur.version)
-            entry.updated_at = _now_timestamp()
-            try:
-                store.update_record_cas(record.record_id, entry)
-            except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-                raise VaultError(
-                    f"vault: etcd: re-encrypt the record {record.record_id!r}: {exc}"
-                ) from exc
+                if src is None:
+                    # The snapshot does not hold the generation this record
+                    # was written with. Another node may have rotated the
+                    # fleet since this one last looked: reload and look again.
+                    vault.reload_snapshot()
+                    src = vault.keys.by_version(entry.dek_version)
+                if src is None:
+                    raise StaleGenerationError(
+                        f'record "{record.record_id}" is under generation '
+                        f"{entry.dek_version}, which this store does not hold "
+                        f"(it holds {format_held_versions(vault.keys.held_versions())})"
+                    )
+                entry.data = reencrypt_record_payload(entry.data, sch, src, cur)
+                entry.dek_version = int(cur.version)
+                entry.updated_at = _now_timestamp()
+                try:
+                    store.update_record_cas(record.record_id, entry)
+                    break
+                except _StoreConflictError:
+                    # A writer updated the record while it was being
+                    # re-encrypted. Read the newer entry: it is either
+                    # already under the target generation, or it needs a
+                    # fresh re-encrypt with its new revision.
+                    if attempt == 4:
+                        raise VaultError(
+                            f"vault: etcd: re-encrypt the record {record.record_id!r}: the record kept changing"
+                        )
+                    try:
+                        entry = store.get_record(record.record_id)
+                    except Exception:  # noqa: BLE001 - deleted under us
+                        break
+                except Exception as exc:  # noqa: BLE001 - remapped to a vault error
+                    raise VaultError(f"vault: etcd: re-encrypt the record {record.record_id!r}: {exc}") from exc
         after = listed[-1].record_id
 
 
-def reencrypt_record_payload(
-    payload: bytes, schema: Schema, src: KeySnapshot, cur: KeySnapshot
-) -> bytes:
+def reencrypt_record_payload(payload: bytes, schema: Schema, src: KeySnapshot, cur: KeySnapshot) -> bytes:
     """Re-encrypt a record's encrypted fields from the key the record is under to the current one.
 
     A field the source key cannot open is refused rather than carried
@@ -594,11 +592,6 @@ def reencrypt_record_payload(
         try:
             sealed = encrypt_credential(cur.mode, cur.dek_bytes(), plain)
         except CryptoError as exc:
-            raise VaultError(
-                f're-encrypt the record\'s field "{f.name}": {exc}'
-            ) from exc
-        rewritten.append(
-            ContainerField(name=f.name, type=f.type, encrypted=True, data=sealed)
-        )
+            raise VaultError(f're-encrypt the record\'s field "{f.name}": {exc}') from exc
+        rewritten.append(ContainerField(name=f.name, type=f.type, encrypted=True, data=sealed))
     return encode_container(rewritten)
-

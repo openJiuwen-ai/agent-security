@@ -40,7 +40,16 @@ from security_gateway.crypto import Mode, decrypt_credential, encrypt_credential
 from security_gateway.crypto.errors import CryptoError
 
 from .authority import AuthorityMixin
-from .codec import ContainerField, encode_container
+
+# The names below are not used by the module. They were importable from
+# it before the store was split across several modules, and they are
+# kept importable from here so that nothing that reached for them here
+# stops working.
+from .codec import (
+    ContainerField,
+    decode_container,  # noqa: F401
+    encode_container,
+)
 from .datadir import check_data_dir
 from .errors import (
     ClosedError,
@@ -50,7 +59,9 @@ from .errors import (
     NotFoundError,
     SchemaMismatchError,
     StaleGenerationError,
+    StoreNotReadyError,
     UndecryptableError,
+    VaultError,  # noqa: F401
 )
 from .format import format_held_versions
 from .keys import (
@@ -90,13 +101,6 @@ from .store import (
     run_with_busy_retry,
 )
 
-# The names below are not used by the module. They were importable from
-# it before the store was split across several modules, and they are
-# kept importable from here so that nothing that reached for them here
-# stops working.
-from .codec import decode_container  # noqa: F401
-from .errors import VaultError  # noqa: F401
-
 _log = logging.getLogger(__name__)
 
 __all__ = [
@@ -119,6 +123,7 @@ class _GenerationNotHeld(Exception):
 
     The write path reloads the key metadata and tries again.
     """
+
 
 # The write seam. It is called inside Put, after the record's values have
 # been encrypted and before the row is written, so a test can hold a write
@@ -186,7 +191,18 @@ class Vault(AuthorityMixin):
         # The authority's background loops, and the event that stops them.
         self._mirror_stop: threading.Event | None = None
         self._mirror_thread: threading.Thread | None = None
+        self._wrap_stop: threading.Event | None = None
         self._wrap_thread: threading.Thread | None = None
+        self._leader: Any = None
+        self._key_stop: threading.Event | None = None
+        self._key_thread: threading.Thread | None = None
+        self._shared_key_meta = False
+
+        # Fleet identity saved at open; a stale rotation asks through it.
+        self._etcd_cfg: Any = None
+        self._self_identity: Any = None
+        self._cluster_anchor: Any = None
+        self._cluster_store: Any = None
 
     # -- construction ---------------------------------------------------
 
@@ -206,11 +222,32 @@ class Vault(AuthorityMixin):
         mkdir_all_secure(secrets_dir, DEFAULT_DATA_DIR_PERM)
         check_data_dir(cfg.data_dir)
 
+        multi_process = bool(cfg.multi_process)
+        if multi_process and cfg.etcd is None:
+            raise InvalidError("vault: multi_process requires an etcd authority")
         db = open_db(db_path)
         # The authority is declared outside the try so that the error path
         # can close it: a connection that is opened and then abandoned on
         # the way out is a connection the process keeps until it exits.
         authority = None
+        leader = None
+
+        def _lead_host() -> Any:
+            if not multi_process or not node_id:
+                return None
+            from security_gateway.credmgr.etcdstore.leader import acquire_host_leader
+
+            candidate = acquire_host_leader(
+                authority.store.kv,
+                authority.store.leases,
+                authority.ns,
+                node_id,
+                f"{node_id}:{os.getpid()}",
+            )
+            if candidate is not None:
+                candidate.start()
+            return candidate
+
         try:
             bootstrap_schema(db)
 
@@ -223,32 +260,63 @@ class Vault(AuthorityMixin):
             anchor = None
             cluster_store = None
             if cfg.etcd is not None:
+                from security_gateway.credmgr.clusterkey.authority import (
+                    KVClusterStore,
+                )
+
                 from .cluster import (
                     cluster_anchor_for,
                     load_cluster_identity,
                     obtain_cluster_dek,
                 )
                 from .etcd import dial_etcd
-                from security_gateway.credmgr.clusterkey.authority import (
-                    KVClusterStore,
-                )
 
                 authority = dial_etcd(cfg.etcd)
-                if getattr(cfg.etcd, "node_id", ""):
+                node_id = getattr(cfg.etcd, "node_id", "")
+                if multi_process and not node_id:
+                    raise InvalidError("vault: multi_process requires cluster.node_id")
+                if node_id:
+                    leader = _lead_host()
+                    # Every process serves the handover log; leadership is
+                    # only needed to create the store's first key.
                     self_identity = load_cluster_identity(cfg.etcd)
                     anchor = cluster_anchor_for(cfg.etcd)
                     # The cluster store is the roster, the mint election
                     # and the handover log; the record store is a
                     # different half of the same namespace.
-                    cluster_store = KVClusterStore(
-                        authority.store.kv, authority.ns)
-                    adopt = obtain_cluster_dek(
-                        cfg.etcd, cluster_store, self_identity, anchor)
+                    cluster_store = KVClusterStore(authority.store.kv, authority.ns)
+                    local_key = read_key_meta(db)
+                    behind = local_key is None or int(local_key.active_dek_version) < int(authority.generation())
+                    if not multi_process or (leader is not None and behind):
+                        adopt = obtain_cluster_dek(cfg.etcd, cluster_store, self_identity, anchor)
 
-            keys, _km = init_keys(
-                db, secrets_dir, mode, adopt, shared_key_meta=authority is None
-            )
+            keys = None
+            deadline = time.monotonic() + max(float(getattr(cfg.etcd, "fetch_timeout", 0.0) or 0.0), 30.0)
+            while keys is None:
+                try:
+                    keys, _km = init_keys(
+                        db,
+                        secrets_dir,
+                        mode,
+                        adopt,
+                        shared_key_meta=authority is None or multi_process,
+                        allow_create=not multi_process or leader is not None,
+                    )
+                except StoreNotReadyError:
+                    if leader is None and multi_process:
+                        leader = _lead_host()
+                        if leader is not None:
+                            continue
+                    if leader is not None or time.monotonic() > deadline:
+                        raise
+                    time.sleep(0.05)
             vault = cls(db, keys, secrets_dir, schema, {}, {}, authority)
+            vault._leader = leader
+            vault._shared_key_meta = multi_process
+            vault._etcd_cfg = cfg.etcd
+            vault._self_identity = self_identity
+            vault._cluster_anchor = anchor
+            vault._cluster_store = cluster_store
             try:
                 vault._load_and_validate_schema(schema)
             except BaseException:
@@ -266,16 +334,20 @@ class Vault(AuthorityMixin):
                 vault.converge_stragglers()
 
             if authority is not None:
-                vault.start_authority(
-                    cfg.etcd, self_identity, anchor, cluster_store)
+                vault.start_authority(cfg.etcd, self_identity, anchor, cluster_store, leader)
             return vault
         except BaseException:
+            if leader is not None:
+                try:
+                    leader.stop()
+                    leader.release()
+                except Exception:  # noqa: BLE001 - shutting down anyway
+                    pass
             if authority is not None:
                 try:
                     authority.close()
                 except Exception as exc:  # noqa: BLE001 - shutting down anyway
-                    _log.warning(
-                        "could not close the etcd authority", extra={"error": exc})
+                    _log.warning("could not close the etcd authority", extra={"error": exc})
             db.close()
             raise
 
@@ -301,15 +373,27 @@ class Vault(AuthorityMixin):
         """Load a record by its id."""
         if not record_id:
             raise InvalidRecordError("id is empty")
-        row = get_record(self.db, record_id)
-        if row is None:
-            raise NotFoundError(f'"{record_id}"')
-        sch = self.schema_for_version(row.schema_version)
-        if sch is None:
-            raise SchemaMismatchError(
-                f'record "{record_id}" was written with schema v{row.schema_version}, which this store does not know'
-            )
-        return self._decode_record(row, sch)
+        for attempt in range(2):
+            row = get_record(self.db, record_id)
+            if row is None:
+                raise NotFoundError(f'"{record_id}"')
+            sch = self.schema_for_version(row.schema_version)
+            if sch is None:
+                raise SchemaMismatchError(
+                    f'record "{record_id}" was written with schema v{row.schema_version}, which this store does not know'
+                )
+            try:
+                return self._decode_record(row, sch)
+            except StaleGenerationError:
+                # The local mirror can hold a row from a generation this
+                # process skipped while another node rotated twice.  The
+                # authority has the current row; refresh the mirror once
+                # before declaring the record unreadable.
+                if attempt == 1 or self.authority is None:
+                    raise
+                self.reload_snapshot()
+                self._reconcile_mirror()
+        raise AssertionError("unreachable")
 
     def list(self, prefix: str) -> list[Entry]:
         """The records whose id begins with prefix.
@@ -348,9 +432,7 @@ class Vault(AuthorityMixin):
         # which is worse than refusing it.
         for name in rec.fields:
             if name not in self._fields:
-                raise InvalidRecordError(
-                    f'field "{name}" is not declared by the schema'
-                )
+                raise InvalidRecordError(f'field "{name}" is not declared by the schema')
 
         if self.authority is not None:
             self._put_through_authority(rec)
@@ -358,26 +440,44 @@ class Vault(AuthorityMixin):
         self._put_local(rec)
 
     def _put_through_authority(self, rec: Record) -> None:
-        """Write a record to the authority.
+        """Write a record to the authority under the generation it holds.
 
-        The generation is the node's own current one. The authority
-        fences writes by generation, so a node whose generation the
-        authority has left behind is refused there rather than here.
+        A committed rotation can fence this writer. Reload, ask the fleet
+        for a key this process does not hold, and retry a few times.
         """
+        from .etcd import FencedWriteError
+
+        last: Exception | None = None
+        for attempt in range(5):
+            try:
+                self._put_through_authority_once(rec)
+                return
+            except (FencedWriteError, StaleGenerationError) as exc:
+                last = exc
+                self.reload_snapshot()
+                generation = 0
+                try:
+                    generation = int(self.authority.generation()) if self.authority else 0
+                except Exception:  # noqa: BLE001 - absent generation is zero
+                    generation = 0
+                if generation and self.keys.by_version(generation) is None:
+                    self.refresh_from_fleet()
+                if attempt < 4:
+                    time.sleep(0.1)
+        if last is None:
+            raise VaultError("vault: the write did not produce a result")
+        raise last
+
+    def _put_through_authority_once(self, rec: Record) -> None:
         # The write barrier is taken before the key snapshot is captured,
         # and held until the row is written. That ordering is what keeps a
         # concurrent rotation from landing between the two: the rotation's
         # final straggler check waits for this writer, so a row this call
         # writes is always counted.
         with self.wmu:
-            # The key snapshot is captured once and used for both the
-            # encryption and the version the row is labelled with. Reading
-            # it twice would let a rotation slip in between.
-            cur = self.keys.cur()
-            if cur is None:
-                raise ClosedError("the store has no key", whole=True)
+            snap, version = self._authority_snapshot(fallback=True)
 
-            encoded = self._encode_record(rec, cur)
+            encoded = self._encode_record(rec, snap)
 
             if _put_before_write_hook is not None:
                 _put_before_write_hook()
@@ -391,8 +491,36 @@ class Vault(AuthorityMixin):
                 rec.id,
                 encoded,
                 self._schema.version,
-                cur.version,
+                version,
             )
+
+    def _authority_snapshot(self, *, fallback: bool = False) -> tuple[KeySnapshot, int]:
+        """The key snapshot matching the authority's generation.
+
+        ``fallback`` writes under the key this process holds when the
+        authority's generation is not available locally; the fence then
+        refuses it. Callers that must distinguish stale from fenced leave
+        it false.
+        """
+        try:
+            generation = int(self.authority.generation())
+        except Exception:  # noqa: BLE001 - an absent generation is zero
+            generation = 0
+        if generation:
+            snap = self.keys.by_version(generation)
+            if snap is None:
+                self._reload_keys(generation)
+                snap = self.keys.by_version(generation)
+            if snap is not None:
+                return snap, generation
+            if not fallback:
+                raise StaleGenerationError(
+                    f"the authority is on generation {generation}, which this store does not hold yet"
+                )
+        cur = self.keys.cur()
+        if cur is None:
+            raise ClosedError("the store has no key", whole=True)
+        return cur, int(cur.version)
 
     def _put_local(self, rec: Record) -> None:
         """Write a record to the local database.
@@ -416,9 +544,7 @@ class Vault(AuthorityMixin):
                         target = km.pending_dek_version
                 self._reload_keys(target)
                 continue
-        raise StaleGenerationError(
-            "the store is on a generation this process does not hold"
-        )
+        raise StaleGenerationError("the store is on a generation this process does not hold")
 
     def _put_local_once(self, rec: Record) -> None:
         """Write a record in one write transaction."""
@@ -520,7 +646,7 @@ class Vault(AuthorityMixin):
         # the generation in use, even though the committed active generation
         # has not moved yet.
         target = cur.version
-        if self.authority is None:
+        if self.authority is None or self._shared_key_meta:
             km = read_key_meta(self.db)
             if km is not None:
                 if km.pending_dek_version != 0:
@@ -564,6 +690,33 @@ class Vault(AuthorityMixin):
         if thread is not None:
             thread.join(timeout=5.0)
 
+        wrap_stop = self._wrap_stop
+        self._wrap_stop = None
+        if wrap_stop is not None:
+            wrap_stop.set()
+        wrap_thread = self._wrap_thread
+        self._wrap_thread = None
+        if wrap_thread is not None:
+            wrap_thread.join(timeout=5.0)
+
+        key_stop = self._key_stop
+        self._key_stop = None
+        if key_stop is not None:
+            key_stop.set()
+        key_thread = self._key_thread
+        self._key_thread = None
+        if key_thread is not None:
+            key_thread.join(timeout=5.0)
+
+        leader = self._leader
+        self._leader = None
+        if leader is not None:
+            leader.stop()
+            try:
+                leader.release()
+            except Exception:  # noqa: BLE001 - the lease expires on its own
+                pass
+
         authority = self.authority
         if authority is None:
             return
@@ -577,26 +730,29 @@ class Vault(AuthorityMixin):
         cur = self.keys.cur()
         if cur is None:
             return 0
+        pending = self.keys.pend()
+        if pending is not None and int(pending.version) > int(cur.version):
+            return int(pending.version)
         return int(cur.version)
 
     # -- internals ------------------------------------------------------
 
-    def _encrypt_with(self, snap: KeySnapshot, plaintext: bytes) -> bytes:
+    @staticmethod
+    def _encrypt_with(snap: KeySnapshot, plaintext: bytes) -> bytes:
         """Seal a value under a given key snapshot."""
         if snap is None:
             raise ClosedError("the store has no key", whole=True)
         return encrypt_credential(snap.mode, snap.dek_bytes(), plaintext)
 
     def _decrypt_for(self, version: int, blob: bytes) -> bytes:
-        """Open a ciphertext with the key that holds the generation the record was written with.
-        """
+        """Open a ciphertext with the key that holds the generation the record was written with."""
         snap = self.keys.by_version(version)
         if snap is not None:
             return self._decrypt_with(snap, version, blob)
 
         # The snapshot does not hold that generation. Another process may
         # have rotated the store since this one last looked.
-        if self.authority is None:
+        if self.authority is None or self._shared_key_meta:
             self._reload_keys(version)
             snap = self.keys.by_version(version)
             if snap is not None:
@@ -610,9 +766,7 @@ class Vault(AuthorityMixin):
             if candidate is None:
                 continue
             try:
-                return decrypt_credential(
-                    candidate.mode, candidate.dek_bytes(), blob
-                )
+                return decrypt_credential(candidate.mode, candidate.dek_bytes(), blob)
             except CryptoError:
                 pass
 
@@ -621,7 +775,8 @@ class Vault(AuthorityMixin):
             f"{format_held_versions(self.keys.held_versions())}"
         )
 
-    def _decrypt_with(self, snap: KeySnapshot, version: int, blob: bytes) -> bytes:
+    @staticmethod
+    def _decrypt_with(snap: KeySnapshot, version: int, blob: bytes) -> bytes:
         """Open a ciphertext with one particular key."""
         try:
             return decrypt_credential(snap.mode, snap.dek_bytes(), blob)
@@ -651,9 +806,65 @@ class Vault(AuthorityMixin):
             mgr, _km = load_snapshot(self.db, self.secrets_dir)
             self.keys.replace(mgr.cur(), mgr.prev(), mgr.pend())
 
-    def _plain_entry(self, row: RecordRow, sch: Schema) -> Entry:
-        """Decode a stored row into an entry that carries only the fields the schema does not mark encrypted.
+    def refresh_from_fleet(self) -> bool:
+        """Adopt the fleet's current generation after another node rotated.
+
+        Returns whether the local key moved.  A process that is merely
+        behind can now rotate without waiting for the background wrap
+        loop to hand it the newer key.
         """
+        if (
+            self.authority is None
+            or self._etcd_cfg is None
+            or self._self_identity is None
+            or self._cluster_store is None
+        ):
+            return False
+        from .cluster import obtain_cluster_dek
+
+        try:
+            adopted = obtain_cluster_dek(
+                self._etcd_cfg,
+                self._cluster_store,
+                self._self_identity,
+                self._cluster_anchor,
+            )
+        except Exception as exc:  # noqa: BLE001 - the caller reports the stale key
+            _log.warning("vault: could not ask the fleet for its current key: %s", exc)
+            return False
+        if adopted is None:
+            return False
+        cur = self.keys.cur()
+        if cur is not None and int(adopted.version) <= int(cur.version):
+            return False
+        try:
+            # A rotation can move the fleet more than one generation while
+            # this process is catching up.  The newest key alone is not
+            # enough then: records written under the generation in between
+            # would be undecryptable.  Fetch that generation first; the
+            # subsequent adopt keeps it as ``previous``.
+            if cur is not None and int(adopted.version) > int(cur.version) + 1:
+                from security_gateway.credmgr.clusterkey.handover import predecessor
+
+                previous_dek, previous_version = predecessor(
+                    self._cluster_store,
+                    self._self_identity,
+                    int(adopted.version),
+                    self._etcd_cfg.fetch_timeout,
+                )
+                if int(previous_version) == int(adopted.version) - 1:
+                    self.adopt_cluster_dek(previous_dek, previous_version)
+                    self.reload_snapshot()
+            self.adopt_cluster_dek(adopted.dek, adopted.version)
+            self.reload_snapshot()
+        except Exception as exc:  # noqa: BLE001 - the caller reports the stale key
+            _log.warning("vault: could not adopt the fleet's key: %s", exc)
+            return False
+        return True
+
+    @staticmethod
+    def _plain_entry(row: RecordRow, sch: Schema) -> Entry:
+        """Decode a stored row into an entry that carries only the fields the schema does not mark encrypted."""
         fields = _decode_row(row)
         defs = sch.field_lookup()
         verify_against_schema(row.id, sch, defs, fields)
@@ -678,13 +889,9 @@ class Vault(AuthorityMixin):
                 try:
                     data = self._decrypt_for(row.dek_version, data)
                 except StaleGenerationError as exc:
-                    raise StaleGenerationError(
-                        f'record "{row.id}" field "{f.name}": {exc}'
-                    ) from exc
+                    raise StaleGenerationError(f'record "{row.id}" field "{f.name}": {exc}') from exc
                 except UndecryptableError as exc:
-                    raise UndecryptableError(
-                        f'record "{row.id}" field "{f.name}": {exc}'
-                    ) from exc
+                    raise UndecryptableError(f'record "{row.id}" field "{f.name}": {exc}') from exc
             rec.fields[f.name] = Value(type=f.type, data=data)
         return rec
 
@@ -735,9 +942,7 @@ class Vault(AuthorityMixin):
             # leave existing records unreadable, so those are refused.
             stored = registry.get(latest.version)
             if stored is None:
-                raise SchemaMismatchError(
-                    f"the store's schema v{latest.version} is missing from its registry"
-                )
+                raise SchemaMismatchError(f"the store's schema v{latest.version} is missing from its registry")
             if not is_additive(stored, declared):
                 raise SchemaMismatchError(
                     f"schema v{stored.version} -> v{declared.version} changes an existing field; that "
