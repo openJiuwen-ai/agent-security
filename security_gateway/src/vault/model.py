@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from cred_router.crypto import Mode
+from security_gateway.crypto import Mode
 
 from .record import Value
 
@@ -76,7 +76,7 @@ class Config:
     #: through the authority and its local copy is a mirror that catches
     #: up through a watch.
     #:
-    #: The type is :class:`cred_router.vault.etcd.EtcdConfig`, and it is
+    #: The type is :class:`security_gateway.vault.etcd.EtcdConfig`, and it is
     #: left untyped here so that importing this module does not drag the
     #: etcd half in.
     etcd: Any = None
