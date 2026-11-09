@@ -16,6 +16,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+etcd = [
+    "etcd3>=0.12",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
@@ -29,6 +32,8 @@ packages = [
     "security_gateway.crypto",
     "security_gateway.platform",
     "security_gateway.vault",
+    "security_gateway.credmgr",
+    "security_gateway.credmgr.etcdstore",
 ]
 
 [tool.pytest.ini_options]
