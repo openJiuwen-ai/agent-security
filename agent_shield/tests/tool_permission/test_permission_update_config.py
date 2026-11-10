@@ -57,17 +57,18 @@ def test_update_rules_takes_effect_and_removal_restores_baseline() -> None:
     assert _level(engine, "ls") is PermissionLevel.ALLOW
 
 
-def test_update_approval_overrides_takes_effect_and_removal_restores() -> None:
-    rule = {"id": "no-ls", "tools": ["bash"], "pattern": "re:^ls", "action": "deny"}
+@pytest.mark.parametrize("action", ["ask", "deny"])
+def test_update_approval_overrides_takes_effect_and_removal_restores(action) -> None:
+    rule = {"id": "no-ls", "tools": ["bash"], "pattern": "re:^ls", "action": action}
     approval = {"id": "ok", "tools": ["bash"], "pattern": "re:^ls", "action": "allow"}
     engine = PermissionEngine({**_BASE, "rules": [rule]})
-    assert _level(engine, "ls") is PermissionLevel.DENY
+    assert _level(engine, "ls") is PermissionLevel(action)
 
     engine.update_config({**_BASE, "rules": [rule], "approval_overrides": [approval]})
     assert _level(engine, "ls") is PermissionLevel.ALLOW
 
     engine.update_config({**_BASE, "rules": [rule]})
-    assert _level(engine, "ls") is PermissionLevel.DENY
+    assert _level(engine, "ls") is PermissionLevel(action)
 
 
 def test_update_guard_actions_takes_effect_and_removal_restores_ask(

@@ -16,13 +16,18 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from .path_extract import (
-    extract_accesses_native,
-)
 from ..models import (
     PermissionLevel,
     PermissionResult,
 )
+from .path_extract import (
+    ShellPathAnalysisLimitError,
+    ShellPathUnresolvedCwdError,
+    ShellPathUnresolvedShellError,
+    extract_accesses_native,
+    shell_type_for_file_access,
+)
+from .shell_readonly import is_read_only_shell
 
 _PROJECT_EXECUTABLE_FILES = frozenset({
     "package.json",
@@ -101,13 +106,37 @@ class ImmutableControlPlaneGuard:
         # stand-in for the old process-cwd fallback, and only when no
         # workspace was given. Glob and outbound tools still prefer cwd.
         resolution_root = self._workspace_root or self._agent_cwd
-        accesses = extract_accesses_native(
-            tool_name,
-            dict(tool_args),
-            resolution_root,
-            self._permission_config,
-            agent_cwd=self._agent_cwd,
-        )
+        try:
+            accesses = extract_accesses_native(
+                tool_name,
+                dict(tool_args),
+                resolution_root,
+                self._permission_config,
+                agent_cwd=self._agent_cwd,
+            )
+        except ShellPathAnalysisLimitError as exc:
+            return PermissionResult(
+                permission=PermissionLevel.DENY,
+                matched_rule="file_guard:analysis_limit",
+                reason=str(exc),
+            )
+        except ShellPathUnresolvedCwdError as exc:
+            command = str(tool_args.get("command", "") or tool_args.get("cmd", ""))
+            if is_read_only_shell(command, shell_type_for_file_access(tool_name, tool_args)):
+                return None
+            return PermissionResult(
+                permission=PermissionLevel.DENY,
+                matched_rule="file_guard:unresolved_cwd",
+                reason=str(exc),
+            )
+        except ShellPathUnresolvedShellError as exc:
+            # An opaque child/group has no complete read-only proof. Never
+            # treat failed shell analysis as absence of write/exec effects.
+            return PermissionResult(
+                permission=PermissionLevel.DENY,
+                matched_rule="file_guard:unresolved_shell",
+                reason=str(exc),
+            )
         for path, action, _source in accesses:
             if action not in {"write", "exec"}:
                 continue

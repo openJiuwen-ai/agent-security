@@ -6,6 +6,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from agent_shield.tool_permission.delguard.del_count import count_deletion_targets
 from agent_shield.tool_permission.delguard.deletion_guard import DeletionGuard
 from agent_shield.tool_permission.models import PermissionLevel
 
@@ -56,3 +59,31 @@ def test_zero_threshold_disables_counting(tmp_path: Path) -> None:
         workspace_root=str(tmp_path),
     )
     assert guard.evaluate("bash", {"command": "rm a.txt"}) is None
+
+
+@pytest.mark.parametrize("shell_type", ["auto", "powershell"])
+def test_quoted_powershell_delete_list_counts_each_file(tmp_path, shell_type):
+    targets = [tmp_path / "a.txt", tmp_path / "b.txt", tmp_path / "c.txt"]
+    for target in targets:
+        target.write_text("data", encoding="utf-8")
+    command = "Remove-Item " + ",".join(f"'{target.as_posix()}'" for target in targets)
+    count, paths = count_deletion_targets(command, shell_type, str(tmp_path))
+    assert count == 3
+    assert {Path(path).resolve() for path in paths} == set(targets)
+    guard = DeletionGuard(permission_config={
+        "soft_delete": {"enabled": True, "batch_delete_threshold": 3},
+    }, workspace_root=str(tmp_path))
+    result = guard.evaluate("powershell", {"command": command})
+    assert result is not None
+    assert result.permission is PermissionLevel.ASK
+    assert result.reason == "本次操作将删除 3 个文件，达到阈值 3，需要确认"
+
+
+def test_quoted_comma_in_delete_filename_is_one_target(tmp_path):
+    target = tmp_path / "a,b.txt"
+    target.write_text("data", encoding="utf-8")
+    count, paths = count_deletion_targets(
+        f"Remove-Item '{target.as_posix()}'", "powershell", str(tmp_path),
+    )
+    assert count == 1
+    assert [Path(path).resolve() for path in paths] == [target]

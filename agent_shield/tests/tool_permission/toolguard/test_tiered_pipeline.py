@@ -331,6 +331,48 @@ def test_approval_override_on_whole_command_skips_floors(monkeypatch: pytest.Mon
     assert "approval_overrides" in result.matched_rule
 
 
+@pytest.mark.parametrize("other_action", ["allow", "ask", "deny"])
+def test_leaf_approval_does_not_approve_other_commands(monkeypatch, other_action) -> None:
+    _fake_parse(monkeypatch, ["echo approved", "echo other"])
+    config = {
+        **_ALLOW_BASH,
+        "package_builtin_rules": False,
+        "guard_actions": {"compound_chain": "allow"},
+        "rules": [
+            {"id": "approved-deny", "tools": ["bash"], "pattern": "echo approved", "action": "deny"},
+            {"id": "other", "tools": ["bash"], "pattern": "echo other", "action": other_action},
+        ],
+        "approval_overrides": [
+            {"id": "remembered", "tools": ["bash"], "pattern": "echo approved", "action": "allow"},
+        ],
+    }
+    result = _run(config, "echo approved && echo other")
+    assert result.permission is PermissionLevel(other_action)
+    assert "approved-deny" not in (result.matched_rule or "")
+    if other_action != "allow":
+        assert "other" in result.matched_rule
+
+
+def test_leaf_approval_does_not_skip_whole_command_file_guard(monkeypatch, tmp_path) -> None:
+    _fake_parse(monkeypatch, ["echo ok", "cat ./secret"])
+    config = {
+        **_ALLOW_BASH,
+        "package_builtin_rules": False,
+        "guard_actions": {"compound_chain": "allow"},
+        "runtime": {"workspace_root": str(tmp_path)},
+        "file_guard": {
+            "enabled": True,
+            "paths": [{"path": str(tmp_path / "secret"), "read": "deny"}],
+        },
+        "approval_overrides": [
+            {"id": "remembered", "tools": ["bash"], "pattern": "cat ./secret", "action": "allow"},
+        ],
+    }
+    result = _run(config, "echo ok && cat ./secret")
+    assert result.permission is PermissionLevel.DENY
+    assert "file_guard" in result.matched_rule
+
+
 def test_whole_tool_deny_is_baseline_not_parse_gate(monkeypatch: pytest.MonkeyPatch) -> None:
     """tools.bash deny no longer skips parsing; it still wins when nothing else hits."""
     from agent_shield.tool_permission import shell_structure
