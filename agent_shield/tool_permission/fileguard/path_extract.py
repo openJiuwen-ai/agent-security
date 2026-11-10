@@ -2,8 +2,8 @@
 
 """Native L1 path extraction：registry 通道 + shell（分段 / redirect / 解释器）。
 
-源自 enterprise ``permissions/files/extract.py``，依赖改为 agent-core
-``openjiuwen.harness.security.shell_ast``。本期不迁 L3 ``command_intent``。
+Literal resource analysis is bounded and independent of host execution.
+Relative paths require an explicit working directory.
 """
 
 from __future__ import annotations
@@ -13,36 +13,43 @@ import os
 import re
 import shlex
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from .outbound_paths import (
-    is_public_file_url,
-    normalize_file_path_list,
-    resolve_outbound_path,
+from ..delguard.del_count import split_shell_operands
+from ..toolguard.command_canonicalize import (
+    canonicalize_shell_command_for_permission,
 )
 from .file_tool_specs import (
     FileToolSpec,
     lookup_file_tool_specs,
 )
-from ..toolguard.command_canonicalize import (
-    canonicalize_shell_command_for_permission,
+from .outbound_paths import (
+    is_public_file_url,
+    normalize_file_path_list,
+    resolve_outbound_path,
 )
-from ..toolguard.shell_ast import parse_shell_for_permission
 from .path_policy import _PATH_TOOLS, _iter_path_strings
 
 logger = logging.getLogger(__name__)
 
 FileAction = Literal["read", "write", "exec"]
 
-_CHAIN_SPLIT_RE = re.compile(r"\s+(?:&&|\|\|)\s+")
+_MSYS_DRIVE_RE = re.compile(r"^/([A-Za-z])(?:/|$)")
+_SHELL_WORD_RE = re.compile(r'''(?:"[^"]*"|'[^']*'|[^\s<>"']+)+|>>?|<''')
+_POSIX_WORD_RE = re.compile(r'''(?:"(?:\\.|[^"\\])*"|'[^']*'|\\.|[^\s<>"'\\])+|>>?|<''')
+_CMD_WORD_RE = re.compile(r'''(?:"[^"]*"|\^.|[^\s<>"^])+|>>?|<''')
+_MAX_CWD_CANDIDATES = 128
+_MAX_EXTRACTION_STEPS = 1024
+_MAX_INLINE_DEPTH = 4
 
 _PATH_AWARE_COMMANDS = frozenset({
     "cd", "rm", "cp", "mv", "mkdir", "touch", "chmod", "chown", "cat",
     "ls", "dir", "type", "del", "erase", "rd", "rmdir", "copy", "move", "md",
     "head", "tail", "more", "less", "vim", "nano", "gedit", "notepad",
     "get-content", "gc",
-    "set-content", "add-content", "out-file", "tee-object", "sc",
+    "set-content", "add-content", "out-file", "tee", "tee-object", "sc",
     "remove-item", "ri", "new-item", "ni",
 })
 
@@ -67,9 +74,13 @@ _READ_CMDS = frozenset({
     "get-content", "gc",
 })
 _WRITE_CMDS = frozenset({
-    "rm", "mkdir", "touch", "chmod", "chown", "del", "erase", "rd", "rmdir", "md",
-    "set-content", "add-content", "out-file", "tee-object", "sc",
-    "remove-item", "ri", "new-item", "ni",
+    "mkdir", "touch", "chmod", "chown", "md",
+    "set-content", "add-content", "out-file", "tee", "tee-object", "sc",
+    "new-item", "ni",
+})
+# Keep deletions on the existing SDK write axis.
+_DELETE_CMDS = frozenset({
+    "rm", "del", "erase", "rd", "rmdir", "remove-item", "ri",
 })
 _PS_PATH_FLAGS = frozenset({"-path", "-literalpath", "-filepath"})
 _FD_ALIAS_RE = re.compile(r"^&\d+$")
@@ -131,18 +142,20 @@ def _looks_like_redirect_target(token: str) -> bool:
 
 
 def _collect_ps_path_tokens(tokens: list[str]) -> list[str]:
+    """返回仍带引号的原始词，方便后续按引号外逗号拆 PowerShell 列表。"""
     out: list[str] = []
     first_positional = True
     idx = 1
     while idx < len(tokens):
-        raw = tokens[idx].strip().strip('"').strip("'")
-        flag = raw.lower().split(":")[0]
+        raw = tokens[idx].strip()
+        bare = raw.strip('"').strip("'")
+        flag = bare.lower().split(":")[0]
         if flag in _PS_PATH_FLAGS:
             if idx + 1 < len(tokens):
-                out.append(tokens[idx + 1].strip().strip('"').strip("'"))
+                out.append(tokens[idx + 1].strip())
                 idx += 2
                 continue
-        if raw.startswith("-"):
+        if bare.startswith("-"):
             idx += 1
             continue
         if first_positional and raw:
@@ -152,12 +165,14 @@ def _collect_ps_path_tokens(tokens: list[str]) -> list[str]:
     return out
 
 
-def _is_shell_flag_token(tok: str, *, cmd0: str = "") -> bool:
+def _is_shell_flag_token(tok: str, *, cmd0: str = "", shell_type: str = "auto") -> bool:
     s = tok.strip().strip('"').strip("'")
     if not s:
         return True
     if s.startswith("-"):
         return True
+    if os.name == "nt" and shell_type in {"bash", "sh"} and _MSYS_DRIVE_RE.match(s):
+        return False
     return _nt_cmd_exe_switch_token(s, cmd0=cmd0)
 
 
@@ -168,113 +183,609 @@ def _basename_lower(cmd: str) -> str:
     return base
 
 
-def _segments_for_extract(command: str) -> list[str]:
-    text = (command or "").strip()
-    if not text:
+def _shell_segments(text: str, shell_type: str, *, check_scope: bool = False) -> list[tuple[str, str]]:
+    """Keep literal redirects and the connector after each quoted shell segment."""
+    parts: list[tuple[str, str]] = []
+    buf: list[str] = []
+    quote = ""
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        escape = "\\" if shell_type in {"bash", "sh"} else "`" if shell_type == "powershell" else "^"
+        quoted_cmd = shell_type == "cmd" and bool(quote)
+        can_escape = ch == escape and quote != "'" and not quoted_cmd
+        if can_escape and i + 1 < len(text):
+            buf.extend(text[i:i + 2])
+            i += 2
+            continue
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = ""
+            i += 1
+            continue
+        if ch == '"' or (ch == "'" and shell_type != "cmd"):
+            quote = ch
+            buf.append(ch)
+            i += 1
+            continue
+        powershell_brace = shell_type == "powershell" and ch in "{}"
+        group_scope = ch in "()" or powershell_brace
+        if check_scope and group_scope:
+            raise ShellPathUnresolvedShellError("Unsupported shell group or expression scope")
+        separators = "\r\n|&" if shell_type == "cmd" else ";\r\n|&"
+        if ch in separators and not (
+            ch == "&" and (text.startswith("&>", i) or (i > 0 and text[i - 1] in "><"))
+        ):
+            connector = next((op for op in ("&&", "||", "|&") if text.startswith(op, i)), ch)
+            i += len(connector)
+            part = "".join(buf).strip()
+            if part:
+                parts.append((part, connector))
+            buf = []
+            continue
+        buf.append(ch)
+        i += 1
+    tail = "".join(buf).strip()
+    if tail:
+        parts.append((tail, ""))
+    return parts
+
+
+def _decode_cmd_word(word: str) -> str:
+    """CMD quotes are double quotes; apostrophes belong to the filename."""
+    out: list[str] = []
+    quoted = False
+    index = 0
+    while index < len(word):
+        char = word[index]
+        if char == '"':
+            quoted = not quoted
+        elif char == "^" and not quoted and index + 1 < len(word):
+            index += 1
+            out.append(word[index])
+        else:
+            out.append(char)
+        index += 1
+    return "".join(out)
+
+
+def _execution_tokens(tokens: list[str], shell_type: str) -> list[str]:
+    """Recognize literal POSIX builtin prefixes without treating queries as calls."""
+    if shell_type not in {"bash", "sh"} or not tokens or tokens[0] not in {"command", "builtin"}:
+        return tokens
+    for _ in range(_MAX_INLINE_DEPTH):
+        if not tokens or tokens[0] not in {"command", "builtin"}:
+            return tokens
+        prefix = tokens[0]
+        index = 1
+        while index < len(tokens) and tokens[index].startswith("-"):
+            option = tokens[index]
+            index += 1
+            if option == "--":
+                break
+            if prefix == "command" and option in {"-v", "-V"}:
+                return []
+            if prefix != "command" or option != "-p":
+                raise ShellPathUnresolvedShellError("Unsupported shell builtin prefix options")
+        tokens = tokens[index:]
+    if not tokens or tokens[0] not in {"command", "builtin"}:
+        return tokens
+    _raise_analysis_limit("nested shell builtin prefix limit")
+    return []  # Unreachable; keeps the token return contract explicit.
+
+
+def _redirect_glued_to_previous(words: list[re.Match[str]], idx: int) -> bool:
+    """True when a redirect operator is written against the preceding word."""
+    if not idx:
+        return False
+    return words[idx - 1].end() == words[idx].start()
+
+
+def _token_is_fd_alias(token: str) -> bool:
+    """True for a glued descriptor such as ``2>`` or ``&>``."""
+    return token.isdigit() or token == "&"
+
+
+def _segment_tokens(segment: str, shell_type: str = "auto") -> tuple[list[str], list[tuple[str, FileAction]]]:
+    """Separate redirects without mistaking quoted text or fd aliases for files."""
+    _shell_segments(segment, shell_type, check_scope=True)
+    pattern = _CMD_WORD_RE if shell_type == "cmd" else (
+        _POSIX_WORD_RE if shell_type in {"bash", "sh"} else _SHELL_WORD_RE
+    )
+    words = list(pattern.finditer(segment))
+    end = 0
+    for match in words:
+        if segment[end:match.start()].strip():
+            raise ShellPathUnresolvedShellError("Incomplete shell word analysis")
+        end = match.end()
+    if segment[end:].strip():
+        raise ShellPathUnresolvedShellError("Incomplete shell word analysis")
+    tokens: list[str] = []
+    redirects: list[tuple[str, FileAction]] = []
+    idx = 0
+    while idx < len(words):
+        word = words[idx].group()
+        if word in {">", ">>", "<"}:
+            glued = bool(tokens) and _redirect_glued_to_previous(words, idx)
+            if glued and _token_is_fd_alias(tokens[-1]):
+                tokens.pop()
+            if idx + 1 < len(words):
+                target = words[idx + 1].group()
+                if _looks_like_redirect_target(target):
+                    redirects.append((target, "read" if word == "<" else "write"))
+                idx += 1
+        else:
+            tokens.append(word)
+        idx += 1
+    return tokens, redirects
+
+
+def _resolve_shell_operand(tok: str, cwd: Path | None, shell_type: str, *, bare: bool = False) -> Path | None:
+    quoted = tok.startswith(('"', "'"))
+    if shell_type in {"bash", "sh"} and not _is_windows_abs_text(tok):
+        try:
+            tok = shlex.split(tok, posix=True)[0]
+        except (ValueError, IndexError):
+            return None
+    tok = _decode_cmd_word(tok.strip()) if shell_type == "cmd" else tok.strip().strip('"').strip("'")
+    if not tok or _UNEXPANDED_VAR_RE.search(tok):
+        return None
+    if shell_type == "cmd" and re.search(r"%[^%\r\n]+%", tok):
+        return None
+    expands_home = not quoted and shell_type in {"bash", "sh"}
+    home_token = tok == "~" or tok.startswith("~/")
+    if expands_home and home_token:
+        tok = str(Path(os.environ.get("HOME") or Path.home()) / tok[2:])
+    msys = _MSYS_DRIVE_RE.match(tok) if os.name == "nt" and shell_type in {"bash", "sh"} else None
+    if not bare and not msys and not _looks_like_path(tok):
+        return None
+    if msys:
+        tok = f"{msys.group(1).upper()}:/{tok[msys.end():]}"
+    path = Path(tok)
+    if not path.is_absolute() and not (os.name != "nt" and _is_windows_abs_text(tok)):
+        if cwd is None:
+            return None
+        path = cwd / path
+    try:
+        return _resolve_extract_path(path)
+    except (OSError, RuntimeError):
+        return None
+
+
+def _interpreter_options(cmd: str) -> tuple[set[str], set[str], set[str], set[str], str] | None:
+    """Return value, preload, inline and flag options for literal script calls."""
+    if re.fullmatch(r"python(?:w|\d+(?:\.\d+)*)?", cmd) or cmd == "py":
+        return (
+            {"-W", "-X", "--check-hash-based-pycs"}, set(), {"-c", "-m"}, {"--version", "--help"},
+            r"-[bBdEhiIOPqRsSuvVx?]+|-\d+(?:\.\d+)*|-V:.+",
+        )
+    if cmd in {"node", "nodejs"}:
+        return (
+            {"--title", "--stack-trace-limit", "--max-old-space-size", "--conditions", "-C"},
+            {"-r", "--require", "--loader", "--experimental-loader", "--import"},
+            {"-e", "--eval", "-p", "--print"},
+            {"--trace-warnings", "--no-warnings", "--enable-source-maps", "--inspect", "--inspect-brk"}, r"-[iv]+",
+        )
+    if cmd in {"pwsh", "powershell"}:
+        return (
+            {"-executionpolicy", "-inputformat", "-outputformat", "-windowstyle"}, set(),
+            {"-command", "-c", "-encodedcommand", "-enc"},
+            {"-noprofile", "-noninteractive", "-nologo", "-noexit", "-file", "-f"}, r"(?!)",
+        )
+    if cmd in _INTERPRETER_BASENAMES:
+        return (
+            {"-o", "-O", "+o", "+O"}, {"--rcfile", "--init-file"}, {"-c"},
+            {"--noprofile", "--norc", "--posix", "--login", "--help", "--version"},
+            r"[-+][abefhkmnptuvxBCEHPT]+",
+        )
+    return None
+
+
+def _interpreter_operands(tokens: list[str]) -> list[str]:
+    """Find main/preload files; unknown option arity keeps all possible operands."""
+    if not tokens:
         return []
-    pr = parse_shell_for_permission(text)
-    inv = [sc.text.strip() for sc in (pr.subcommands or ()) if sc.text and sc.text.strip()]
-    heuristic = [p.strip() for p in _CHAIN_SPLIT_RE.split(text) if p.strip()]
-    if len(inv) >= 2:
-        return inv
-    if len(heuristic) >= 2:
-        return heuristic
-    if len(inv) == 1:
-        return inv
-    return [text]
+    cmd = _basename_lower(tokens[0].strip('"').strip("'"))
+    options = _interpreter_options(cmd)
+    if options is None:
+        return []
+    values, loads, inline, flags, short = options
+    out: list[str] = []
+    uncertain = False
+    idx = 1
+    while idx < len(tokens):
+        tok = tokens[idx]
+        if len(tok) >= 2 and tok[0] == tok[-1] and tok[0] in "\"'":
+            tok = tok[1:-1]
+        if tok in {"--", "-"}:
+            if tok == "--" and idx + 1 < len(tokens):
+                out.append(tokens[idx + 1])
+            break
+        option, equals, value = tok.partition("=")
+        if cmd in {"powershell", "pwsh"}:
+            option = option.lower()
+        inline_shell = (
+            cmd in {"bash", "sh", "dash", "zsh", "fish"}
+            and re.fullmatch(r"-[a-zA-Z]*c[a-zA-Z]*", tok)
+        )
+        inline_python = cmd.startswith("py") and re.fullmatch(r"-[bBdEhiIOPqRsSuvVx]*[cm].*", tok)
+        if option in inline or inline_shell or inline_python:
+            break  # Code strings / modules are not literal script paths.
+        if option in values | loads:
+            if not equals:
+                idx += 1
+                value = tokens[idx] if idx < len(tokens) else ""
+            if option in loads and value:
+                out.append(value)
+        elif cmd in {"python", "python3", "pythonw", "py"} and tok[:2] in {"-W", "-X"}:
+            pass  # Attached option value, e.g. -Wignore or -Xutf8.
+        elif cmd in {"node", "nodejs"} and tok.startswith("-r") and len(tok) > 2:
+            out.append(tok[2:])
+        elif option in flags or re.fullmatch(short, tok):
+            pass
+        elif tok.startswith("-") or ("-o" in values and tok.startswith("+")):
+            uncertain = True
+        else:
+            out.append(tokens[idx])
+            if not uncertain:
+                break
+        idx += 1
+    return out
+
+
+def _cd_has_dynamic_glob(operand: str, shell_type: str, *, literal_path: bool) -> bool:
+    """Do not treat a directory selected by wildcard expansion as a literal."""
+    if shell_type == "powershell":
+        return not literal_path and any(char in operand for char in "*?[")
+    if shell_type == "cmd":
+        return any(char in operand for char in "*?")
+    quote = ""
+    escaped = False
+    for char in operand:
+        if escaped:
+            escaped = False
+        elif char == "\\" and quote != "'":
+            escaped = True
+        elif quote:
+            if char == quote:
+                quote = ""
+        elif char in "\"'":
+            quote = char
+        elif char in "*?[":
+            return True
+    return False
+
+
+@dataclass(frozen=True)
+class _CdTarget:
+    kind: Literal["unchanged", "home", "literal", "unknown"]
+    operand: str = ""
+    literal_path: bool = False
+    change_drive: bool = False
+
+
+def _cd_option_value(token: str) -> str:
+    if len(token) >= 2 and token[0] == token[-1] and token[0] in "\"'":
+        return token[1:-1]
+    return token
+
+
+def _posix_cd_target(tokens: list[str], shell_type: str) -> _CdTarget:
+    index = 1
+    options = "LPe" if shell_type == "bash" else "LP"
+    while index < len(tokens):
+        option = _cd_option_value(tokens[index])
+        if option == "--":
+            index += 1
+            break
+        if option == "--help" and shell_type == "bash":
+            return _CdTarget("unchanged")
+        if not option.startswith("-") or option == "-":
+            break
+        if len(option) < 2 or any(char not in options for char in option[1:]):
+            return _CdTarget("unknown")
+        index += 1
+    operands = tokens[index:]
+    if not operands:
+        return _CdTarget("home")
+    if len(operands) != 1 or _cd_option_value(operands[0]) == "-":
+        # OLDPWD belongs to the actual shell session, not this SDK process.
+        return _CdTarget("unknown")
+    return _CdTarget("literal", operands[0])
+
+
+def _cmd_cd_target(tokens: list[str]) -> _CdTarget:
+    args = tokens[1:]
+    if not args or (len(args) == 1 and _decode_cmd_word(args[0]).lower() in {"/?", "/d"}):
+        # Bare cd and /? are queries; /d without its target fails without
+        # changing cwd. This does not model the command's exit status.
+        return _CdTarget("unchanged")
+    change_drive = _decode_cmd_word(args[0]).lower() == "/d"
+    operand = " ".join(args[1:] if change_drive else args)
+    raw = _decode_cmd_word(operand)
+    if re.fullmatch(r"[A-Za-z]:", raw):
+        return _CdTarget("unknown" if change_drive else "unchanged")
+    if re.match(r"^[A-Za-z]:(?![\\/])", raw):
+        return _CdTarget("unknown")  # No trusted per-drive current-directory state.
+    return _CdTarget("literal", operand, change_drive=change_drive)
+
+
+def _powershell_cd_target(tokens: list[str]) -> _CdTarget:
+    operand = None
+    literal_path = False
+    index = 1
+    while index < len(tokens):
+        option = _cd_option_value(tokens[index]).lower()
+        if option in {"-passthru", "-verbose", "-debug"}:
+            index += 1
+            continue
+        if option in {"-path", "-literalpath"}:
+            index += 1
+            if index == len(tokens):
+                return _CdTarget("unknown")
+            literal_path = option == "-literalpath"
+        elif option.startswith("-"):
+            return _CdTarget("unknown")
+        if operand is not None:
+            return _CdTarget("unknown")
+        operand = tokens[index]
+        index += 1
+    if operand is None:
+        return _CdTarget("home")
+    if _cd_option_value(operand) == "-":
+        return _CdTarget("unknown")
+    return _CdTarget("literal", operand, literal_path=literal_path)
+
+
+def _cd_accesses(
+    tokens: list[str], cwd: Path | None, *, include_cd_reads: bool, shell_type: str,
+) -> tuple[list[tuple[Path, FileAction]], Path | None]:
+    if shell_type in {"bash", "sh"}:
+        target = _posix_cd_target(tokens, shell_type)
+    elif shell_type == "cmd":
+        target = _cmd_cd_target(tokens)
+    elif shell_type == "powershell":
+        target = _powershell_cd_target(tokens)
+    else:
+        target = _CdTarget("unknown")
+    if target.kind == "unchanged":
+        return [], None
+    directory = None
+    if target.kind == "home":
+        try:
+            directory = Path.home().resolve()
+        except (OSError, RuntimeError) as exc:
+            raise ShellPathUnresolvedCwdError("Shell working directory could not be resolved") from exc
+    elif target.kind == "literal" and not _cd_has_dynamic_glob(
+        target.operand, shell_type, literal_path=target.literal_path,
+    ):
+        directory = _resolve_shell_operand(target.operand, cwd, shell_type, bare=True)
+    if directory is None:
+        raise ShellPathUnresolvedCwdError("Shell working directory requires a literal cd target")
+    cmd_on_windows = shell_type == "cmd" and os.name == "nt"
+    unknown_active_drive = cwd is None and not target.change_drive
+    if cmd_on_windows and unknown_active_drive:
+        raise ShellPathUnresolvedCwdError("Shell working directory requires a known active drive")
+    accesses: list[tuple[Path, FileAction]] = [(directory, "read")] if include_cd_reads else []
+    other_drive = (
+        shell_type == "cmd" and os.name == "nt" and cwd is not None
+        and directory.drive.lower() != cwd.drive.lower()
+    )
+    if other_drive and not target.change_drive:
+        return accesses, None
+    return accesses, directory
 
 
 def _path_aware_one_segment(
-    segment: str,
-    cwd: Path | None,
-    *,
-    include_cd_reads: bool = True,
-    shell_type: str = "auto",
+    segment: str, cwd: Path | None, *, include_cd_reads: bool = True, shell_type: str = "auto",
 ) -> tuple[list[tuple[Path, FileAction]], Path | None]:
-    try:
-        tokens = shlex.split(segment.strip(), posix=False)
-    except ValueError:
-        tokens = segment.strip().split()
+    tokens, _ = _segment_tokens(segment, shell_type)
+    tokens = _execution_tokens(tokens, shell_type)
     if not tokens:
         return [], None
-    cmd0 = _basename_lower(tokens[0].strip('"').strip("'"))
+    cmd0 = _basename_lower(_decode_cmd_word(tokens[0]) if shell_type == "cmd" else tokens[0].strip('"').strip("'"))
+    if cmd0 in {"pushd", "popd", "push-location", "pop-location"}:
+        raise ShellPathUnresolvedCwdError("Shell working directory stack is unknown")
+    directory_aliases = {"set-location", "sl", "chdir"} if shell_type == "powershell" else (
+        {"chdir"} if shell_type == "cmd" else set()
+    )
+    if cmd0 in directory_aliases:
+        cmd0 = "cd"
     if cmd0 not in _PATH_AWARE_COMMANDS:
         return [], None
-    base = None if cwd is None else _resolve_extract_path(cwd)
+    if cmd0 == "cd":
+        return _cd_accesses(tokens, cwd, include_cd_reads=include_cd_reads, shell_type=shell_type)
+    base = _resolve_extract_path(cwd) if cwd is not None else None
     path_tokens: list[tuple[Path, int]] = []
 
     def _append_path_token(tok: str, idx: int, *, require_path_shape: bool) -> None:
-        tok = tok.strip().strip('"').strip("'")
-        if not tok or _UNEXPANDED_VAR_RE.search(tok):
-            return
-        if require_path_shape and not _looks_like_path(tok):
-            return
-        p = Path(tok)
-        win_abs = _is_windows_abs_text(tok)
-        if not p.is_absolute() and not (win_abs and os.name != "nt"):
-            if base is None:
-                return
-            p = base / tok
-        try:
-            if win_abs and os.name != "nt":
-                path_tokens.append((p, idx))
-            else:
-                path_tokens.append((_resolve_extract_path(p), idx))
-        except (OSError, RuntimeError):
-            return
+        path = _resolve_shell_operand(tok, base, shell_type, bare=not require_path_shape)
+        if path is not None:
+            path_tokens.append((path, idx))
 
     for idx, tok in enumerate(tokens[1:]):
-        tok = tok.strip().strip('"').strip("'")
-        if not tok or _is_shell_flag_token(tok, cmd0=cmd0):
-            continue
-        # Only widen read-command operands; write command values are not paths.
+        if cmd0 in {"dir", "ls"} and any(ch in tok for ch in "*?") and not any(ch in tok for ch in "/\\"):
+            continue  # A bare listing glob reads cwd, not a fictitious literal file.
         bare_read_operand = shell_type in {"cmd", "powershell"} and cmd0 in _READ_CMDS
-        _append_path_token(tok, idx, require_path_shape=not bare_read_operand)
+        # tee / Tee-Object 的目标经常是裸文件名，不要求带斜杠。
+        loose_operand = bare_read_operand or cmd0 in {"cd", "tee", "tee-object"}
+        pieces = [tok] if shell_type == "cmd" else split_shell_operands(
+            tok, shell_type=shell_type, cmd0=cmd0,
+        )
+        for piece in pieces:
+            if _is_shell_flag_token(piece, cmd0=cmd0, shell_type=shell_type):
+                continue
+            _append_path_token(piece, idx, require_path_shape=not loose_operand)
 
     if cmd0 in (
         "get-content", "gc", "set-content", "add-content", "out-file",
         "tee-object", "sc", "remove-item", "ri", "new-item", "ni",
     ):
         for extra in _collect_ps_path_tokens(tokens):
-            _append_path_token(extra, len(path_tokens), require_path_shape=False)
+            for piece in split_shell_operands(extra, shell_type=shell_type, cmd0=cmd0):
+                if _is_shell_flag_token(piece, cmd0=cmd0, shell_type=shell_type):
+                    continue
+                _append_path_token(piece, len(path_tokens), require_path_shape=False)
 
     results: list[tuple[Path, FileAction]] = []
     new_cwd: Path | None = None
 
     if cmd0 in _TRANSFER_CMDS and len(path_tokens) >= 2:
-        results.append((path_tokens[0][0], "read"))
-        for p, _ in path_tokens[1:]:
-            results.append((p, "write"))
-    elif cmd0 in _WRITE_CMDS:
+        for p, _ in path_tokens[:-1]:
+            results.append((p, "read"))
+            if cmd0 in {"mv", "move"}:
+                # Moving removes each source; policy checks delete on the write axis.
+                results.append((p, "write"))
+        results.append((path_tokens[-1][0], "write"))
+    elif cmd0 in _DELETE_CMDS or cmd0 in _WRITE_CMDS:
         for p, _ in path_tokens:
             results.append((p, "write"))
     elif cmd0 in _READ_CMDS:
-        if not path_tokens and cmd0 in ("dir", "ls"):
-            if base is not None:
-                try:
-                    results.append((_resolve_extract_path(base), "read"))
-                except (OSError, RuntimeError):
-                    pass
+        if not path_tokens and cmd0 in ("dir", "ls") and base is not None:
+            try:
+                results.append((_resolve_extract_path(base), "read"))
+            except (OSError, RuntimeError):
+                pass
         else:
             for p, _ in path_tokens:
                 results.append((p, "read"))
-    elif cmd0 == "cd":
-        if path_tokens:
-            if include_cd_reads:
-                for p, _ in path_tokens:
-                    results.append((p, "read"))
-            new_cwd = path_tokens[-1][0]
-        else:
-            try:
-                home = Path.home().resolve()
-                results.append((home, "read"))
-                new_cwd = home
-            except (OSError, RuntimeError):
-                pass
     else:
         for p, _ in path_tokens:
             results.append((p, "write"))
     return results, new_cwd
+
+
+def _shell_segment_accesses(
+    segment: str, cwd: Path | None, *, include_cd_reads: bool, shell_type: str, shell_extras: bool,
+    depth: int, budget: list[int],
+) -> tuple[list[tuple[Path, FileAction]], Path | None]:
+    """Use one entry cwd for file operands, interpreter scripts and redirects."""
+    part, new_cwd = _path_aware_one_segment(
+        segment, cwd, include_cd_reads=include_cd_reads, shell_type=shell_type,
+    )
+    tokens, redirects = _segment_tokens(segment, shell_type)
+    tokens = _execution_tokens(tokens, shell_type)
+    if shell_extras:
+        for tok, action in [(tok, "exec") for tok in _interpreter_operands(tokens)] + redirects:
+            path = _resolve_shell_operand(tok, cwd, shell_type, bare=True)
+            if path is not None:
+                part.append((path, action))
+    inline = _literal_shell_inline(tokens, shell_type)
+    child_shell = "bash" if tokens and _basename_lower(tokens[0]) == "bash" else "sh"
+    if inline is None and tokens:
+        launcher = _basename_lower(tokens[0].strip('"').strip("'"))
+        if launcher in {"cmd", "powershell", "pwsh"}:
+            peeled = canonicalize_shell_command_for_permission(segment)
+            if peeled != segment:
+                inline = peeled
+                child_shell = "cmd" if launcher == "cmd" else "powershell"
+    if inline is not None:
+        if depth >= _MAX_INLINE_DEPTH:
+            _raise_analysis_limit("inline shell depth limit")
+        part.extend(_extract_segment_accesses(
+            inline, cwd, include_cd_reads=include_cd_reads,
+            shell_type=child_shell, shell_extras=shell_extras,
+            depth=depth + 1, budget=budget,
+        ))
+        # Each interpreter owns its cwd; only its resource effects reach the parent.
+        new_cwd = None
+    return part, new_cwd
+
+
+def _literal_shell_inline(tokens: list[str], shell_type: str) -> str | None:
+    """Read only literal Bash/Sh -c bodies; the child cwd never escapes."""
+    if not tokens or _basename_lower(tokens[0].strip('"').strip("'")) not in {"bash", "sh", "dash", "zsh"}:
+        return None
+    index = 1
+    while index < len(tokens):
+        token = _cd_option_value(tokens[index])
+        if re.fullmatch(r"-[a-zA-Z]*c[a-zA-Z]*", token):
+            if index + 1 == len(tokens):
+                raise ShellPathUnresolvedShellError("Inline shell command requires a literal body")
+            raw = tokens[index + 1]
+            # A single-quoted body is literal in the parent shell; variables
+            # inside it are handled per operand by the recursive extractor.
+            single_quoted = shell_type != "cmd" and re.fullmatch(r"'[^']*'", raw) is not None
+            cmd_percent = shell_type == "cmd" and "%" in raw
+            parent_expansion = "$" in raw or "`" in raw or cmd_percent
+            if not single_quoted and parent_expansion:
+                raise ShellPathUnresolvedShellError("Inline shell body contains unresolved parent-shell expansion")
+            try:
+                return _decode_cmd_word(raw) if shell_type == "cmd" else shlex.split(raw, posix=True)[0]
+            except (ValueError, IndexError) as exc:
+                raise ShellPathUnresolvedShellError("Inline shell body could not be decoded") from exc
+        if token in {"-o", "-O", "+o", "+O", "--rcfile", "--init-file"}:
+            index += 2  # Named options take a value before the -c command.
+            continue
+        if token == "--" or not token.startswith(("-", "+")):
+            break
+        if not re.fullmatch(r"[-+][a-zA-Z]+", token) and token not in {
+            "--noprofile", "--norc", "--posix", "--login", "--help", "--version",
+        }:
+            raise ShellPathUnresolvedShellError("Unknown shell option arity prevents inline command analysis")
+        index += 1
+    return None
+
+
+class ShellPathAnalysisLimitError(ValueError):
+    """Literal resource analysis exhausted its bounded work budget."""
+
+
+class ShellPathUnresolvedCwdError(ValueError):
+    """A cd target is unknown, so resource analysis cannot produce a complete view."""
+
+
+class ShellPathUnresolvedShellError(ValueError):
+    """A shell body or scope cannot provide a complete literal resource view."""
+
+
+def _raise_analysis_limit(reason: str) -> None:
+    raise ShellPathAnalysisLimitError(reason)
+
+
+def _shell_profiles(command: str, shell_type: str) -> tuple[str, ...]:
+    """An unknown host shell requires conservative views, never host imports."""
+    del command
+    if shell_type == "auto":
+        return ("cmd", "powershell", "sh") if os.name == "nt" else ("sh",)
+    return (shell_type,)
+
+
+def _extract_segment_accesses(
+    command: str, workdir: str | Path | None, *, include_cd_reads: bool, shell_type: str, shell_extras: bool,
+    depth: int = 0, budget: list[int] | None = None,
+) -> list[tuple[Path, FileAction]]:
+    """Walk literal segments, conservatively retaining conditional cwd states."""
+    results: list[tuple[Path, FileAction]] = []
+    if budget is None:
+        budget = [_MAX_EXTRACTION_STEPS]
+    for profile in _shell_profiles(command, shell_type):
+        segments = _shell_segments(command, profile)
+        uncertain_cwd = any(op not in {"", "&&"} for _, op in segments)
+        cwds = {_resolve_extract_path(Path(workdir)) if workdir is not None else None}
+        for segment, _ in segments:
+            next_cwds: set[Path | None] = set()
+            for cwd in sorted(cwds, key=str):
+                budget[0] -= 1
+                if budget[0] < 0:
+                    _raise_analysis_limit("shell path analysis work limit")
+                part, new_cwd = _shell_segment_accesses(
+                    segment, cwd, include_cd_reads=include_cd_reads, shell_type=profile, shell_extras=shell_extras,
+                    depth=depth, budget=budget,
+                )
+                results.extend(part)
+                if new_cwd is not None:
+                    next_cwds.add(new_cwd)
+                else:
+                    next_cwds.add(cwd)
+            # && reaches the following command only after a successful cd.
+            # Other control flow can retain an earlier directory (cd failure,
+            # pipeline child, or an unexecuted branch); keep those candidates.
+            cwds = cwds | next_cwds if uncertain_cwd else next_cwds
+            if len(cwds) > _MAX_CWD_CANDIDATES:
+                _raise_analysis_limit("shell path extraction exceeded the cwd candidate limit")
+    return list(dict.fromkeys(results))
 
 
 def extract_path_aware_command_accesses(
@@ -286,17 +797,9 @@ def extract_path_aware_command_accesses(
 ) -> list[tuple[Path, FileAction]]:
     if not command or not isinstance(command, str):
         return []
-    command = canonicalize_shell_command_for_permission(command)
-    cwd: Path | None = None if workdir is None else Path(workdir).resolve()
-    combined: list[tuple[Path, FileAction]] = []
-    for seg in _segments_for_extract(command):
-        part, new_cwd = _path_aware_one_segment(
-            seg, cwd, include_cd_reads=include_cd_reads, shell_type=shell_type,
-        )
-        combined.extend(part)
-        if new_cwd is not None:
-            cwd = new_cwd
-    return combined
+    return _extract_segment_accesses(
+        command, workdir, include_cd_reads=include_cd_reads, shell_type=shell_type, shell_extras=False,
+    )
 
 
 def extract_shell_path_accesses(
@@ -315,56 +818,9 @@ def extract_shell_path_accesses(
         last_quote = command.rfind('"')
         if command.startswith('"') and last_quote > 0:
             command = command[1:last_quote] + command[last_quote + 1:]
-    command = canonicalize_shell_command_for_permission(command)
-    base = None if workdir is None else Path(workdir).resolve()
-    results: list[tuple[Path, FileAction]] = []
-
-    def _resolve(tok: str, *, redirect: bool = False) -> Path | None:
-        tok = tok.strip().strip('"').strip("'")
-        if redirect:
-            if not _looks_like_redirect_target(tok):
-                return None
-        elif not tok or not _looks_like_path(tok):
-            return None
-        p = Path(tok)
-        if not p.is_absolute():
-            if base is None:
-                return None
-            p = base / tok
-        try:
-            return p.resolve()
-        except (OSError, RuntimeError):
-            return None
-
-    for p, act in extract_path_aware_command_accesses(
-        command, workdir, include_cd_reads=include_cd_reads, shell_type=shell_type,
-    ):
-        results.append((p, act))
-
-    for m in re.finditer(r"(?:^|[\s;|&])(\d*>>?|\d*<|&>)\s*([^\s;|&<>]+)", command):
-        op, target = m.group(1), m.group(2)
-        rp = _resolve(target, redirect=True)
-        if rp is None:
-            continue
-        if "<" in op and ">" not in op:
-            results.append((rp, "read"))
-        else:
-            results.append((rp, "write"))
-
-    try:
-        tokens = shlex.split(command.strip(), posix=False)
-    except ValueError:
-        tokens = command.strip().split()
-    if len(tokens) >= 2:
-        cmd0 = _basename_lower(tokens[0])
-        if cmd0 in _INTERPRETER_BASENAMES:
-            script_tok = tokens[1].strip('"').strip("'")
-            if script_tok and not script_tok.startswith("-"):
-                rp = _resolve(script_tok)
-                if rp is not None:
-                    results.append((rp, "exec"))
-
-    return results
+    return _extract_segment_accesses(
+        command, workdir, include_cd_reads=include_cd_reads, shell_type=shell_type, shell_extras=True,
+    )
 
 
 def _resolve_path_str(raw: str, workspace: Path | None) -> Path | None:

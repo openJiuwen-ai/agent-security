@@ -75,12 +75,13 @@ def test_action_override_uses_tools_and_pattern_not_id() -> None:
     assert "different-id" not in result.matched_rule
 
 
-def test_approval_override_precedes_non_deny_rule_and_baseline() -> None:
+@pytest.mark.parametrize("action", ["ask", "deny"])
+def test_approval_override_precedes_rule_and_baseline(action) -> None:
     component = TieredPolicyComponent()
     component.configure(
         {
             "tools": {"bash": "ask"},
-            "rules": [{"id": "deny", "tools": ["bash"], "pattern": "re:danger", "action": "deny"}],
+            "rules": [{"id": "policy", "tools": ["bash"], "pattern": "re:danger", "action": action}],
             "approval_overrides": [
                 {"id": "approved", "tools": ["bash"], "pattern": "re:danger", "action": "allow"}
             ],

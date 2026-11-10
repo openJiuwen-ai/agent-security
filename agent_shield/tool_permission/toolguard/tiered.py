@@ -10,10 +10,10 @@ component judges **one** candidate:
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import logging
 import re
 import sys
+from collections.abc import Mapping
 from typing import Any
 
 from ..models import PermissionLevel, PermissionResult

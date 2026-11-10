@@ -40,6 +40,7 @@ class FileGuardComponent:
 
     def __init__(self) -> None:
         self._checker: FileGuardChecker | None = None
+        self._read_deny_only = False
 
     def configure(self, config: Mapping[str, object]) -> None:
         if not isinstance(config, Mapping):
@@ -49,6 +50,7 @@ class FileGuardComponent:
         trusted = [Path(item) for item in runtime_trusted_dirs(config)]
         perms = _permissions_for_file_guard(config)
         section = perms.get("file_guard")
+        self._read_deny_only = isinstance(section, Mapping) and section.get("read_deny_only") is True
         enabled = True
         if isinstance(section, Mapping) and section.get("enabled") is False:
             enabled = False
@@ -88,8 +90,12 @@ class FileGuardComponent:
         *,
         route: RouteContext | None = None,
     ) -> PermissionResult | None:
-        # Native extract already peels launchers and splits compound commands.
+        # Standard extraction follows nested shell scopes itself. An unwrapped
+        # permission view flattens those scopes and can invent resource paths.
+        # Keep the legacy read_deny_only dispatch contract unchanged.
         if route is not None and route.kind is CandidateKind.SUBCOMMAND:
+            return None
+        if route is not None and route.kind is CandidateKind.UNWRAPPED and not self._read_deny_only:
             return None
         if self._checker is None:
             return None
@@ -145,7 +151,7 @@ class ImmutableControlPlaneComponent:
         *,
         route: RouteContext | None = None,
     ) -> PermissionResult | None:
-        if route is not None and route.kind is CandidateKind.SUBCOMMAND:
+        if route is not None and route.kind is not CandidateKind.ORIGINAL:
             return None
         if self._guard is None or not self._guard.enabled:
             return None

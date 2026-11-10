@@ -20,18 +20,25 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
-from .glob_patterns import validated_glob_patterns
 from ..models import PermissionLevel, PermissionResult
-from .policy_sources import SOURCE_USER
-from .path_matchers import contains_path
-from .tool_categories import (
-    is_shell_tool,
-    shell_tools_from_config,
+from .glob_patterns import validated_glob_patterns
+from .path_extract import (
+    ShellPathAnalysisLimitError,
+    ShellPathUnresolvedCwdError,
+    ShellPathUnresolvedShellError,
 )
+from .path_matchers import contains_path
 from .path_policy import (
     _PATH_TOOLS,
     _iter_path_strings,
+)
+from .path_policy import (
     strictest as tiered_strictest,
+)
+from .policy_sources import SOURCE_USER
+from .tool_categories import (
+    is_shell_tool,
+    shell_tools_from_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -584,7 +591,8 @@ def extract_paths_legacy(
         return [p for p, _action, _source in extract_accesses_native(tool_name, tool_args, workspace)]
     if is_shell_tool(tool_name, shell_tools_from_config(permission_config)):
         from .path_extract import (
-            extract_accesses_native, shell_type_for_file_access,
+            extract_accesses_native,
+            shell_type_for_file_access,
         )
 
         workdir = tool_args.get("workdir", "")
@@ -746,7 +754,26 @@ class FileGuardChecker:
             logger.debug("[file_guard] skip reason=no_workspace")
             return None
 
-        accesses = self._listed_accesses(tool_name, tool_args, workspace)
+        try:
+            accesses = self._listed_accesses(tool_name, tool_args, workspace)
+        except ShellPathAnalysisLimitError as exc:
+            return PermissionResult(
+                permission=PermissionLevel.DENY,
+                matched_rule="file_guard:analysis_limit",
+                reason=str(exc),
+            )
+        except ShellPathUnresolvedCwdError as exc:
+            return PermissionResult(
+                permission=PermissionLevel.DENY,
+                matched_rule="file_guard:unresolved_cwd",
+                reason=str(exc),
+            )
+        except ShellPathUnresolvedShellError as exc:
+            return PermissionResult(
+                permission=PermissionLevel.DENY,
+                matched_rule="file_guard:unresolved_shell",
+                reason=str(exc),
+            )
 
         if not accesses:
             return None
@@ -807,7 +834,11 @@ class FileGuardChecker:
         if workspace is None:
             return []
 
-        accesses = self._listed_accesses(tool_name, tool_args, workspace)
+        try:
+            accesses = self._listed_accesses(tool_name, tool_args, workspace)
+        except (ShellPathAnalysisLimitError, ShellPathUnresolvedCwdError, ShellPathUnresolvedShellError):
+            # An incomplete analysis cannot supply paths for a reusable grant.
+            return []
 
         out: list[tuple[str, FileGuardAction]] = []
         seen: set[tuple[str, FileGuardAction]] = set()

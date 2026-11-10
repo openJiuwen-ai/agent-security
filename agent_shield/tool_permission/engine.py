@@ -417,10 +417,7 @@ class PermissionEngine:
         for route, cand_args in candidates:
             last_route = route
             # Subcommand approval: that candidate alone is ALLOW (highest).
-            if (
-                tiered is not None
-                and route.kind is CandidateKind.SUBCOMMAND
-            ):
+            if tiered is not None and route.kind is CandidateKind.SUBCOMMAND:
                 approval = tiered.match_approval(tool_name, _command_text(cand_args))
                 if approval is not None:
                     candidate_verdicts.append(approval)
@@ -573,7 +570,7 @@ class PermissionEngine:
             default=None,
         )
 
-        warnings = [warning for result in results for warning in result.warnings]
+        warnings = list(dict.fromkeys(warning for result in results for warning in result.warnings))
         external_paths = [path for result in results for path in result.external_paths]
         ask_accesses = [item for result in results for item in result.ask_accesses]
 
