@@ -1885,12 +1885,16 @@ class BubblewrapRuntime(RuntimeAdapter):
             seccomp_fd = self._open_seccomp_fd_from_bytes(
                 self._ensure_seccomp_bpf(sandbox_id, policy),
             )
-        except Exception:
-            logger.warning(
-                "Failed to build seccomp filter for sandbox %s; continuing without seccomp",
-                sandbox_id,
-                exc_info=True,
-            )
+        except Exception as exc:
+            try:
+                listener.close()
+            except OSError:
+                logger.debug("Failed to close daemon listener for %s", sandbox_id, exc_info=True)
+            try:
+                self._cleanup_sandbox_artifacts(sandbox_id, netns_name)
+            except Exception:
+                logger.warning("Failed to clean up sandbox %s after seccomp error", sandbox_id, exc_info=True)
+            raise RuntimeError(f"Failed to prepare seccomp filter for sandbox {sandbox_id}") from exc
 
         bwrap_args = self._build_sandbox_bwrap_args(
             sandbox_id,

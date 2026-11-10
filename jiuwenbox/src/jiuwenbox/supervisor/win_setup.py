@@ -504,8 +504,19 @@ def _sandbox_user_exists() -> bool:
             netapi32.NetApiBufferFree(buf)
 
 
-def _logon_sandbox_user(password: str, *, interactive: bool = False) -> bool:
-    """用给定密码 LogonUserW 校验 jbx-sandbox 能否登录 (不加载 profile)."""
+_PASSWORD_RESET_ERRORS = frozenset({1326, 1330, 1907})
+
+
+class _SandboxLogonError(RuntimeError):
+    """Keep the existing RuntimeError contract while retaining the Win32 cause."""
+
+    def __init__(self, winerror: int) -> None:
+        self.winerror = winerror
+        super().__init__(f"沙箱账户无法登录 (WinError {winerror}), 需要管理员修复")
+
+
+def _logon_sandbox_user_result(password: str, *, interactive: bool = False) -> tuple[bool, int]:
+    """Capture the Win32 error at each attempt, before any logging/cleanup."""
     advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
     token = ctypes.c_void_p()
     logon_provider_default = 0  # noqa: N806 - Win32 常量
@@ -518,8 +529,9 @@ def _logon_sandbox_user(password: str, *, interactive: bool = False) -> bool:
         logon_interactive if interactive else logon_network, logon_provider_default,
         ctypes.byref(token),
     )
+    error = 0 if ok else ctypes.get_last_error()
     if not ok and not interactive:
-        network_err = ctypes.get_last_error()
+        network_err = error
         logger.debug(
             "jbx-sandbox network logon 失败 (WinError %d), 回退 interactive 校验密码",
             network_err,
@@ -529,13 +541,24 @@ def _logon_sandbox_user(password: str, *, interactive: bool = False) -> bool:
             logon_interactive, logon_provider_default,
             ctypes.byref(token),
         )
+        error = 0 if ok else ctypes.get_last_error()
+        if not ok and network_err in _PASSWORD_RESET_ERRORS:
+            error = network_err
     if ok:
         try:
             ctypes.WinDLL("kernel32").CloseHandle(token)
         except OSError:
             pass
-        return True
-    return False
+        return True, 0
+    return False, error
+
+
+def _logon_sandbox_user(password: str, *, interactive: bool = False) -> bool:
+    """Preserve the existing Boolean interface and selected last-error value."""
+    ok, error = _logon_sandbox_user_result(password, interactive=interactive)
+    if not ok:
+        ctypes.set_last_error(error)
+    return ok
 
 
 def _save_sandbox_user_password(password: str) -> None:
@@ -1574,6 +1597,8 @@ def install(
 
     if authorize_only:
         _verify_or_reset_sandbox_user_password()
+        if not _proxy_ports_ready(proxy_port_start, proxy_port_end):
+            _repair_proxy_permits(proxy_port_start, proxy_port_end)
         from jiuwenbox.supervisor import win_acl
         caller_sid = host_user_sid or _lookup_current_user_sid()
         if not caller_sid:
@@ -1623,6 +1648,9 @@ def install(
     try:
         # 1. 创建用户 + 组 (致命).
         if recreate_user:
+            # Invalidate privileged installation evidence before touching the
+            # account or its rules, including when the account is already gone.
+            _clear_proxy_permit_record(strict=True)
             steps_done.add("recreate_user")
             logger.info(
                 "exe 重装: 无论是否已有沙箱, 先删除 jbx-sandbox 用户/组/profile 再重建",
@@ -1685,10 +1713,23 @@ def install(
             # 用户已存在: 不能用本次新密码 (与实际不一致 → 1326). 读 DPAPI 旧密码保持一致;
             # 读不到 (旧版 "000000" 升级/DPAPI 损坏) 则用新随机密码 NetUserSetInfo 重设对齐.
             password = get_sandbox_user_password()
-            if not password or not _logon_sandbox_user(password):
+            reset_password = not password
+            reset_error = None
+            if password:
+                logon_ok, winerror = _logon_sandbox_user_result(password)
+                if not logon_ok:
+                    error = _SandboxLogonError(winerror)
+                    if error.winerror not in _PASSWORD_RESET_ERRORS:
+                        raise error
+                    reset_password = True
+                    reset_error = error.winerror
+            if reset_password:
                 password = new_password
                 _set_user_password(const.SANDBOX_USER_NAME, password)
-                logger.info("jbx-sandbox DPAPI 无旧密码, 已重设为新随机密码")
+                if reset_error is None:
+                    logger.info("jbx-sandbox DPAPI 无可用旧密码, 已重设为新随机密码")
+                else:
+                    logger.info("jbx-sandbox 凭证登录失败 (WinError %d), 已重设为新随机密码", reset_error)
             # 用户已存在 (force 重装): 失败回滚不删用户 (避免误删既有账户影响并发沙箱).
             steps_done.add("user_existed")
         _add_user_to_group()
@@ -1749,6 +1790,10 @@ def install(
             # 不应到达此处 (上面任一路径失败已 raise), 防御性兜底。
             raise RuntimeError("网络隔离不可用 (未知原因)") from wfp_exc
         steps_done.add("wfp")  # 网络隔离已装 (WFP 或降级), 失败回滚需卸载
+        if wfp_exc is not None:
+            _record_firewall_permits(sid, proxy_port_start, proxy_port_end)
+        else:
+            _record_proxy_permits(sid, proxy_port_start, proxy_port_end, "wfp")
 
         # Only prepare explicitly requested tool paths; errors prevent setup success.
         if preinstall_paths:
@@ -2084,6 +2129,115 @@ def _grant_owned_preinstall_paths(paths: set[str], recorded: set[str]) -> set[st
     return granted
 
 
+_PROXY_PERMIT_RECORD = "proxy_permit_ranges"
+
+
+def _permit_ranges(record, sid: str, backend: str) -> list[list[int]]:
+    if not isinstance(record, dict) or record.get("sid") != sid:
+        return []
+    ranges = record.get(f"{backend}_ranges", [])
+    if not isinstance(ranges, list):
+        return []
+    valid_ranges = []
+    for pair in ranges:
+        if not isinstance(pair, list) or len(pair) != 2:
+            continue
+        if not all(type(port) is int for port in pair):
+            continue
+        if 1 <= pair[0] <= pair[1] <= 65535:
+            valid_ranges.append(pair)
+    return valid_ranges
+
+
+def _firewall_ranges(record, sid: str) -> list[list[int]]:
+    return _permit_ranges(record, sid, "firewall")
+
+
+def _proxy_ports_ready(port_start: int, port_end: int) -> bool:
+    from jiuwenbox.supervisor import win_wfp
+
+    sid = get_sandbox_user_sid()
+    if not sid:
+        return False
+    try:
+        if _lookup_user_sid(const.SANDBOX_USER_NAME) != sid:
+            return False
+    except OSError:
+        return False
+    raw = reg_get_str(_PROXY_PERMIT_RECORD)
+    try:
+        record = json.loads(raw or "{}")
+    except (ValueError, TypeError):
+        return False
+    if any(start <= port_start <= port_end <= end for start, end in _firewall_ranges(record, sid)):
+        return True
+    if not any(start <= port_start <= port_end <= end for start, end in _permit_ranges(record, sid, "wfp")):
+        # Keys and the historical installed marker do not identify an account.
+        # Legacy installations must use existing setup to establish SID proof.
+        return False
+    try:
+        return win_wfp.proxy_permits_installed(port_start, port_end)
+    except OSError as exc:
+        # Ordinary users can open BFE but typically cannot enumerate filters.
+        # Only permission denial may use the privileged install receipt; a
+        # working query returning False or an unavailable BFE must fail closed.
+        denied = (isinstance(exc, PermissionError) or exc.errno == 13
+                  or getattr(exc, "winerror", None) in {5, 0x80070005})
+        logger.debug("WFP permit query unavailable", exc_info=True)
+        return denied
+    except RuntimeError:
+        return False
+
+
+def _record_proxy_permits(sid: str, port_start: int, port_end: int, backend: str) -> None:
+    try:
+        record = json.loads(reg_get_str(_PROXY_PERMIT_RECORD) or "{}")
+    except (ValueError, TypeError):
+        record = {}
+    updated = {"sid": sid, "firewall_ranges": _firewall_ranges(record, sid),
+               "wfp_ranges": _permit_ranges(record, sid, "wfp")}
+    range_key = f"{backend}_ranges"
+    ranges = updated.get(range_key)
+    if ranges is None:
+        raise KeyError(range_key)
+    if [port_start, port_end] not in ranges:
+        ranges.append([port_start, port_end])
+    _reg_set_str(_PROXY_PERMIT_RECORD, json.dumps(updated))
+
+
+def _record_firewall_permits(sid: str, port_start: int, port_end: int) -> None:
+    _record_proxy_permits(sid, port_start, port_end, "firewall")
+
+
+def _repair_proxy_permits(port_start: int, port_end: int) -> None:
+    """Add this range without removing another live instance's WFP permits."""
+    from jiuwenbox.supervisor import win_wfp
+
+    sid = get_sandbox_user_sid()
+    if not sid:
+        raise RuntimeError("沙箱代理授权缺少账户 SID")
+    try:
+        win_wfp.install_wfp_filters(sid, port_start, port_end)
+    except Exception:  # Preserve the existing firewall fallback.
+        logger.warning("WFP 代理端口补装失败, 尝试既有防火墙降级", exc_info=True)
+        if not win_wfp.install_firewall_rule_fallback(
+            const.SANDBOX_USER_NAME, port_start, port_end, sandbox_user_sid=sid,
+        ):
+            raise RuntimeError("沙箱代理端口放行失败") from None
+        _record_firewall_permits(sid, port_start, port_end)
+    else:
+        _record_proxy_permits(sid, port_start, port_end, "wfp")
+
+
+def _clear_proxy_permit_record(*, strict: bool = False) -> None:
+    try:
+        _reg_set_str(_PROXY_PERMIT_RECORD, "")
+    except OSError:
+        if strict:
+            raise
+        logger.warning("Failed to invalidate proxy permit metadata", exc_info=True)
+
+
 def ensure_windows_setup(
     force: bool = False,
     preinstall_paths: list[str] | None = None,
@@ -2101,6 +2255,10 @@ def ensure_windows_setup(
         if not needs_install:
             try:
                 _verify_or_reset_sandbox_user_password()
+            except _SandboxLogonError as exc:
+                if exc.winerror not in _PASSWORD_RESET_ERRORS:
+                    raise
+                needs_install = True
             except RuntimeError:
                 needs_install = True
         recorded = get_preinstalled_read_paths()
@@ -2113,11 +2271,13 @@ def ensure_windows_setup(
         )
         required_acl = {_normalize_acl_path(p) for p in policy_acl if p and os.path.exists(p)}
         missing_acl = {p for p in required_acl if not _can_write_dac(p)}
-        if needs_install or new_paths or missing_acl:
+        ports_missing = not needs_install and not _proxy_ports_ready(proxy_port_start, proxy_port_end)
+        needs_authorization = bool(new_paths or missing_acl or ports_missing)
+        if needs_install or needs_authorization:
             if not allow_elevation and not _is_admin():
                 raise RuntimeError("Windows 沙箱尚未准备完成, 需要管理员安装、修复或补授权; 请重新启动以请求 UAC")
             install(
-                force=needs_install or bool(new_paths or missing_acl),
+                force=needs_install or needs_authorization,
                 preinstall_paths=sorted(requested | recorded) if needs_install else sorted(new_paths),
                 proxy_port_start=proxy_port_start,
                 proxy_port_end=proxy_port_end,
@@ -2133,6 +2293,8 @@ def ensure_windows_setup(
         still_missing = [p for p in required_acl if not _can_write_dac(p)]
         if still_missing:
             raise RuntimeError(f"沙箱目录补授权未完成: {still_missing}")
+        if (needs_install or ports_missing) and not _proxy_ports_ready(proxy_port_start, proxy_port_end):
+            raise RuntimeError(f"沙箱代理端口尚未放行: {proxy_port_start}-{proxy_port_end}")
 
 
 def _can_write_dac(path: str) -> bool:
@@ -2164,9 +2326,9 @@ def _verify_or_reset_sandbox_user_password() -> None:
     password = get_sandbox_user_password()
     if not password:
         raise RuntimeError("无法读取沙箱账户凭据, 需要管理员修复")
-    if not _logon_sandbox_user(password, interactive=True):
-        err = ctypes.get_last_error()
-        raise RuntimeError(f"沙箱账户无法登录 (WinError {err}), 需要管理员修复")
+    logon_ok, winerror = _logon_sandbox_user_result(password, interactive=True)
+    if not logon_ok:
+        raise _SandboxLogonError(winerror)
 
 
 def get_sandbox_user_sid() -> str | None:
@@ -2228,6 +2390,7 @@ def _install_rollback(steps_done: "set[str]") -> None:
             win_wfp.uninstall_firewall_rule_fallback()
         except Exception:  # noqa: BLE001
             logger.warning("局部回滚卸载 WFP/防火墙失败", exc_info=True)
+        _clear_proxy_permit_record()
     # 仅本次新建且非 recreate_user 才删用户. recreate 已删旧账户, 再删会留下
     # installed=1 但 SAM 无账户.
     if "user_created" in steps_done and "recreate_user" in steps_done:
@@ -2470,6 +2633,7 @@ def uninstall() -> None:
         win_wfp.uninstall_firewall_rule_fallback()
     except Exception:  # noqa: BLE001
         logger.warning("WFP/防火墙卸载失败", exc_info=True)
+    _clear_proxy_permit_record()
     _remove_sandbox_user_and_profile()
     logger.info("Windows 沙箱卸载完成")
 
