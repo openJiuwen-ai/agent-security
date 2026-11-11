@@ -534,8 +534,7 @@ def test_the_vault_rotation_period_is_read():
 
 
 def test_a_negative_vault_rotation_period_is_refused():
-    """Zero is "not scheduled"; a negative period is not another way of
-    saying the same thing."""
+    """Zero is "not scheduled"; a negative period is not another way of saying the same thing."""
     with pytest.raises(ConfigError):
         Config.from_dict(
             {

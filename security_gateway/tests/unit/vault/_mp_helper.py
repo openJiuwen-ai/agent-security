@@ -124,9 +124,9 @@ def claim_pending(vault) -> int:
     target = km.active_dek_version + 1
     cur = vault.db.execute(
         """
-		UPDATE vault_key_metadata
-		   SET pending_dek_version = ?, pending_wrapped_dek = ?, updated_at = ?
-		 WHERE id = 1 AND pending_dek_version = 0""",
+        UPDATE vault_key_metadata
+           SET pending_dek_version = ?, pending_wrapped_dek = ?, updated_at = ?
+         WHERE id = 1 AND pending_dek_version = 0""",
         (target, wrapped, int(time.time())),
     )
     if cur.rowcount != 1:

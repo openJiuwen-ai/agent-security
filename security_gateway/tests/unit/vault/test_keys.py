@@ -47,7 +47,7 @@ from security_gateway.vault.keys import (
 GOLDEN_S3_SHARD = bytes.fromhex(
     "5661756c745368617264334b65794d6174657269616c323032362d534d332d46"
 )
-GOLDEN_KEK_SALT = bytes.fromhex("7661756c742d6b656b2d73616c742d76")
+GOLDEN_KEK_SALT = b"vault-kek-salt-v"
 
 # The Go source this package is a port of. It is not needed to run the
 # tests, but when it is there the constants are checked against it rather

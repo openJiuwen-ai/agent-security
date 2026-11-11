@@ -121,18 +121,18 @@ def test_a_record_written_under_the_outgoing_key_is_still_readable(vault):
     assert got.get_string("api_key") == "sk-secret"
 
 
-def _corrupt_ciphertext(vault, id: str) -> None:
+def _corrupt_ciphertext(vault, record_id: str) -> None:
     """Damage a record's ciphertext, leaving its container readable.
 
     The encrypted field is written last, so the last byte lands inside its
     authentication tag: the container still decodes and the data does not
     open.
     """
-    row = vault.db.query_one("SELECT data FROM vault_record WHERE id = ?", (id,))
+    row = vault.db.query_one("SELECT data FROM vault_record WHERE id = ?", (record_id,))
     assert row is not None
     data = bytearray(row[0])
     data[-1] ^= 0xFF
-    vault.db.execute("UPDATE vault_record SET data = ? WHERE id = ?", (bytes(data), id))
+    vault.db.execute("UPDATE vault_record SET data = ? WHERE id = ?", (bytes(data), record_id))
 
 
 def test_a_record_whose_generation_the_store_does_not_hold_is_stale(vault):

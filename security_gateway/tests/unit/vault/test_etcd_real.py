@@ -51,7 +51,7 @@ def _endpoint() -> str:
     value = os.environ[ETCD_ENDPOINT_ENV].strip()
     for prefix in ("http://", "https://"):
         if value.startswith(prefix):
-            value = value[len(prefix) :]
+            value = value[len(prefix):]
     return value.rstrip("/")
 
 

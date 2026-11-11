@@ -61,10 +61,12 @@ def test_a_create_that_loses_to_a_delete_tries_again(tmp_path):
             self.records[record_id] = created
             return created
 
-        def update_record_cas(self, record_id: str, entry: RecordEntry) -> RecordEntry:
+        @staticmethod
+        def update_record_cas(record_id: str, entry: RecordEntry) -> RecordEntry:
             raise AssertionError("the write should not have reached the update path")
 
-        def generation(self) -> int:
+        @staticmethod
+        def generation() -> int:
             return 1
 
     class UnfencedAuthority(EtcdAuthority):
