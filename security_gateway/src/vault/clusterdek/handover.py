@@ -71,6 +71,13 @@ class HandoverRequest:
     #: generation the fleet has moved past is stale and is not answered.
     generation: int = 0
 
+    #: Ask for the newest generation rather than the first one above
+    #: ``generation``. A joining node wants the newest; a predecessor
+    #: lookup wants the exact next generation. The hint is deliberately
+    #: outside the signed bytes so old peers can still verify and answer
+    #: the request; it only changes which held generation is served.
+    latest: bool = False
+
     #: Makes the request single-use. Two requests from one node with
     #: different nonces are different requests, and the holder may seal a
     #: different DEK to each.
@@ -157,6 +164,7 @@ def marshal_request(request: HandoverRequest) -> bytes:
     payload = {
         "node_id": request.node_id,
         "generation": int(request.generation),
+        "latest": bool(request.latest),
         "nonce": request.nonce,
         "public_key": base64.b64encode(request.public_key).decode("ascii"),
         "signature": base64.b64encode(request.signature).decode("ascii"),
@@ -189,6 +197,10 @@ def unmarshal_request(data: bytes) -> HandoverRequest:
         raise ErrMalformed(
             f"clusterdek: malformed wrapped blob: decode the handover request: signature is not base64: {exc}"
         ) from exc
+    if "latest" in parsed and not isinstance(parsed["latest"], bool):
+        raise ErrMalformed(
+            "clusterdek: malformed wrapped blob: decode the handover request: latest is not a boolean"
+        )
     generation = parsed.get("generation", 0)
     if isinstance(generation, bool) or not isinstance(generation, int):
         raise ErrMalformed(
@@ -197,6 +209,7 @@ def unmarshal_request(data: bytes) -> HandoverRequest:
     return HandoverRequest(
         node_id=str(parsed.get("node_id", "")),
         generation=generation,
+        latest=bool(parsed.get("latest", False)),
         nonce=str(parsed.get("nonce", "")),
         public_key=public_key,
         signature=signature,
