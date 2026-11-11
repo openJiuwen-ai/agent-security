@@ -71,6 +71,7 @@ from .rotation import format_rfc3339_nano, parse_rfc3339_nano
 from .store import (
     KV,
     Compare,
+    DeleteOp,
     KVValue,
     Lease,
     Operation,
@@ -117,6 +118,7 @@ __all__ = [
     "list_present",
     "mint_key",
     "mint_owner",
+    "release_mint",
     "node_key",
     "nodes_prefix",
     "presence_key",
@@ -324,6 +326,24 @@ class Cluster:
         if found is None:
             raise NotFoundError(f"etcdstore: namespace {self._ns!r} has no mint record")
         return found.value.decode("utf-8", "surrogateescape")
+
+    def release_mint(self, node_id: str) -> bool:
+        """Undo ``claim_mint`` when the node could not finish minting.
+
+        Only the node named by the record may release it: the compare on
+        the value makes a late release a no-op instead of deleting a
+        claim another node has since taken.
+        """
+        if not node_id:
+            raise InvalidValueError("etcdstore: release mint: empty node id")
+        key = mint_key(self._ns)
+        found = self._get(key)
+        if found is None:
+            return False
+        if found.value.decode("utf-8", "surrogateescape") != node_id:
+            return False
+        result = self._txn([compare_value(key, found.value)], [DeleteOp(key)])
+        return result.succeeded
 
     # -- presence ----------------------------------------------------------
 
@@ -696,6 +716,11 @@ def claim_mint(kv: KV, ns: str, node_id: str) -> bool:
 def mint_owner(kv: KV, ns: str) -> str:
     """Report the minting node."""
     return Cluster(kv, ns, _NullLeases()).mint_owner()
+
+
+def release_mint(kv: KV, ns: str, node_id: str) -> bool:
+    """Undo a mint claim the node could not complete."""
+    return Cluster(kv, ns, _NullLeases()).release_mint(node_id)
 
 
 def put_presence(
