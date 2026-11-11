@@ -199,11 +199,11 @@ def test_a_rotation_keeps_the_records_readable(tmp_path):
 
         call_rotate_dek(store)
 
-        for id in ["cred-1", "cred-2", "cred-3"]:
-            got = store.get(id)
+        for record_id in ["cred-1", "cred-2", "cred-3"]:
+            got = store.get(record_id)
             # The value is the one that was written: a rotation changes
             # the key the record is sealed under, not what it says.
-            assert got.get_string("api_key") == "secret-for-" + id
+            assert got.get_string("api_key") == "secret-for-" + record_id
 
         after = read_raw_data(str(tmp_path / "vault.db"), "cred-1")
         assert before != after

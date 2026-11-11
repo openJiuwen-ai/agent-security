@@ -16,6 +16,7 @@ runnable as a script.
 from __future__ import annotations
 
 import os
+import logging
 import sys
 import time
 from pathlib import Path
@@ -155,7 +156,7 @@ def main(argv: list[str]) -> int:
     role = os.environ.get(ROLE_ENV, "")
     directory = os.environ.get(DIR_ENV, "")
     if not role or not directory:
-        sys.stderr.write(f"usage: {argv[0]} (needs {ROLE_ENV} and {DIR_ENV})\n")
+        logging.error("usage: %s (needs %s and %s)", argv[0], ROLE_ENV, DIR_ENV)
         return 2
 
     if role == ROLE_CLAIM:
@@ -196,7 +197,7 @@ def main(argv: list[str]) -> int:
         vault.close()
         return 0
 
-    sys.stderr.write(f"unknown helper role {role!r}\n")
+    logging.error("unknown helper role %r", role)
     return 2
 
 

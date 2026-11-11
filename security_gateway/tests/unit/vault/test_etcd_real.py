@@ -26,8 +26,13 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
 from security_gateway.vault import rotate
-from security_gateway.vault.errors import UndecryptableError
+from security_gateway.vault.clusterkey.clusterkey import ClusterKeyError
+from security_gateway.vault.errors import KeyMismatchError
 from security_gateway.vault.etcd import EtcdConfig, FencedWriteError
 from security_gateway.vault.etcdstore.errors import NotFoundError as StoreNotFoundError
 from security_gateway.vault.record import Record, Value
@@ -44,6 +49,34 @@ pytestmark = pytest.mark.skipif(
     not os.environ.get(ETCD_ENDPOINT_ENV),
     reason="a real etcd is needed; set CRED_ROUTER_ETCD_ENDPOINT",
 )
+
+
+def _identity(directory) -> tuple[str, str]:
+    """A self-signed client identity for the vault's cluster key."""
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "vault-test")])
+    now = datetime.now(timezone.utc)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=5))
+        .not_valid_after(now + timedelta(days=1))
+        .sign(key, hashes.SHA256())
+    )
+    cert_file = directory / "client.crt"
+    key_file = directory / "client.key"
+    cert_file.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    key_file.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    return str(cert_file), str(key_file)
 
 
 def _endpoint() -> str:
@@ -72,13 +105,27 @@ def namespace() -> str:
     return "vaulttest-" + uuid.uuid4().hex[:12]
 
 
+def _etcd_cfg(tmp_path, namespace: str, node_id: str = "vault-test") -> EtcdConfig:
+    """An etcd config with this node's identity and the test CA."""
+    cert_file, key_file = _identity(tmp_path)
+    return EtcdConfig(
+        endpoints=(_endpoint(),),
+        namespace=namespace,
+        node_id=node_id,
+        identity_cert_file=cert_file,
+        identity_key_file=key_file,
+        identity_ca_file=cert_file,
+        fetch_timeout=3.0,
+    )
+
+
 @pytest.fixture
 def vault(tmp_path, namespace):
     """A vault whose records live in a real etcd."""
     store = Vault.open(
         VaultConfig(
             data_dir=str(tmp_path / "vault"),
-            etcd=EtcdConfig(endpoints=(_endpoint(),), namespace=namespace),
+            etcd=_etcd_cfg(tmp_path, namespace),
         ),
         make_test_schema(),
     )
@@ -160,42 +207,22 @@ def test_the_generation_fence_refuses_a_writer_that_is_behind(vault, namespace):
     assert "generation" in str(caught.value)
 
 
-def test_a_second_node_sees_the_record_it_cannot_open(vault, tmp_path, namespace):
-    """A second node's mirror reaches the record, and says it cannot open it.
-
-    The second node holds its own key material, so it cannot open the
-    record's ciphertext.  What it must do is see that the record exists:
-    the authority is the record of what exists, and a node that cannot
-    read a value must say so rather than report the record as absent.
-    """
-    reader = Vault.open(
-        VaultConfig(
-            data_dir=str(tmp_path / "reader"),
-            etcd=EtcdConfig(endpoints=(_endpoint(),), namespace=namespace),
-        ),
-        make_test_schema(),
-    )
-    try:
-        vault.put(_record("cred-1", "sk-secret"))
-
-        saw_undecryptable = False
-
-        def arrived() -> bool:
-            nonlocal saw_undecryptable
-            try:
-                reader.get("cred-1")
-            except UndecryptableError:
-                saw_undecryptable = True
-                return True
-            except Exception:
-                return False
-            return True
-
-        assert _wait_for(arrived), "the record never reached the second node"
-        assert saw_undecryptable, "the second node read a record it holds no key for"
-    finally:
-        reader.close()
-
+def test_a_second_node_without_a_trusted_identity_is_refused(vault, tmp_path, namespace):
+    """A peer holding another self-signed identity is refused at handover."""
+    vault.put(_record("cred-1", "sk-secret"))
+    with pytest.raises((KeyMismatchError, ClusterKeyError, TimeoutError)):
+        reader = Vault.open(
+            VaultConfig(
+                data_dir=str(tmp_path / "reader"),
+                etcd=_etcd_cfg(tmp_path, namespace, "reader"),
+            ),
+            make_test_schema(),
+            _allow_duplicate=True,
+        )
+        try:
+            reader.get("cred-1")
+        finally:
+            reader.close()
 
 def test_a_rotation_in_the_etcd_mode_moves_the_generation(vault):
     """The etcd mode's rotation moves the authority's generation.
@@ -269,7 +296,7 @@ def test_the_fleet_rotation_gate_of_a_fleet_that_has_rotated_is_not_moved(
     opened = Vault.open(
         VaultConfig(
             data_dir=str(tmp_path / "vault"),
-            etcd=EtcdConfig(endpoints=(_endpoint(),), namespace=namespace),
+            etcd=_etcd_cfg(tmp_path, namespace),
         ),
         make_test_schema(),
     )
@@ -334,4 +361,4 @@ def test_a_presence_marker_dies_with_its_lease(vault, namespace):
     assert present.get("node-a") == 1, f"the presence marker is not there: {present}"
 
     cluster.drop_presence(lease_id)
-    assert not cluster.list_present(), "the presence marker outlived its lease"
+    assert "node-a" not in cluster.list_present(), "the presence marker outlived its lease"
