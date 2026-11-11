@@ -74,7 +74,13 @@ HANDOVER_ANSWER_POLL_INTERVAL = 0.2
 DEFAULT_REQUEST_TIMEOUT = 30.0
 
 
-def publish_request(etcd_store, self: Identity, generation: int) -> tuple[str, ec.EllipticCurvePrivateKey]:
+def publish_request(
+    etcd_store,
+    self: Identity,
+    generation: int,
+    *,
+    latest: bool = False,
+) -> tuple[str, ec.EllipticCurvePrivateKey]:
     """Ask the fleet for a key newer than the one the requester holds.
 
     The node generates a one-shot keypair, signs the request with its
@@ -90,6 +96,7 @@ def publish_request(etcd_store, self: Identity, generation: int) -> tuple[str, e
         generation=int(generation),
         nonce=nonce,
         public_key=marshal_public_key(one_shot.public_key()),
+        latest=latest,
     )
     request.sign(self.private)
     payload = marshal_request(request)
@@ -215,7 +222,7 @@ def answer_requests(
             # authority, and nothing would publish another one — so it would
             # never hear about the next rotation.
             continue
-        serve = answer_for(held, request.generation)
+        serve = answer_for(held, request.generation, latest=request.latest)
         if serve is None:
             continue
         try:
@@ -311,12 +318,18 @@ def answer_requests(
     return answered
 
 
-def answer_for(held: list[HeldDEK], want: int) -> HeldDEK | None:
+def answer_for(
+    held: list[HeldDEK],
+    want: int,
+    *,
+    latest: bool = False,
+) -> HeldDEK | None:
     """Pick the generation to hand a requester that holds ``want``.
 
-    The newest for a requester with nothing, the oldest above what it
-    has otherwise: see :func:`answer_requests` for why the two rules
-    differ.
+    ``latest`` asks for the newest generation, which is what a node that
+    is catching up wants. Without it the answer is the oldest generation
+    above ``want``, which is what a predecessor lookup needs: it must be
+    exactly the next generation, not the newest one.
     """
     choice: HeldDEK | None = None
     for candidate in held:
@@ -325,7 +338,7 @@ def answer_for(held: list[HeldDEK], want: int) -> HeldDEK | None:
         if choice is None:
             choice = candidate
             continue
-        if want == 0:
+        if latest or want == 0:
             if candidate.generation > choice.generation:
                 choice = candidate
             continue
@@ -347,7 +360,7 @@ def ask_for_newer_key(
     shutting down must not be held up by it.
     """
     try:
-        nonce, one_shot = publish_request(etcd_store, self, int(generation))
+        nonce, one_shot = publish_request(etcd_store, self, int(generation), latest=True)
     except Exception as exc:  # noqa: BLE001 - a failed request is not fatal
         _log.warning(
             "could not ask the fleet for a newer key generation",
