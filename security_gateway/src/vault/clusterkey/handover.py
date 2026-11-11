@@ -74,9 +74,7 @@ HANDOVER_ANSWER_POLL_INTERVAL = 0.2
 DEFAULT_REQUEST_TIMEOUT = 30.0
 
 
-def publish_request(
-    etcd_store, self: Identity, generation: int
-) -> tuple[str, ec.EllipticCurvePrivateKey]:
+def publish_request(etcd_store, self: Identity, generation: int) -> tuple[str, ec.EllipticCurvePrivateKey]:
     """Ask the fleet for a key newer than the one the requester holds.
 
     The node generates a one-shot keypair, signs the request with its
@@ -97,6 +95,17 @@ def publish_request(
     payload = marshal_request(request)
     etcd_store.put_handover_request(self.node_id, nonce, payload)
     return nonce, one_shot
+
+
+def _clear_handover(etcd_store, node_id: str, nonce: str) -> None:
+    """Delete both halves of an exchange, reporting rather than raising."""
+    try:
+        etcd_store.delete_handover(node_id, nonce)
+    except Exception as exc:  # noqa: BLE001 - the exchange is already over
+        _log.warning(
+            "could not clear the handover exchange",
+            extra={"node_id": node_id, "error": exc},
+        )
 
 
 def await_answer(
@@ -124,21 +133,19 @@ def await_answer(
             if not _is_not_found(exc):
                 raise
         else:
-            dek = unwrap(one_shot, sealed)
             # The exchange is over either way: an answer that does not open
-            # is not going to start opening later.
+            # is not going to start opening later. Clear it even when unwrap
+            # fails, otherwise the request and the sealed answer stay in etcd
+            # forever and every holder keeps verifying a dead request.
             try:
-                etcd_store.delete_handover(self.node_id, nonce)
-            except Exception as exc:  # noqa: BLE001 - the answer is already open
-                _log.warning(
-                    "could not clear the handover exchange",
-                    extra={"node_id": self.node_id, "error": exc},
-                )
+                dek = unwrap(one_shot, sealed)
+            except BaseException:
+                _clear_handover(etcd_store, self.node_id, nonce)
+                raise
+            _clear_handover(etcd_store, self.node_id, nonce)
             return version, dek
         if deadline is not None and time.monotonic() >= deadline:
-            raise TimeoutError(
-                f"clusterkey: no handover answer for {self.node_id} within {timeout}s"
-            )
+            raise TimeoutError(f"clusterkey: no handover answer for {self.node_id} within {timeout}s")
         time.sleep(poll_interval)
 
 
@@ -161,14 +168,10 @@ def predecessor(
 ) -> tuple[bytes, int]:
     """Ask the fleet for the generation below ``current``."""
     if current <= 2:
-        raise ErrNoPredecessor(
-            "clusterkey: no peer offered the generation below the one this node holds"
-        )
+        raise ErrNoPredecessor("clusterkey: no peer offered the generation below the one this node holds")
     version, dek = request_generation(etcd_store, self, current - 1, timeout)
     if version != current - 1:
-        raise ErrNoPredecessor(
-            "clusterkey: no peer offered the generation below the one this node holds"
-        )
+        raise ErrNoPredecessor("clusterkey: no peer offered the generation below the one this node holds")
     return dek, version
 
 
@@ -253,9 +256,7 @@ def answer_requests(
         try:
             cert_public = cert.public_key()
             if not isinstance(cert_public, ec.EllipticCurvePublicKey):
-                raise ClusterKeyError(
-                    f"clusterkey: the roster entry carries {type(cert_public).__name__}, want ECDSA"
-                )
+                raise ClusterKeyError(f"clusterkey: the roster entry carries {type(cert_public).__name__}, want ECDSA")
             verify_request(cert_public, request)
         except Exception as exc:  # noqa: BLE001 - a bad signature is skipped
             _log.error(
@@ -295,9 +296,7 @@ def answer_requests(
             )
             continue
         try:
-            etcd_store.put_handover_sealed(
-                request.node_id, request.nonce, serve.generation, sealed
-            )
+            etcd_store.put_handover_sealed(request.node_id, request.nonce, serve.generation, sealed)
         except Exception as exc:  # noqa: BLE001 - a failed write is skipped
             _log.warning(
                 "cannot answer a handover request: publishing the answer failed",

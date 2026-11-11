@@ -163,9 +163,7 @@ class HeldDEK:
 def load_identity(node_id: str, cert_file: str, key_file: str) -> Identity:
     """Read a node's wrapping keypair from its client certificate."""
     if not cert_file or not key_file:
-        raise ValueError(
-            "clusterkey: a client certificate and key are required to seal the fleet's key to this node"
-        )
+        raise ValueError("clusterkey: a client certificate and key are required to seal the fleet's key to this node")
     try:
         cert_pem = Path(cert_file).read_bytes()
     except OSError as exc:
@@ -183,17 +181,13 @@ def load_identity(node_id: str, cert_file: str, key_file: str) -> Identity:
     except (ValueError, TypeError) as exc:
         raise ValueError(f"clusterkey: load the client keypair: {exc}") from exc
     if not isinstance(private, ec.EllipticCurvePrivateKey):
-        raise ValueError(
-            f"clusterkey: the client key {key_file} is {type(private).__name__}, but sealing needs ECDSA"
-        )
+        raise ValueError(f"clusterkey: the client key {key_file} is {type(private).__name__}, but sealing needs ECDSA")
     try:
         public = public_key_of(cert)
     except Exception as exc:
         raise ValueError(f"clusterkey: client certificate: {exc}") from exc
     if public.public_numbers() != private.public_key().public_numbers():
-        raise ValueError(
-            "clusterkey: the client certificate and the client key are not a pair"
-        )
+        raise ValueError("clusterkey: the client certificate and the client key are not a pair")
     return Identity(node_id=node_id, private=private, public=public, cert=cert)
 
 
@@ -240,8 +234,22 @@ def obtain(
             _log.info("minted the fleet's key", extra={"node_id": self.node_id})
             # The authority's fence starts here. Until this lands,
             # generation answers 1 and every node's first write is stamped
-            # with the generation it already holds.
-            etcd_store.advance_generation(MINTED_GENERATION)
+            # with the generation it already holds. The claim is a
+            # one-shot key, so a failed fence has to release it: otherwise
+            # no node can ever mint again.
+            try:
+                etcd_store.advance_generation(MINTED_GENERATION)
+            except BaseException:
+                release = getattr(etcd_store, "release_mint", None)
+                if release is not None:
+                    try:
+                        release(self.node_id)
+                    except Exception as exc:  # noqa: BLE001 - keep the original error
+                        _log.warning(
+                            "could not release a failed mint claim",
+                            extra={"node_id": self.node_id, "error": exc},
+                        )
+                raise
             return dek, MINTED_GENERATION
 
     # Someone else holds the key. Ask for it: publish a request carrying a
@@ -254,11 +262,7 @@ def obtain(
     from .handover import await_answer, publish_request
 
     nonce, one_shot = publish_request(etcd_store, self, 0)
-    timeout = (
-        cfg.fetch_timeout
-        if cfg.fetch_timeout and cfg.fetch_timeout > 0
-        else DEFAULT_FETCH_TIMEOUT
-    )
+    timeout = cfg.fetch_timeout if cfg.fetch_timeout and cfg.fetch_timeout > 0 else DEFAULT_FETCH_TIMEOUT
     try:
         version, dek = await_answer(etcd_store, self, nonce, one_shot, timeout)
     except TimeoutError as exc:
@@ -327,10 +331,7 @@ def obtain_predecessor(etcd_store, self: Identity, current: int) -> bytes:
         if _is_not_found(exc):
             return b""
         raise ClusterKeyError(f"clusterkey: read the rotation state: {exc}") from exc
-    if (
-        state.state != ROTATION_STATE_IN_PROGRESS
-        or int(state.target_dek_version) != current
-    ):
+    if state.state != ROTATION_STATE_IN_PROGRESS or int(state.target_dek_version) != current:
         return b""
     dek, _ = predecessor(etcd_store, self, current, timeout=PREDECESSOR_FETCH_TIMEOUT)
     return dek
@@ -342,9 +343,7 @@ def _register_node(etcd_store, self: Identity) -> None:
 
     entry = NodeEntry(
         node_id=self.node_id,
-        cert_der=base64.b64encode(
-            self.cert.public_bytes(serialization.Encoding.DER)
-        ).decode("ascii"),
+        cert_der=base64.b64encode(self.cert.public_bytes(serialization.Encoding.DER)).decode("ascii"),
         dek_version=0,
     )
     try:
