@@ -49,7 +49,7 @@ PURGE_ALL_REVISIONS = (1 << 63) - 1
 
 def apply_mirrored_record(
     db: Database,
-    id: str,
+    record_id: str,
     data: bytes,
     schema_version: int,
     dek_version: int,
@@ -71,7 +71,7 @@ def apply_mirrored_record(
 			updated_at      = excluded.updated_at
 		WHERE vault_record.source_revision < excluded.source_revision""",
         (
-            id,
+            record_id,
             int(schema_version),
             data,
             int(dek_version),
