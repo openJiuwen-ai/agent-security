@@ -496,7 +496,8 @@ class Etcd3FailoverClient:
             if kind == "range":
                 return self._wrap_iterator(result, index)
             return result
-        assert last is not None
+        if last is None:
+            raise RuntimeError("etcd3: no endpoint was attempted")
         raise last
 
     def _wrap_watch(self, result: Any, index: int) -> Any:
