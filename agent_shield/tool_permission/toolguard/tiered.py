@@ -124,8 +124,10 @@ def _rule_level(rule: Mapping[str, Any], permission_mode: str) -> PermissionLeve
     severity = str(rule.get("severity") or "").strip().upper()
     if not severity:
         return PermissionLevel.ASK
-    if severity in {"LOW", "MEDIUM"}:
+    if severity == "LOW":
         return PermissionLevel.ALLOW
+    if severity == "MEDIUM":
+        return PermissionLevel.ASK if permission_mode == "strict" else PermissionLevel.ALLOW
     if severity == "HIGH":
         return PermissionLevel.ASK
     if severity == "CRITICAL":
