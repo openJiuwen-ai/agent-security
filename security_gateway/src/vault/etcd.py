@@ -284,7 +284,7 @@ class EtcdAuthority:
     def write_record(
         self,
         db: Database,
-        id: str,
+        record_id: str,
         data: bytes,
         schema_version: int,
         dek_version: int,
@@ -324,20 +324,20 @@ class EtcdAuthority:
         for _attempt in range(MAX_AUTHORITY_WRITE_ATTEMPTS):
             existing: RecordEntry | None
             try:
-                existing = self._store.get_record(id)
+                existing = self._store.get_record(record_id)
             except StoreNotFoundError:
                 existing = None
             except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-                raise VaultError(f"vault: etcd: read the record {id!r}: {exc}") from exc
+                raise VaultError(f"vault: etcd: read the record {record_id!r}: {exc}") from exc
 
             if expected is not None:
                 if existing is None:
-                    raise NotFoundError(f'"{id}"')
-                expected(id, existing)
+                    raise NotFoundError(f'"{record_id}"')
+                expected(record_id, existing)
 
             if existing is None:
                 try:
-                    created = self._store.create_record(id, entry)
+                    created = self._store.create_record(record_id, entry)
                 except StoreConflictError as exc:
                     # The create failed its compare-and-swap. That is two
                     # different things, and the fence tells them apart: if
@@ -345,23 +345,23 @@ class EtcdAuthority:
                     # is fenced out; otherwise somebody else got there
                     # first. Re-read and decide afresh.
                     if self._fenced(dek_version):
-                        raise self._fenced_error(id, dek_version, exc) from exc
+                        raise self._fenced_error(record_id, dek_version, exc) from exc
                     try:
-                        existing = self._store.get_record(id)
+                        existing = self._store.get_record(record_id)
                     except StoreNotFoundError:
                         continue
                     except Exception as read_exc:  # noqa: BLE001 - remapped below
                         raise VaultError(
-                            f"vault: etcd: read the record {id!r} after a conflict: {read_exc}"
+                            f"vault: etcd: read the record {record_id!r} after a conflict: {read_exc}"
                         ) from read_exc
                 except Exception as exc:  # noqa: BLE001 - remapped to a vault error
                     raise VaultError(
-                        f"vault: etcd: create the record {id!r}: {exc}"
+                        f"vault: etcd: create the record {record_id!r}: {exc}"
                     ) from exc
                 else:
                     apply_mirrored_record(
                         db,
-                        id,
+                        record_id,
                         bytes(data),
                         int(schema_version),
                         int(dek_version),
@@ -371,10 +371,10 @@ class EtcdAuthority:
 
             entry.mod_revision = existing.mod_revision
             try:
-                updated = self._store.update_record_cas(id, entry)
+                updated = self._store.update_record_cas(record_id, entry)
             except StoreConflictError as exc:
                 if self._fenced(dek_version):
-                    raise self._fenced_error(id, dek_version, exc) from exc
+                    raise self._fenced_error(record_id, dek_version, exc) from exc
                 # The record moved under this write -- normally because a
                 # rotation re-encrypted it. Read the new revision and try
                 # again; the payload is still encrypted for the generation
@@ -382,12 +382,12 @@ class EtcdAuthority:
                 continue
             except Exception as exc:  # noqa: BLE001 - remapped to a vault error
                 raise VaultError(
-                    f"vault: etcd: update the record {id!r}: {exc}"
+                    f"vault: etcd: update the record {record_id!r}: {exc}"
                 ) from exc
 
             apply_mirrored_record(
                 db,
-                id,
+                record_id,
                 bytes(data),
                 int(schema_version),
                 int(dek_version),
@@ -396,7 +396,7 @@ class EtcdAuthority:
             return
 
         raise ConflictError(
-            f'vault: etcd: update the record "{id}": the record kept changing'
+            f'vault: etcd: update the record "{record_id}": the record kept changing'
         )
 
     def delete_record(
