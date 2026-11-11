@@ -261,9 +261,7 @@ class Cluster:
         if not entry.node_id:
             raise InvalidValueError("etcdstore: register node: empty node id")
         if not entry.cert_der:
-            raise InvalidValueError(
-                f"etcdstore: register node {entry.node_id!r}: empty certificate"
-            )
+            raise InvalidValueError(f"etcdstore: register node {entry.node_id!r}: empty certificate")
         try:
             base64.b64decode(entry.cert_der, validate=True)
         except ValueError as exc:
@@ -380,9 +378,7 @@ class Cluster:
         for value in values:
             node_id = _key_text(value.key)[prefix_length:]
             try:
-                present[node_id] = _parse_int(
-                    value.value.decode("utf-8", "surrogateescape")
-                )
+                present[node_id] = _parse_int(value.value.decode("utf-8", "surrogateescape"))
             except ValueError:
                 # One unreadable marker must not hide the rest of the
                 # fleet: the same reasoning the roster lister uses.
@@ -517,9 +513,7 @@ class Cluster:
                 return True, target
             # Somebody moved the record between the read and the
             # transaction; read it again and decide afresh.
-        raise ConflictError(
-            "etcdstore: the authority's generation did not settle after 4 attempts"
-        )
+        raise ConflictError("etcdstore: the authority's generation did not settle after 4 attempts")
 
     def ensure_generation(self) -> None:
         """Seed the generation record at 1 when the namespace has none.
@@ -542,9 +536,7 @@ class Cluster:
             raise InvalidValueError("etcdstore: last rotation time must not be zero")
         # RFC3339Nano in UTC rather than unix seconds: this one is read by
         # an operator with etcdctl as often as it is read by code.
-        self._kv.put(
-            last_rotation_key(self._ns), format_rfc3339_nano(at).encode("utf-8")
-        )
+        self._kv.put(last_rotation_key(self._ns), format_rfc3339_nano(at).encode("utf-8"))
 
     def last_rotation_at(self) -> datetime:
         """When a rotation last completed, or raise ``NotFoundError``.
@@ -555,25 +547,24 @@ class Cluster:
         """
         found = self._get(last_rotation_key(self._ns))
         if found is None:
-            raise NotFoundError(
-                f"etcdstore: namespace {self._ns!r} has completed no rotation"
-            )
+            raise NotFoundError(f"etcdstore: namespace {self._ns!r} has completed no rotation")
         raw = found.value.decode("utf-8", "surrogateescape")
         try:
             return parse_rfc3339_nano(raw)
         except ValueError as exc:
             # A value nobody can read is not "not found": the cluster has
             # rotated, the record of when is corrupt.
-            raise InvalidValueError(
-                f"etcdstore: last-rotation record holds {raw!r}: {exc}"
-            ) from exc
+            raise InvalidValueError(f"etcdstore: last-rotation record holds {raw!r}: {exc}") from exc
 
     # -- the takeover ------------------------------------------------------
 
-    def claim_takeover(
-        self, node_id: str, ttl_seconds: int = TAKEOVER_TTL_SECONDS
-    ) -> bool:
-        """Become the node responsible for resolving a stalled rotation."""
+    def claim_takeover(self, node_id: str, ttl_seconds: int = TAKEOVER_TTL_SECONDS) -> tuple[bool, int | None]:
+        """Become the node responsible for resolving a stalled rotation.
+
+        Returns whether the claim was taken and, when it was, the lease
+        that backs it. Pass that lease to :meth:`release_takeover` so a
+        late release cannot revoke a claim another node has since taken.
+        """
         if ttl_seconds <= 0:
             ttl_seconds = TAKEOVER_TTL_SECONDS
         key = takeover_key(self._ns)
@@ -590,8 +581,8 @@ class Cluster:
                 lease.revoke()
             except Exception:  # noqa: BLE001 - the claim outcome matters more
                 pass
-            return False
-        return True
+            return False, None
+        return True, lease_id
 
     def release_takeover(self, lease_id: int | None = None) -> None:
         """Drop the claim by revoking its lease rather than deleting the key.
@@ -819,14 +810,12 @@ def claim_takeover(
     ns: str,
     node_id: str,
     ttl_seconds: int = TAKEOVER_TTL_SECONDS,
-) -> bool:
-    """Claim the takeover."""
+) -> tuple[bool, int | None]:
+    """Claim the takeover and return its lease, if any."""
     return Cluster(kv, ns, leases).claim_takeover(node_id, ttl_seconds)
 
 
-def release_takeover(
-    kv: KV, leases: LeaseFactory, ns: str, lease_id: int | None = None
-) -> None:
+def release_takeover(kv: KV, leases: LeaseFactory, ns: str, lease_id: int | None = None) -> None:
     """Release the takeover claim."""
     Cluster(kv, ns, leases).release_takeover(lease_id)
 
