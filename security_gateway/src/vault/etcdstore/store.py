@@ -386,9 +386,17 @@ class Store:
 
     # -- internals --------------------------------------------------------
     def _generation_compares(self, dek_version: int) -> list[Compare]:
-        """The generation fence, when the store was given a generation key."""
+        """The generation fence, when the store was given a generation key.
+
+        A namespace that has not established its generation key yet is
+        fenced by creation: the write is allowed while the key is absent
+        and fails if another node establishes it concurrently. Comparing
+        a value against a missing key would fail every write forever.
+        """
         if self._generation_key is None:
             return []
+        if self._get(self._generation_key) is None:
+            return [compare_create(self._generation_key)]
         return [
             compare_value(self._generation_key, str(int(dek_version)).encode("utf-8"))
         ]

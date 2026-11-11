@@ -289,7 +289,11 @@ class Cluster:
         fleet-wide outage.
         """
         prefix = nodes_prefix(self._ns)
-        _, values = self._get_range(prefix, LIST_NODES_LIMIT)
+        _, values = self._get_range(prefix, LIST_NODES_LIMIT + 1)
+        if len(values) > LIST_NODES_LIMIT:
+            raise InvalidValueError(
+                f"etcdstore: the roster holds more than {LIST_NODES_LIMIT} nodes"
+            )
         entries: list[NodeEntry] = []
         for value in values:
             try:
