@@ -12,8 +12,8 @@ from security_gateway.vault import Config, FieldDef, Record, Schema, Type, Value
 
 
 def test_list_returns_only_the_records_under_the_prefix(vault):
-    for id in ["a/one", "a/two", "b/one"]:
-        put_record(vault, id)
+    for record_id in ["a/one", "a/two", "b/one"]:
+        put_record(vault, record_id)
 
     entries = vault.list("a/")
     assert len(entries) == 2
@@ -22,8 +22,8 @@ def test_list_returns_only_the_records_under_the_prefix(vault):
 
 
 def test_list_with_an_empty_prefix_returns_everything(vault):
-    for id in ["a", "ab", "b"]:
-        put_record(vault, id)
+    for record_id in ["a", "ab", "b"]:
+        put_record(vault, record_id)
 
     entries = vault.list("")
     assert len(entries) == 3
@@ -36,8 +36,8 @@ def test_list_prefix_boundary(vault):
     The ids here are chosen to sit on both sides of that boundary: "ab" is
     under the prefix "a", and "b" is the first id that is not.
     """
-    for id in ["a", "ab", "abc", "b", "ba"]:
-        put_record(vault, id)
+    for record_id in ["a", "ab", "abc", "b", "ba"]:
+        put_record(vault, record_id)
 
     entries = vault.list("a")
     assert [entry.id for entry in entries] == ["a", "ab", "abc"]

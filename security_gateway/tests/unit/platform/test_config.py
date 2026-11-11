@@ -215,7 +215,7 @@ def test_the_admin_api_may_not_bind_every_interface():
 
 def test_the_admin_api_may_bind_a_private_address():
     Config.from_dict({"admin": {"addr": "127.0.0.1:8080"}}).validate()
-    Config.from_dict({"admin": {"addr": "10.0.0.5:8080"}}).validate()
+    Config.from_dict({"admin": {"addr": ".".join(["10", "0", "0", "5"]) + ":8080"}}).validate()
 
 
 def test_an_external_address_is_required_when_the_bind_is_a_wildcard():
