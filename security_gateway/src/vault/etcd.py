@@ -402,7 +402,7 @@ class EtcdAuthority:
     def delete_record(
         self,
         db: Database,
-        id: str,
+        record_id: str,
         *,
         expected: Callable[[str, "RecordEntry"], None] | None = None,
     ) -> None:
@@ -421,31 +421,31 @@ class EtcdAuthority:
 
         for attempt in range(MAX_AUTHORITY_WRITE_ATTEMPTS):
             try:
-                existing = self._store.get_record(id)
+                existing = self._store.get_record(record_id)
             except StoreNotFoundError as exc:
-                raise NotFoundError(f'"{id}"') from exc
+                raise NotFoundError(f'"{record_id}"') from exc
             except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-                raise VaultError(f"vault: etcd: read the record {id!r}: {exc}") from exc
+                raise VaultError(f"vault: etcd: read the record {record_id!r}: {exc}") from exc
 
             if expected is not None:
-                expected(id, existing)
+                expected(record_id, existing)
 
             try:
-                self._store.delete_record_cas(id, existing.mod_revision)
+                self._store.delete_record_cas(record_id, existing.mod_revision)
             except StoreNotFoundError as exc:
-                raise NotFoundError(f'"{id}"') from exc
+                raise NotFoundError(f'"{record_id}"') from exc
             except StoreConflictError as exc:
                 if expected is None or attempt == MAX_AUTHORITY_WRITE_ATTEMPTS - 1:
                     raise ConflictError(
-                        f'vault: etcd: delete the record "{id}": {exc}'
+                        f'vault: etcd: delete the record "{record_id}": {exc}'
                     ) from exc
                 continue
             except Exception as exc:  # noqa: BLE001 - remapped to a vault error
                 raise VaultError(
-                    f"vault: etcd: delete the record {id!r}: {exc}"
+                    f"vault: etcd: delete the record {record_id!r}: {exc}"
                 ) from exc
 
-            delete_mirrored_record(db, id, existing.mod_revision)
+            delete_mirrored_record(db, record_id, existing.mod_revision)
             return
 
     def authority_straggler_count(self, target: int) -> int:

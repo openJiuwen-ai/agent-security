@@ -679,14 +679,12 @@ def load_snapshot(db: Database, secrets_dir: str) -> tuple[KeyManager, KeyMeta]:
 
 def adopt_predecessor(mgr: KeyManager, adopt: AdoptedDEK | None, mode: Mode) -> None:
     """Install the generation an adopted key replaces."""
-    if (
-        adopt is None
-        or not adopt.previous
-        or mgr.cur() is None
-        or mgr.prev() is not None
-    ):
+    if adopt is None or not adopt.previous:
         return
-    if adopt.version != mgr.cur().version:
+    current = mgr.cur()
+    if current is None or mgr.prev() is not None:
+        return
+    if adopt.version != current.version:
         return
     mgr.set_previous(
         KeySnapshot(dek=KeyBytes(adopt.previous), version=adopt.version - 1, mode=mode)

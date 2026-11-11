@@ -444,7 +444,7 @@ def count_stragglers(db: Database, target_dek: int) -> int:
 
 
 def update_record_cipher(
-    db: Database, id: str, row_version: int, data: bytes, dek_version: int
+    db: Database, record_id: str, row_version: int, data: bytes, dek_version: int
 ) -> bool:
     """Write a re-encrypted record."""
     cur = db.execute(
@@ -452,7 +452,7 @@ def update_record_cipher(
         UPDATE vault_record
         SET data = ?, dek_version = ?, row_version = row_version + 1, updated_at = ?
         WHERE id = ? AND row_version = ?""",
-        (data, dek_version, int(time.time()), id, row_version),
+        (data, dek_version, int(time.time()), record_id, row_version),
     )
     return cur.rowcount > 0
 
@@ -477,7 +477,7 @@ def insert_schema_entry(db: Database, entry: SchemaEntry) -> None:
 
 def _chunks(items: Sequence[str]) -> Iterator[Sequence[str]]:
     for start in range(0, len(items), _BATCH_QUERY_LIMIT):
-        yield items[start : start + _BATCH_QUERY_LIMIT]
+        yield items[start:start + _BATCH_QUERY_LIMIT]
 
 
 def get_records(db: Database, ids: Sequence[str]) -> dict[str, RecordRow]:
