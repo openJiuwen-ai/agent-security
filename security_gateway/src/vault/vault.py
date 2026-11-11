@@ -520,7 +520,8 @@ class Vault(AuthorityMixin):
             sch = self.schema_for_version(row.schema_version)
             if sch is None:
                 raise SchemaMismatchError(
-                    f'record "{record_id}" was written with schema v{row.schema_version}, which this store does not know'
+                    f'record "{record_id}" was written with schema '
+                    f'v{row.schema_version}, which this store does not know'
                 )
             try:
                 record = self._decode_record(row, sch)
