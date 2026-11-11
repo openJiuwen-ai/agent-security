@@ -580,7 +580,7 @@ def converge_authority(
                 try:
                     store.update_record_cas(record.record_id, entry)
                     break
-                except _StoreConflictError:
+                except _StoreConflictError as exc:
                     # A writer updated the record while it was being
                     # re-encrypted. Read the newer entry: it is either
                     # already under the target generation, or it needs a
@@ -589,7 +589,7 @@ def converge_authority(
                         raise VaultError(
                             f"vault: etcd: re-encrypt the record {record.record_id!r}: "
                             "the record kept changing"
-                        )
+                        ) from exc
                     try:
                         entry = store.get_record(record.record_id)
                     except Exception:  # noqa: BLE001 - deleted under us

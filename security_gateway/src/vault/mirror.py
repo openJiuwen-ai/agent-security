@@ -277,7 +277,8 @@ class RecordSource:
 
         return record_id_from_key(self.namespace(), key)
 
-    def decode(self, value: bytes, mod_revision: int) -> "RecordEntry":
+    @staticmethod
+    def decode(value: bytes, mod_revision: int) -> "RecordEntry":
         """Parse a value the authority wrote."""
         from security_gateway.vault.etcdstore.entry import unmarshal_record
 
