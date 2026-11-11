@@ -7,6 +7,7 @@ store. Leadership only decides which process mints the first key.
 
 from __future__ import annotations
 
+import logging
 import threading
 from typing import Any, cast
 
@@ -15,6 +16,8 @@ from .cluster_keys import host_leader_key
 from .errors import InvalidValueError
 from .lock import _discard, _is_lease_not_found
 from .store import KV, compare_create
+
+_log = logging.getLogger(__name__)
 
 __all__ = ["HostLeader", "acquire_host_leader"]
 
@@ -33,9 +36,7 @@ def acquire_host_leader(
     if not holder:
         raise InvalidValueError("etcdstore: host leader holder must be non-empty")
     if ttl_seconds <= 0:
-        raise InvalidValueError(
-            f"etcdstore: host leader ttl must be positive, got {ttl_seconds}"
-        )
+        raise InvalidValueError(f"etcdstore: host leader ttl must be positive, got {ttl_seconds}")
     leader = HostLeader(kv, leases, ns, node_id, holder, ttl_seconds)
     return leader if leader.acquire() else None
 
@@ -130,8 +131,19 @@ class HostLeader:
 
     def _heartbeat(self) -> None:
         interval = max(self._ttl / 3.0, 0.05)
-        while not self._stop.wait(interval):
-            try:
-                self.renew()
-            except Exception:  # noqa: BLE001 - leadership is judged by this
-                return
+        try:
+            while not self._stop.wait(interval):
+                try:
+                    self.renew()
+                except Exception:  # noqa: BLE001 - leadership is judged by this
+                    _log.warning(
+                        "host leader heartbeat stopped for %s/%s",
+                        self._node_id,
+                        self._holder,
+                        exc_info=True,
+                    )
+                    return
+        finally:
+            if not self._stop.is_set():
+                self._lease_id = None
+                self._thread = None
