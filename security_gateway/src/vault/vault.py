@@ -15,8 +15,8 @@ encrypted under — a record no key could ever open.
 
 The second is that "absent" and "present but unreadable" are different
 answers. A record that exists and merely cannot be decrypted is reported
-as :class:`~cred_router.vault.errors.UndecryptableError`, never as
-:class:`~cred_router.vault.errors.NotFoundError`.
+as :class:`~security_gateway.vault.errors.UndecryptableError`, never as
+:class:`~security_gateway.vault.errors.NotFoundError`.
 
 What is here is the store itself: its records, its keys, its writes and
 its read path. The parts that are not the store's own behaviour live
@@ -34,8 +34,8 @@ import threading
 from collections.abc import Mapping
 from typing import Any, Callable
 
-from cred_router.crypto import Mode, decrypt_credential, encrypt_credential
-from cred_router.crypto.errors import CryptoError
+from security_gateway.crypto import Mode, decrypt_credential, encrypt_credential
+from security_gateway.crypto.errors import CryptoError
 
 from .authority import AuthorityMixin
 from .cache import RecordCache
@@ -366,7 +366,7 @@ class Vault(AuthorityMixin):
         def _lead_host() -> Any:
             if not multi_process or not node_id:
                 return None
-            from cred_router.vault.etcdstore.leader import acquire_host_leader
+            from security_gateway.vault.etcdstore.leader import acquire_host_leader
 
             candidate = acquire_host_leader(
                 authority.store.kv,
@@ -397,7 +397,7 @@ class Vault(AuthorityMixin):
                     obtain_cluster_dek,
                 )
                 from .etcd import dial_etcd
-                from cred_router.vault.clusterkey.authority import (
+                from security_gateway.vault.clusterkey.authority import (
                     KVClusterStore,
                 )
 
@@ -999,7 +999,7 @@ class Vault(AuthorityMixin):
     def delete(self, id: str, *, expected: Mapping[str, Value] | None = None) -> None:
         """Remove a record.
 
-        It raises :class:`~cred_router.vault.errors.NotFoundError` when
+        It raises :class:`~security_gateway.vault.errors.NotFoundError` when
         the id is unknown. ``expected`` guards the same fields as
         :meth:`put`; a mismatch refuses the delete with
         :class:`ConflictError`.
@@ -1178,7 +1178,7 @@ class Vault(AuthorityMixin):
             pthread.join(timeout=5.0)
         if self._presence_lease:
             try:
-                from cred_router.vault.etcdstore import drop_presence
+                from security_gateway.vault.etcdstore import drop_presence
 
                 drop_presence(self._presence_leases, self._presence_lease)
             except Exception:  # noqa: BLE001 - the lease expires on its own
@@ -1206,7 +1206,7 @@ class Vault(AuthorityMixin):
         """The generation every live node currently claims."""
         if self.authority is None:
             return {}
-        from cred_router.vault.etcdstore import list_present
+        from security_gateway.vault.etcdstore import list_present
 
         store = self.authority.store
         try:
@@ -1268,7 +1268,7 @@ class Vault(AuthorityMixin):
         thread.start()
 
     def _presence_loop(self, stop, store, leases, node_id: str) -> None:
-        from cred_router.vault.etcdstore import (
+        from security_gateway.vault.etcdstore import (
             PRESENCE_TTL_SECONDS,
             put_presence,
             renew_presence,
@@ -1409,7 +1409,7 @@ class Vault(AuthorityMixin):
             # would be undecryptable.  Fetch that generation first; the
             # subsequent adopt keeps it as ``previous``.
             if cur is not None and int(adopted.version) > int(cur.version) + 1:
-                from cred_router.vault.clusterkey.handover import predecessor
+                from security_gateway.vault.clusterkey.handover import predecessor
 
                 previous_dek, previous_version = predecessor(
                     self._cluster_store,
