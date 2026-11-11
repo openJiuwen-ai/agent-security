@@ -6,9 +6,9 @@ import os
 
 import pytest
 from security_gateway.vault import (
+    SHARD_SIZE,
     Config,
     KeyMismatchError,
-    SHARD_SIZE,
     Vault,
     rotate_s1,
     rotate_s2,

@@ -17,9 +17,6 @@ import threading
 import time
 
 import pytest
-
-from .conftest import call_rotate_dek, put_record
-
 from security_gateway.crypto import DEK_SIZE, KeyBytes, Mode
 from security_gateway.vault import (
     NotFoundError,
@@ -30,6 +27,8 @@ from security_gateway.vault import (
     set_put_before_write_hook,
 )
 from security_gateway.vault.keys import KeySnapshot
+
+from .conftest import call_rotate_dek, put_record
 
 
 def _new_snapshot(version: int) -> KeySnapshot:

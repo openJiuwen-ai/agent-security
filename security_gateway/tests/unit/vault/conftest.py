@@ -10,7 +10,6 @@ import importlib
 import sqlite3
 
 import pytest
-
 from security_gateway.vault import Config, FieldDef, Record, Schema, Type, Value, Vault
 
 

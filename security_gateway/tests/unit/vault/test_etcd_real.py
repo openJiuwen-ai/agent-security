@@ -26,11 +26,10 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-
-from security_gateway.vault.etcdstore.errors import NotFoundError as StoreNotFoundError
 from security_gateway.vault import rotate
-from security_gateway.vault.etcd import EtcdConfig, FencedWriteError
 from security_gateway.vault.errors import UndecryptableError
+from security_gateway.vault.etcd import EtcdConfig, FencedWriteError
+from security_gateway.vault.etcdstore.errors import NotFoundError as StoreNotFoundError
 from security_gateway.vault.record import Record, Value
 from security_gateway.vault.vault import Config as VaultConfig
 from security_gateway.vault.vault import Vault
@@ -92,7 +91,6 @@ def vault(tmp_path, namespace):
 def _store(namespace: str):
     """A store over the real etcd, for the facts the vault writes itself."""
     import etcd3
-
     from security_gateway.vault.etcdstore import split_endpoint
     from security_gateway.vault.etcdstore.cluster import generation_key
     from security_gateway.vault.etcdstore.store import Store

@@ -31,12 +31,12 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding
 from cryptography.x509.oid import NameOID
+from security_gateway.crypto import DEK_SIZE
 from security_gateway.vault.clusterdek import Anchor, Fingerprint, new_anchor
 from security_gateway.vault.clusterkey.authority import KVClusterStore, NodeEntry
 from security_gateway.vault.clusterkey.clusterkey import HeldDEK, Identity
 from security_gateway.vault.clusterkey.handover import answer_requests
 from security_gateway.vault.etcdstore.watch import WatchEvent, WatchResponse
-from security_gateway.crypto import DEK_SIZE
 
 from ..etcdstore.cluster_fakes import FakeKV
 

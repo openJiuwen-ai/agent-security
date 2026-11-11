@@ -17,7 +17,6 @@ vanished from use while still showing up in listings.
 from __future__ import annotations
 
 import pytest
-
 from security_gateway.crypto import KeyBytes, Mode
 from security_gateway.vault import (
     ContainerField,
@@ -50,7 +49,7 @@ def _row_with_garbage_ciphertext(vault, record_id: str) -> None:
     )
     put_record(
         vault.db,
-        RecordRow(id=record_id, schema_version=1, data=encoded, dek_version=1),
+        RecordRow(record_id, 1, encoded, 1),
     )
 
 

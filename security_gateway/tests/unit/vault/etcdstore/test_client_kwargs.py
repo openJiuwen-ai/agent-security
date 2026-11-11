@@ -29,7 +29,6 @@ import sys
 import types
 
 import pytest
-
 from security_gateway.vault.etcdstore import tls_client_kwargs
 
 #: The names the client takes its TLS material under.

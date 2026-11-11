@@ -8,10 +8,8 @@ leader elected by the etcd lease key in ``leader.py`` does that.
 from __future__ import annotations
 
 import pytest
+from tests.unit.vault.etcdstore.cluster_fakes import FakeKV
 
-from security_gateway.vault.etcdstore.cluster_keys import host_leader_key
-from security_gateway.vault.etcdstore.leader import acquire_host_leader
-from security_gateway.vault import rotate
 from security_gateway.vault import (
     Config,
     KeySnapshot,
@@ -19,13 +17,16 @@ from security_gateway.vault import (
     StaleGenerationError,
     Value,
     Vault,
+    rotate,
 )
 from security_gateway.vault.errors import StoreNotReadyError
 from security_gateway.vault.etcd import FencedWriteError
+from security_gateway.vault.etcdstore.cluster_keys import host_leader_key
+from security_gateway.vault.etcdstore.leader import acquire_host_leader
 from security_gateway.vault.keys import KeyBytes, init_keys
 from security_gateway.vault.model import Mode
 from security_gateway.vault.store import bootstrap_schema, open_db
-from tests.unit.vault.etcdstore.cluster_fakes import FakeKV
+
 
 from .conftest import make_test_schema
 

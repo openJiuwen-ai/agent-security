@@ -16,7 +16,6 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
-
 from security_gateway.vault import store as store_module
 from security_gateway.vault.errors import (
     ClosedError,

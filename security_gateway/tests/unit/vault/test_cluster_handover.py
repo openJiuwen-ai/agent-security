@@ -24,7 +24,6 @@ import threading
 import types
 
 import pytest
-
 from security_gateway.crypto import KeyBytes, Mode
 from security_gateway.vault.cluster import (
     cluster_anchor_for,

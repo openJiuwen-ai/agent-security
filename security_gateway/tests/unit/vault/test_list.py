@@ -5,10 +5,9 @@ The Go counterpart is ``tests/unit/vault/list_test.go``.
 
 from __future__ import annotations
 
+from security_gateway.vault import Config, FieldDef, Record, Schema, Type, Value, Vault
 
 from .conftest import put_record
-
-from security_gateway.vault import Config, FieldDef, Record, Schema, Type, Value, Vault
 
 
 def test_list_returns_only_the_records_under_the_prefix(vault):
@@ -78,7 +77,7 @@ def test_the_vault_holds_whatever_shape_it_is_given(tmp_path):
     try:
         store.put(
             Record(
-                id="thing/one",
+                "thing/one",
                 fields={
                     "label": Value.new_string("a-label"),
                     "secret": Value.new_bytes(b"sk-abc"),

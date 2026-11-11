@@ -13,6 +13,7 @@ there.  The right answer is another try at the create.
 
 from __future__ import annotations
 
+from security_gateway.vault.etcd import EtcdAuthority
 from security_gateway.vault.etcdstore.entry import RecordEntry
 from security_gateway.vault.etcdstore.errors import (
     ConflictError as StoreConflictError,
@@ -20,7 +21,6 @@ from security_gateway.vault.etcdstore.errors import (
 from security_gateway.vault.etcdstore.errors import (
     NotFoundError as StoreNotFoundError,
 )
-from security_gateway.vault.etcd import EtcdAuthority
 
 
 def test_a_create_that_loses_to_a_delete_tries_again(tmp_path):

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from security_gateway.vault import Config, FieldDef, Schema, Type, Vault
 from security_gateway.vault.cache import RecordCache
 from security_gateway.vault.record import Record, Value

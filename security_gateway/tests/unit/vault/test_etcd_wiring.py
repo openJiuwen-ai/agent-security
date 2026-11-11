@@ -18,8 +18,8 @@ Two things are checked here, and neither needs an etcd:
 from __future__ import annotations
 
 from datetime import timedelta
-import pytest
 
+import pytest
 from security_gateway.vault import Config as VaultConfig
 from security_gateway.vault import Schema, Vault
 from security_gateway.vault.cluster import vault_etcd_config, vault_namespace

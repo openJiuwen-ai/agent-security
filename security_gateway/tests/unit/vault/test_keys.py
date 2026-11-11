@@ -18,7 +18,6 @@ import stat
 from pathlib import Path
 
 import pytest
-
 from security_gateway.crypto import DEK_SIZE, KeyBytes, Mode, hash_available
 from security_gateway.vault import (
     KEK_SALT,

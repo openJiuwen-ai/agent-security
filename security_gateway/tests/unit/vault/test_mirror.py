@@ -12,11 +12,9 @@ own tables.
 from __future__ import annotations
 
 import pytest
-
-from security_gateway.vault.etcdstore.entry import RecordEntry
-from security_gateway.vault.sync import Applier, Listed, RevisionStore
 from security_gateway.vault import open_db
 from security_gateway.vault.errors import InvalidError
+from security_gateway.vault.etcdstore.entry import RecordEntry
 from security_gateway.vault.mirror import (
     PURGE_ALL_REVISIONS,
     MirrorApplier,
@@ -28,6 +26,7 @@ from security_gateway.vault.mirror import (
     write_sync_state,
 )
 from security_gateway.vault.store import Database, bootstrap_schema, get_record
+from security_gateway.vault.sync import Applier, Listed, RevisionStore
 
 
 @pytest.fixture

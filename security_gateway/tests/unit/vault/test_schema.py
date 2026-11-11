@@ -10,7 +10,6 @@ The Go counterpart is ``TestSchemaValidate``,
 from __future__ import annotations
 
 import pytest
-
 from security_gateway.vault import (
     FieldDef,
     InvalidSchemaError,

@@ -5,7 +5,6 @@ from __future__ import annotations
 import types
 
 import pytest
-
 from security_gateway.vault.errors import InvalidError
 from security_gateway.vault.mode import DataDirGuard
 

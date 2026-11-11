@@ -20,7 +20,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from security_gateway.platform.config import (
     DEFAULT_ADMIN_ADDR,
     DEFAULT_CACHE_ENTRY_TTL,

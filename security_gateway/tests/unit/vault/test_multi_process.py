@@ -36,7 +36,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from security_gateway.vault import rotate
 from security_gateway.vault.errors import (
     NotFoundError,

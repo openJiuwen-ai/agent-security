@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from tests.unit.vault.etcdstore.cluster_fakes import FakeKV
 
 from security_gateway.vault import (
     Config,
@@ -18,7 +19,6 @@ from security_gateway.vault.etcd import EtcdAuthority
 from security_gateway.vault.etcdstore.cluster import generation_key
 from security_gateway.vault.etcdstore.store import Store
 
-from tests.unit.vault.etcdstore.cluster_fakes import FakeKV
 
 NS = "expected"
 

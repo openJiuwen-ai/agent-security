@@ -16,8 +16,6 @@ ciphertext does.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import os
 import socket
 import subprocess
@@ -25,13 +23,10 @@ import sys
 import threading
 import time
 from dataclasses import replace
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
-
-from .conftest import put_record, read_raw_data
-
-from security_gateway.vault.etcdstore import ListedRecord, RecordEntry
 from security_gateway.crypto import decrypt_credential, encrypt_credential
 from security_gateway.vault import (
     Config,
@@ -42,9 +37,12 @@ from security_gateway.vault import (
 )
 from security_gateway.vault import rotate as rotate_module
 from security_gateway.vault.codec import ContainerField, decode_container, encode_container
+from security_gateway.vault.etcdstore import ListedRecord, RecordEntry
 from security_gateway.vault.keys import read_key_meta, update_key_meta
 from security_gateway.vault.store import RecordRow
 from security_gateway.vault.store import put_record as put_row
+
+from .conftest import put_record, read_raw_data
 
 _REPO_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -88,16 +86,16 @@ def _read_secret(payload: bytes, snapshot) -> str:
 
 def test_a_rotation_keeps_every_record_readable(vault, data_dir):
     """The Go counterpart is ``TestRotateDEKKeepsRecordsReadable``."""
-    for id in ("cred-1", "cred-2", "cred-3"):
-        put_record(vault, id)
+    for record_id in ("cred-1", "cred-2", "cred-3"):
+        put_record(vault, record_id)
 
     before = read_raw_data(os.path.join(data_dir, "vault.db"), "cred-1")
 
     rotate_module.rotate_dek(vault)
 
-    for id in ("cred-1", "cred-2", "cred-3"):
-        got = vault.get(id)
-        assert got.get_string("api_key") == f"secret-for-{id}"
+    for record_id in ("cred-1", "cred-2", "cred-3"):
+        got = vault.get(record_id)
+        assert got.get_string("api_key") == f"secret-for-{record_id}"
 
     after = read_raw_data(os.path.join(data_dir, "vault.db"), "cred-1")
     assert before != after, "the stored ciphertext did not change across the rotation"
@@ -196,13 +194,13 @@ def test_the_new_key_is_in_place_before_the_records_are_re_encrypted(
     observed: dict[str, object] = {}
     real_update = rotate_module.update_record_cipher
 
-    def spy(db, id, row_version, data, dek_version):
+    def spy(db, record_id, row_version, data, dek_version):
         pending = vault.keys.pend()
         assert pending is not None
         observed.setdefault("pending_version", pending.version)
         observed.setdefault("dek_version", dek_version)
-        observed.setdefault("readable", vault.get(id).get_string("api_key"))
-        return real_update(db, id, row_version, data, dek_version)
+        observed.setdefault("readable", vault.get(record_id).get_string("api_key"))
+        return real_update(db, record_id, row_version, data, dek_version)
 
     monkeypatch.setattr(rotate_module, "update_record_cipher", spy)
     rotate_module.rotate_dek(vault)
@@ -246,10 +244,10 @@ def test_a_record_written_under_the_old_key_during_the_pass_is_caught_by_the_nex
             put_row(
                 vault_.db,
                 RecordRow(
-                    id="cred-late",
-                    schema_version=1,
-                    data=_encrypted_payload(vault_, "sk-late", cur),
-                    dek_version=cur.version,
+                    "cred-late",
+                    1,
+                    _encrypted_payload(vault_, "sk-late", cur),
+                    cur.version,
                 ),
             )
 

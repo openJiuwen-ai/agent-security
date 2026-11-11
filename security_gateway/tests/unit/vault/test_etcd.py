@@ -15,10 +15,8 @@ not hold leaves the stored value untouched and reports ``succeeded=False``
 from __future__ import annotations
 
 import pytest
+from tests.unit.vault.etcdstore.cluster_fakes import FakeKV
 
-from security_gateway.vault.etcdstore.cluster import generation_key
-from security_gateway.vault.etcdstore.errors import NotFoundError as StoreNotFoundError
-from security_gateway.vault.etcdstore.store import Store
 from security_gateway.crypto import (
     KeyBytes,
     Mode,
@@ -28,17 +26,19 @@ from security_gateway.crypto import (
 from security_gateway.crypto.errors import CryptoError
 from security_gateway.vault import Schema, Type
 from security_gateway.vault.codec import ContainerField, decode_container, encode_container
+from security_gateway.vault.errors import StaleGenerationError, UndecryptableError
 from security_gateway.vault.etcd import (
     EtcdAuthority,
     FencedWriteError,
     converge_authority,
     reencrypt_record_payload,
 )
-from security_gateway.vault.errors import StaleGenerationError, UndecryptableError
+from security_gateway.vault.etcdstore.cluster import generation_key
+from security_gateway.vault.etcdstore.errors import NotFoundError as StoreNotFoundError
+from security_gateway.vault.etcdstore.store import Store
 from security_gateway.vault.keys import KeySnapshot
 from security_gateway.vault.store import bootstrap_schema, open_db
 
-from tests.unit.vault.etcdstore.cluster_fakes import FakeKV
 
 from .conftest import make_test_schema
 

@@ -11,7 +11,6 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-
 from security_gateway.platform.config import (
     Config,
     ConfigError,
@@ -20,7 +19,6 @@ from security_gateway.platform.config import (
     load_for_store,
     parse_duration,
 )
-
 
 # --- durations --------------------------------------------------------------
 

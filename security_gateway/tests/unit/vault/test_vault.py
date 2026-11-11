@@ -10,15 +10,6 @@ import shutil
 import stat
 
 import pytest
-
-from .conftest import (
-    call_rotate_dek,
-    make_test_schema,
-    put_record,
-    read_raw_data,
-    write_raw_data,
-)
-
 from security_gateway.vault import (
     Config,
     FieldDef,
@@ -33,6 +24,14 @@ from security_gateway.vault import (
     UndecryptableError,
     Value,
     Vault,
+)
+
+from .conftest import (
+    call_rotate_dek,
+    make_test_schema,
+    put_record,
+    read_raw_data,
+    write_raw_data,
 )
 
 
