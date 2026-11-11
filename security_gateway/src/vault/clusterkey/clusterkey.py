@@ -228,27 +228,47 @@ def obtain(
             extra={"node_id": self.node_id},
         )
     else:
-        won = etcd_store.claim_mint(self.node_id)
+        claim_leased = getattr(etcd_store, "claim_mint_leased", None)
+        lease_id = 0
+        if claim_leased is not None:
+            won, lease_id = claim_leased(self.node_id)
+        else:
+            won = etcd_store.claim_mint(self.node_id)
         if won:
             dek = _random_key()
             _log.info("minted the fleet's key", extra={"node_id": self.node_id})
             # The authority's fence starts here. Until this lands,
             # generation answers 1 and every node's first write is stamped
-            # with the generation it already holds. The claim is a
-            # one-shot key, so a failed fence has to release it: otherwise
-            # no node can ever mint again.
+            # with the generation it already holds. A leased claim ends
+            # when the node dies; a failed fence has to release it now so
+            # another node can try.
             try:
                 etcd_store.advance_generation(MINTED_GENERATION)
+                commit = getattr(etcd_store, "commit_mint", None)
+                if commit is not None and not commit(self.node_id, lease_id):
+                    raise ClusterKeyError(
+                        "clusterkey: another node committed the mint claim"
+                    )
             except BaseException:
-                release = getattr(etcd_store, "release_mint", None)
-                if release is not None:
+                release_claim = getattr(etcd_store, "release_mint_claim", None)
+                if release_claim is not None and lease_id:
                     try:
-                        release(self.node_id)
+                        release_claim(lease_id)
                     except Exception as exc:  # noqa: BLE001 - keep the original error
                         _log.warning(
                             "could not release a failed mint claim",
                             extra={"node_id": self.node_id, "error": exc},
                         )
+                else:
+                    release = getattr(etcd_store, "release_mint", None)
+                    if release is not None:
+                        try:
+                            release(self.node_id)
+                        except Exception as exc:  # noqa: BLE001 - keep the original error
+                            _log.warning(
+                                "could not release a failed mint claim",
+                                extra={"node_id": self.node_id, "error": exc},
+                            )
                 raise
             return dek, MINTED_GENERATION
 
