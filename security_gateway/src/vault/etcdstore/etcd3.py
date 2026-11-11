@@ -365,9 +365,14 @@ class Etcd3KV:
         # snapshot still has one: a watch resumed from 0 would replay
         # the whole keyspace and could miss the window between the list
         # and the watch, so the response header is asked for directly.
-        response = getattr(self._client, "get_range_response", None)
-        if response is not None:
-            revision = _header_revision(response(range_start, range_end))
+        if range_end is None:
+            prefix_response = getattr(self._client, "get_prefix_response", None)
+            if prefix_response is not None:
+                revision = _header_revision(prefix_response(range_start))
+        else:
+            response = getattr(self._client, "get_range_response", None)
+            if response is not None:
+                revision = _header_revision(response(range_start, range_end))
         return revision, values
 
     def put(self, key: str, value: bytes, lease: int = 0) -> int:
