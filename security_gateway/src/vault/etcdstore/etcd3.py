@@ -1,4 +1,7 @@
-"""The real etcd3 client behind the store's seam.
+"""
+
+This module keeps the etcd client and its wire conversions together.
+The real etcd3 client behind the store's seam.
 
 Everything here speaks the etcd3 protocol and nothing else speaks it.
 The store is written against :mod:`security_gateway.vault.etcdstore.protocol`,
