@@ -42,9 +42,11 @@ from dataclasses import dataclass
 
 from security_gateway.vault.etcdstore.errors import NotFoundError
 from security_gateway.vault.etcdstore.keys import KEYSPACE_PREFIX, prefix_upper_bound
+from security_gateway.vault.etcdstore.cluster import LeasePutOp
 from security_gateway.vault.etcdstore.store import (
     KV,
     Compare,
+    DeleteOp,
     PutOp,
     compare_create,
     compare_value,
@@ -60,6 +62,7 @@ __all__ = [
     "handover_req_key",
     "handover_req_prefix",
     "handover_sealed_key",
+    "mint_claim_key",
     "mint_key",
     "node_key",
     "nodes_prefix",
@@ -75,6 +78,11 @@ def _etcd_key_helper(name: str):
     """Return the ``etcdstore``'s own key helper, if it has one."""
     module = importlib.import_module("security_gateway.vault.etcdstore.keys")
     return getattr(module, name, None)
+
+
+def mint_claim_key(ns: str) -> str:
+    """The leased mint claim: ``/security_gateway/<ns>/mint_claim``."""
+    return f"{KEYSPACE_PREFIX}{ns}/mint_claim"
 
 
 def node_key(ns: str, node_id: str) -> str:
@@ -270,10 +278,11 @@ class KVClusterStore(ClusterStore):
     the value was not written.
     """
 
-    def __init__(self, kv: KV, ns: str) -> None:
+    def __init__(self, kv: KV, ns: str, leases: object | None = None) -> None:
         """``kv`` is the key-value seam and ``ns`` the namespace this store speaks for."""
         self._kv = kv
         self._ns = ns
+        self._leases = leases
 
     @property
     def kv(self) -> KV:
@@ -351,6 +360,54 @@ class KVClusterStore(ClusterStore):
         if value is None:
             raise NotFoundError(f"namespace {self._ns!r} has no mint record")
         return value.value.decode("utf-8")
+
+    def claim_mint_leased(
+        self, node_id: str, ttl_seconds: int = 30
+    ) -> tuple[bool, int]:
+        """Claim the first-DEK mint under a lease, when this store can lease."""
+        if self._leases is None:
+            return self.claim_mint(node_id), 0
+        if not node_id:
+            raise ValueError("etcdstore: claim mint: empty node id")
+        key = mint_claim_key(self._ns)
+        lease = self._leases.lease(ttl_seconds)
+        lease_id = lease.grant()
+        try:
+            result = self._kv.transaction(
+                [compare_create(key)],
+                [LeasePutOp(key, node_id.encode("utf-8"), lease_id)],
+            )
+        except Exception:
+            try:
+                lease.revoke()
+            except Exception:  # noqa: BLE001 - the original error matters more
+                pass
+            raise
+        if not result.succeeded:
+            try:
+                lease.revoke()
+            except Exception:  # noqa: BLE001 - a lost race is not an error
+                pass
+            return False, 0
+        return True, lease_id
+
+    def commit_mint(self, node_id: str, lease_id: int) -> bool:
+        """Turn a leased claim into the permanent mint record."""
+        if not node_id or not lease_id:
+            return True
+        claim = mint_claim_key(self._ns)
+        mint = mint_key(self._ns)
+        result = self._kv.transaction(
+            [compare_value(claim, node_id.encode("utf-8")), compare_create(mint)],
+            [PutOp(mint, node_id.encode("utf-8")), DeleteOp(claim)],
+        )
+        return bool(result.succeeded)
+
+    def release_mint_claim(self, lease_id: int) -> None:
+        """Drop a leased claim without committing it."""
+        if not lease_id or self._leases is None:
+            return
+        self._leases.lease(0, lease_id).revoke()
 
     # -- the generation fence ----------------------------------------------
 
