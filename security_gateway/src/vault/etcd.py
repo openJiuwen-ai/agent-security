@@ -33,8 +33,9 @@ generation record holds.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Protocol
 
+from security_gateway.vault.etcdstore.errors import ConflictError as _StoreConflictError
 from security_gateway.crypto import decrypt_credential, encrypt_credential
 from security_gateway.crypto.errors import CryptoError
 
@@ -56,7 +57,7 @@ from .schema import Schema
 from .store import Database
 
 if TYPE_CHECKING:
-    from security_gateway.credmgr.etcdstore.entry import RecordEntry
+    from security_gateway.vault.etcdstore.entry import RecordEntry
 
 __all__ = [
     "AUTHORITY_BATCH_SIZE",
@@ -72,7 +73,7 @@ __all__ = [
 ]
 
 #: The namespace a store uses when none is given.
-DEFAULT_ETCD_NAMESPACE = "default"
+DEFAULT_ETCD_NAMESPACE = "security_gateway"
 
 #: How many records one pass of the authority-side re-encryption takes at
 #: a time.
@@ -140,6 +141,17 @@ class EtcdConfig:
     #: This node's identity in the cluster.
     node_id: str = ""
 
+    #: The identity used for the fleet's key handover, separate from the
+    #: transport TLS material so a TLS-terminating proxy still works.
+    identity_cert_file: str = ""
+    identity_key_file: str = ""
+
+    #: The CA that signs the fleet's node certificates, used by the
+    #: handover trust anchor. It is separate from ``tls.ca_file`` on
+    #: purpose: the etcd connection may trust one CA while the fleet's
+    #: identities are issued by another.
+    identity_ca_file: str = ""
+
     #: The certificate fingerprints the fleet's key may be handed to.
     trusted_cert_sha256: tuple[str, ...] = ()
 
@@ -175,7 +187,7 @@ class AuthorityConvergence(Protocol):
 #: A write that loses the create race to a delete has to try again. The
 #: bound keeps a record that keeps changing under the writer from spinning
 #: forever.
-MAX_AUTHORITY_WRITE_ATTEMPTS = 3
+MAX_AUTHORITY_WRITE_ATTEMPTS = 8
 
 
 class EtcdAuthority:
@@ -205,7 +217,7 @@ class EtcdAuthority:
         fence has something real to match: an absent key's value is the
         empty string, and every write would be refused against it.
         """
-        from security_gateway.credmgr.etcdstore import ensure_generation
+        from security_gateway.vault.etcdstore import ensure_generation
 
         authority = cls.over(store, ns)
         try:
@@ -243,7 +255,7 @@ class EtcdAuthority:
 
     def generation(self) -> int:
         """The authority's current DEK generation."""
-        from security_gateway.credmgr.etcdstore import read_generation
+        from security_gateway.vault.etcdstore import read_generation
 
         try:
             current, _present = read_generation(self._store.kv, self._ns)
@@ -255,10 +267,12 @@ class EtcdAuthority:
 
     def advance_generation(self, target: int) -> int:
         """Move the authority's generation fence to ``target``."""
-        from security_gateway.credmgr.etcdstore import advance_generation
+        from security_gateway.vault.etcdstore import advance_generation
 
         try:
-            _advanced, current = advance_generation(self._store.kv, self._ns, int(target))
+            _advanced, current = advance_generation(
+                self._store.kv, self._ns, int(target)
+            )
         except Exception as exc:  # noqa: BLE001 - remapped to a vault error
             raise VaultError(
                 f"vault: etcd: advance the authority's generation to {target}: {exc}"
@@ -270,21 +284,28 @@ class EtcdAuthority:
     def write_record(
         self,
         db: Database,
-        record_id: str,
+        id: str,
         data: bytes,
         schema_version: int,
         dek_version: int,
+        *,
+        expected: Callable[[str, "RecordEntry"], None] | None = None,
     ) -> None:
         """Publish a record to the authority and mirror it locally.
+
+        ``expected`` runs against the entry the authority currently
+        holds, inside the read/CAS loop, so a guarded field that moved
+        between the read and the write cannot slip through. It is
+        internal to the vault and never exposed as a version.
 
         A write the generation fence refuses raises
         :class:`FencedWriteError`.
         """
-        from security_gateway.credmgr.etcdstore.entry import RecordEntry, Timestamp
-        from security_gateway.credmgr.etcdstore.errors import (
+        from security_gateway.vault.etcdstore.entry import RecordEntry, Timestamp
+        from security_gateway.vault.etcdstore.errors import (
             ConflictError as StoreConflictError,
         )
-        from security_gateway.credmgr.etcdstore.errors import (
+        from security_gateway.vault.etcdstore.errors import (
             NotFoundError as StoreNotFoundError,
         )
 
@@ -303,17 +324,20 @@ class EtcdAuthority:
         for _attempt in range(MAX_AUTHORITY_WRITE_ATTEMPTS):
             existing: RecordEntry | None
             try:
-                existing = self._store.get_record(record_id)
+                existing = self._store.get_record(id)
             except StoreNotFoundError:
                 existing = None
             except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-                raise VaultError(
-                    f"vault: etcd: read the record {record_id!r}: {exc}"
-                ) from exc
+                raise VaultError(f"vault: etcd: read the record {id!r}: {exc}") from exc
+
+            if expected is not None:
+                if existing is None:
+                    raise NotFoundError(f'"{id}"')
+                expected(id, existing)
 
             if existing is None:
                 try:
-                    created = self._store.create_record(record_id, entry)
+                    created = self._store.create_record(id, entry)
                 except StoreConflictError as exc:
                     # The create failed its compare-and-swap. That is two
                     # different things, and the fence tells them apart: if
@@ -321,101 +345,119 @@ class EtcdAuthority:
                     # is fenced out; otherwise somebody else got there
                     # first. Re-read and decide afresh.
                     if self._fenced(dek_version):
-                        raise self._fenced_error(record_id, dek_version, exc) from exc
+                        raise self._fenced_error(id, dek_version, exc) from exc
                     try:
-                        existing = self._store.get_record(record_id)
+                        existing = self._store.get_record(id)
                     except StoreNotFoundError:
                         continue
                     except Exception as read_exc:  # noqa: BLE001 - remapped below
                         raise VaultError(
-                            f"vault: etcd: read the record {record_id!r} after a conflict: {read_exc}"
+                            f"vault: etcd: read the record {id!r} after a conflict: {read_exc}"
                         ) from read_exc
                 except Exception as exc:  # noqa: BLE001 - remapped to a vault error
                     raise VaultError(
-                        f"vault: etcd: create the record {record_id!r}: {exc}"
+                        f"vault: etcd: create the record {id!r}: {exc}"
                     ) from exc
                 else:
                     apply_mirrored_record(
-                        db, record_id, bytes(data), int(schema_version), int(dek_version),
+                        db,
+                        id,
+                        bytes(data),
+                        int(schema_version),
+                        int(dek_version),
                         created.mod_revision,
                     )
                     return
 
             entry.mod_revision = existing.mod_revision
             try:
-                updated = self._store.update_record_cas(record_id, entry)
+                updated = self._store.update_record_cas(id, entry)
             except StoreConflictError as exc:
                 if self._fenced(dek_version):
-                    raise self._fenced_error(record_id, dek_version, exc) from exc
-                raise ConflictError(
-                    f'vault: etcd: update the record "{id}": {exc}'
-                ) from exc
+                    raise self._fenced_error(id, dek_version, exc) from exc
+                # The record moved under this write -- normally because a
+                # rotation re-encrypted it. Read the new revision and try
+                # again; the payload is still encrypted for the generation
+                # the snapshot chose.
+                continue
             except Exception as exc:  # noqa: BLE001 - remapped to a vault error
                 raise VaultError(
-                    f"vault: etcd: update the record {record_id!r}: {exc}"
+                    f"vault: etcd: update the record {id!r}: {exc}"
                 ) from exc
 
             apply_mirrored_record(
-                db, record_id, bytes(data), int(schema_version), int(dek_version),
+                db,
+                id,
+                bytes(data),
+                int(schema_version),
+                int(dek_version),
                 updated.mod_revision,
             )
             return
 
-        raise VaultError(
-            f"vault: etcd: write the record {record_id!r}: it kept changing under the writer"
+        raise ConflictError(
+            f'vault: etcd: update the record "{id}": the record kept changing'
         )
 
-    def delete_record(self, db: Database, record_id: str) -> None:
+    def delete_record(
+        self,
+        db: Database,
+        id: str,
+        *,
+        expected: Callable[[str, "RecordEntry"], None] | None = None,
+    ) -> None:
         """Remove a record from the authority and from the mirror.
 
         A record that is not there raises :class:`NotFoundError`: a
         delete that did nothing must not report that it deleted
         something.
         """
-        from security_gateway.credmgr.etcdstore.errors import (
+        from security_gateway.vault.etcdstore.errors import (
             ConflictError as StoreConflictError,
         )
-        from security_gateway.credmgr.etcdstore.errors import (
+        from security_gateway.vault.etcdstore.errors import (
             NotFoundError as StoreNotFoundError,
         )
 
-        try:
-            existing = self._store.get_record(record_id)
-        except StoreNotFoundError as exc:
-            raise NotFoundError(f'"{record_id}"') from exc
-        except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-            raise VaultError(
-                f"vault: etcd: read the record {record_id!r}: {exc}"
-            ) from exc
+        for attempt in range(MAX_AUTHORITY_WRITE_ATTEMPTS):
+            try:
+                existing = self._store.get_record(id)
+            except StoreNotFoundError as exc:
+                raise NotFoundError(f'"{id}"') from exc
+            except Exception as exc:  # noqa: BLE001 - remapped to a vault error
+                raise VaultError(f"vault: etcd: read the record {id!r}: {exc}") from exc
 
-        try:
-            self._store.delete_record_cas(record_id, existing.mod_revision)
-        except StoreNotFoundError as exc:
-            raise NotFoundError(f'"{record_id}"') from exc
-        except StoreConflictError as exc:
-            raise ConflictError(
-                f'vault: etcd: delete the record "{id}": {exc}'
-            ) from exc
-        except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-            raise VaultError(
-                f"vault: etcd: delete the record {record_id!r}: {exc}"
-            ) from exc
+            if expected is not None:
+                expected(id, existing)
 
-        delete_mirrored_record(db, record_id, existing.mod_revision)
+            try:
+                self._store.delete_record_cas(id, existing.mod_revision)
+            except StoreNotFoundError as exc:
+                raise NotFoundError(f'"{id}"') from exc
+            except StoreConflictError as exc:
+                if expected is None or attempt == MAX_AUTHORITY_WRITE_ATTEMPTS - 1:
+                    raise ConflictError(
+                        f'vault: etcd: delete the record "{id}": {exc}'
+                    ) from exc
+                continue
+            except Exception as exc:  # noqa: BLE001 - remapped to a vault error
+                raise VaultError(
+                    f"vault: etcd: delete the record {id!r}: {exc}"
+                ) from exc
+
+            delete_mirrored_record(db, id, existing.mod_revision)
+            return
 
     def authority_straggler_count(self, target: int) -> int:
         """How many records the authority holds under an older key."""
         try:
             listed, _revision = self._store.list_records(0)
         except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-            raise VaultError(
-                f"vault: etcd: list the records: {exc}"
-            ) from exc
+            raise VaultError(f"vault: etcd: list the records: {exc}") from exc
         return sum(1 for record in listed if record.entry.dek_version < int(target))
 
     def converge(self, vault: AuthorityConvergence, cur: KeySnapshot) -> None:
-        """Re-encrypt every record the authority holds that is still under an older key generation.
-        """
+        """Re-encrypt every record the authority holds that is still under an older key generation."""
         converge_authority(vault, self, cur)
 
     # -- internals ---------------------------------------------------------
@@ -444,24 +486,16 @@ class EtcdAuthority:
 
 def dial_etcd(cfg: EtcdConfig) -> EtcdAuthority:
     """Connect to etcd and return the authority handle."""
-    from security_gateway.credmgr.etcdstore import (
+    from security_gateway.vault.etcdstore import (
         Store,
+        build_failover_client,
         ensure_generation,
-        split_endpoint,
         tls_client_kwargs,
     )
-    from security_gateway.credmgr.etcdstore.cluster import generation_key
+    from security_gateway.vault.etcdstore.cluster import generation_key
 
     if cfg is None or not cfg.endpoints:
         raise VaultError("vault: etcd: at least one endpoint is required")
-
-    try:
-        import etcd3  # noqa: PLC0415 - the etcd extra is optional
-    except ImportError as exc:
-        raise ImportError(
-            "the etcd client is an optional extra; install it with "
-            "'pip install security_gateway[etcd]'"
-        ) from exc
 
     tls = cfg.tls
     if tls is not None and tls.partially_set():
@@ -472,14 +506,11 @@ def dial_etcd(cfg: EtcdConfig) -> EtcdAuthority:
         )
 
     ns = cfg.namespace or DEFAULT_ETCD_NAMESPACE
-    endpoint = cfg.endpoints[0]
-    host, port = split_endpoint(endpoint)
     kwargs: dict[str, Any] = {}
     if tls is not None:
         kwargs.update(tls_client_kwargs(tls.ca_file, tls.cert_file, tls.key_file))
-    client = etcd3.Etcd3Client(
-        host=host,
-        port=int(port or 2379),
+    client = build_failover_client(
+        cfg.endpoints,
         timeout=cfg.dial_timeout or 5.0,
         **kwargs,
     )
@@ -521,36 +552,50 @@ def converge_authority(
             return
         for record in listed:
             entry = record.entry
-            sch = vault.schema_for_version(entry.schema_version)
-            if sch is None:
-                raise SchemaMismatchError(
-                    f'the record "{record.record_id}" was written with schema '
-                    f"v{entry.schema_version}, which this store does not know"
-                )
-            src = vault.keys.by_version(entry.dek_version)
-            if src is None:
-                # The snapshot does not hold the generation this record was
-                # written with. Another node may have rotated the fleet
-                # since this one last looked: reload the key metadata and
-                # look again.
-                vault.reload_snapshot()
+            for attempt in range(5):
+                sch = vault.schema_for_version(entry.schema_version)
+                if sch is None:
+                    raise SchemaMismatchError(
+                        f'the record "{record.record_id}" was written with schema v{entry.schema_version}, which this store does not know'
+                    )
+                if int(entry.dek_version) == int(cur.version):
+                    break
                 src = vault.keys.by_version(entry.dek_version)
-            if src is None:
-                raise StaleGenerationError(
-                    f'record "{record.record_id}" is under generation '
-                    f"{entry.dek_version}, which this store does not hold "
-                    f"(it holds "
-                    f"{format_held_versions(vault.keys.held_versions())})"
-                )
-            entry.data = reencrypt_record_payload(entry.data, sch, src, cur)
-            entry.dek_version = int(cur.version)
-            entry.updated_at = _now_timestamp()
-            try:
-                store.update_record_cas(record.record_id, entry)
-            except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-                raise VaultError(
-                    f"vault: etcd: re-encrypt the record {record.record_id!r}: {exc}"
-                ) from exc
+                if src is None:
+                    # The snapshot does not hold the generation this record
+                    # was written with. Another node may have rotated the
+                    # fleet since this one last looked: reload and look again.
+                    vault.reload_snapshot()
+                    src = vault.keys.by_version(entry.dek_version)
+                if src is None:
+                    raise StaleGenerationError(
+                        f'record "{record.record_id}" is under generation {entry.dek_version}, which this store does not hold (it holds '
+                        f"{format_held_versions(vault.keys.held_versions())})"
+                    )
+                entry.data = reencrypt_record_payload(entry.data, sch, src, cur)
+                entry.dek_version = int(cur.version)
+                entry.updated_at = _now_timestamp()
+                try:
+                    store.update_record_cas(record.record_id, entry)
+                    break
+                except _StoreConflictError:
+                    # A writer updated the record while it was being
+                    # re-encrypted. Read the newer entry: it is either
+                    # already under the target generation, or it needs a
+                    # fresh re-encrypt with its new revision.
+                    if attempt == 4:
+                        raise VaultError(
+                            f"vault: etcd: re-encrypt the record {record.record_id!r}: "
+                            "the record kept changing"
+                        )
+                    try:
+                        entry = store.get_record(record.record_id)
+                    except Exception:  # noqa: BLE001 - deleted under us
+                        break
+                except Exception as exc:  # noqa: BLE001 - remapped to a vault error
+                    raise VaultError(
+                        f"vault: etcd: re-encrypt the record {record.record_id!r}: {exc}"
+                    ) from exc
         after = listed[-1].record_id
 
 
@@ -566,7 +611,9 @@ def reencrypt_record_payload(
     try:
         fields = decode_container(payload)
     except InvalidRecordError as exc:
-        raise InvalidRecordError(f"decode the record payload: {exc}", whole=True) from exc
+        raise InvalidRecordError(
+            f"decode the record payload: {exc}", whole=True
+        ) from exc
 
     defs = schema.field_lookup()
     rewritten: list[ContainerField] = []
@@ -578,9 +625,7 @@ def reencrypt_record_payload(
             )
         if f.encrypted != definition.encrypted:
             raise SchemaMismatchError(
-                f'the record\'s field "{f.name}" is marked '
-                f"encrypted={f.encrypted} but schema v{schema.version} says "
-                f"{definition.encrypted}"
+                f'the record\'s field "{f.name}" is marked encrypted={f.encrypted} but schema v{schema.version} says {definition.encrypted}'
             )
         if not definition.encrypted:
             rewritten.append(f)
@@ -601,4 +646,3 @@ def reencrypt_record_payload(
             ContainerField(name=f.name, type=f.type, encrypted=True, data=sealed)
         )
     return encode_container(rewritten)
-

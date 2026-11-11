@@ -52,17 +52,15 @@ def _fleet_rotation_gate(store: Any) -> int:
     is a fleet that is due, and a caller that cannot tell the two apart
     would freeze a fresh fleet forever.
     """
-    from security_gateway.credmgr.etcdstore import last_rotation_at
-    from security_gateway.credmgr.etcdstore.errors import NotFoundError
+    from security_gateway.vault.etcdstore import last_rotation_at
+    from security_gateway.vault.etcdstore.errors import NotFoundError
 
     try:
         at = last_rotation_at(store.kv, store.ns)
     except NotFoundError:
         return 0
     except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-        raise VaultError(
-            f"vault: etcd: read the fleet's rotation gate: {exc}"
-        ) from exc
+        raise VaultError(f"vault: etcd: read the fleet's rotation gate: {exc}") from exc
     return int(at.timestamp())
 
 
@@ -75,14 +73,12 @@ def _record_fleet_rotation_gate(store: Any) -> None:
     """
     from datetime import datetime, timezone
 
-    from security_gateway.credmgr.etcdstore import set_last_rotation_at
+    from security_gateway.vault.etcdstore import set_last_rotation_at
 
     try:
         set_last_rotation_at(store.kv, store.ns, datetime.now(timezone.utc))
     except Exception as exc:  # noqa: BLE001 - reported, not fatal
-        _log.error(
-            "vault: etcd: could not record the fleet's rotation gate: %s", exc
-        )
+        _log.error("vault: etcd: could not record the fleet's rotation gate: %s", exc)
 
 
 def _authority_store(vault: RotationTarget) -> Any | None:
@@ -122,7 +118,7 @@ def _advance_generation(store: Any, target: int) -> None:
     reading the old generation never sees a record written under the new
     one.
     """
-    from security_gateway.credmgr.etcdstore import advance_generation
+    from security_gateway.vault.etcdstore import advance_generation
 
     try:
         advanced, current = advance_generation(store.kv, store.ns, target)
@@ -146,11 +142,8 @@ def _count_authority_stragglers(store: Any, target: int) -> int:
     return sum(1 for record in listed if record.entry.dek_version < target)
 
 
-def _converge_authority(
-    vault: RotationTarget, store: Any, cur: KeySnapshot
-) -> None:
-    """Re-encrypt every record the authority holds that is still under an older key generation.
-    """
+def _converge_authority(vault: RotationTarget, store: Any, cur: KeySnapshot) -> None:
+    """Re-encrypt every record the authority holds that is still under an older key generation."""
     from .etcd import EtcdAuthority, converge_authority
 
     authority = EtcdAuthority.over(store)
@@ -160,8 +153,7 @@ def _converge_authority(
 def _reencrypt_payload(
     data: bytes, schema: Schema, src: KeySnapshot, cur: KeySnapshot
 ) -> bytes:
-    """Re-encrypt a record's encrypted fields from the key the record is under to the current one.
-    """
+    """Re-encrypt a record's encrypted fields from the key the record is under to the current one."""
     from .etcd import reencrypt_record_payload
 
     return reencrypt_record_payload(data, schema, src, cur)

@@ -35,28 +35,28 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from security_gateway.credmgr.clusterdek import Anchor, Fingerprint
-from security_gateway.credmgr.clusterkey.clusterkey import (
+from security_gateway.vault.clusterdek import Anchor, Fingerprint
+from security_gateway.vault.clusterkey.clusterkey import (
     Config as ClusterKeyConfig,
 )
-from security_gateway.credmgr.clusterkey.clusterkey import (
+from security_gateway.vault.clusterkey.clusterkey import (
     HeldDEK,
     Identity,
     anchor_for,
     load_identity,
     obtain_pair,
 )
-from security_gateway.credmgr.clusterkey.handover import (
+from security_gateway.vault.clusterkey.handover import (
     answer_requests,
     ask_for_newer_key,
 )
-from security_gateway.credmgr.clusterkey.wake import (
+from security_gateway.vault.clusterkey.wake import (
     start_rounds,
     start_ticks,
     wake,
 )
 
-from .errors import KeyMismatchError
+from .errors import InvalidError, KeyMismatchError
 from .keys import AdoptedDEK, KeySnapshot
 
 _log = logging.getLogger(__name__)
@@ -118,10 +118,11 @@ class TLSConfig:
         named = bool(self.ca_file or self.cert_file or self.key_file)
         return named and not self.all_set()
 
+    # These two are here because this configuration and the vault's own are
+    # used interchangeably: the runtime builds one of these and the vault's
+    # dialer reads it as its own.
 
-# These two are here because this configuration and the vault's own are
-# used interchangeably: the runtime builds one of these and the vault's
-# dialer reads it as its own.
+
 @dataclass(frozen=True)
 class EtcdConfig:
     """The vault's own view of the etcd deployment.
@@ -143,6 +144,16 @@ class EtcdConfig:
 
     #: The identity this node answers requests under.
     node_id: str = ""
+
+    #: The identity used for the fleet's key handover. Empty means the
+    #: transport TLS certificate is the identity.
+    identity_cert_file: str = ""
+    identity_key_file: str = ""
+
+    #: The CA that signs the fleet's node certificates, separate from the
+    #: transport CA. Exactly one of this and ``trusted_cert_sha256`` must
+    #: name the handover trust anchor.
+    identity_ca_file: str = ""
 
     #: The SHA-256 fingerprints of the certificates the fleet's key may be
     #: handed to, when no CA file is configured.
@@ -185,18 +196,19 @@ def vault_etcd_config(cfg: Any) -> EtcdConfig:
         dial_timeout=dial_timeout,
         node_id=cluster.node_id,
         trusted_cert_sha256=tuple(cluster.trusted_cert_sha256 or ()),
+        identity_ca_file=getattr(cluster, "identity_ca_file", "") or "",
         fetch_timeout=float(fetch_timeout or 0.0),
     )
     # The TLS material only when there is any: an empty set of paths handed
     # to the client is a FileNotFoundError on "".
-    tls_named = bool(tls.ca_file or tls.cert_file or tls.key_file) if tls else False
-    if tls is not None and tls_named:
+    if tls is not None and (tls.ca_file or tls.cert_file or tls.key_file):
         out = EtcdConfig(
             endpoints=out.endpoints,
             namespace=out.namespace,
             dial_timeout=out.dial_timeout,
             node_id=out.node_id,
             trusted_cert_sha256=out.trusted_cert_sha256,
+            identity_ca_file=out.identity_ca_file,
             fetch_timeout=out.fetch_timeout,
             tls=TLSConfig(
                 ca_file=tls.ca_file or "",
@@ -211,10 +223,11 @@ def vault_etcd_config(cfg: Any) -> EtcdConfig:
 
 
 def load_cluster_identity(cfg: EtcdConfig) -> Identity:
-    """Read this node's wrapping keypair from the etcd client certificate it already presents.
-    """
+    """Read this node's wrapping keypair from the etcd client certificate it already presents."""
     tls = cfg.tls or TLSConfig()
-    identity = load_identity(cfg.node_id, tls.cert_file, tls.key_file)
+    cert_file = cfg.identity_cert_file or tls.cert_file
+    key_file = cfg.identity_key_file or tls.key_file
+    identity = load_identity(cfg.node_id, cert_file, key_file)
     _log.info(
         "cluster identity ready",
         extra={
@@ -228,27 +241,27 @@ def load_cluster_identity(cfg: EtcdConfig) -> Identity:
 def cluster_anchor_for(cfg: EtcdConfig) -> Anchor | None:
     """Build the trust anchor that decides which certificates the vault's key may be handed to.
 
-    ``None`` means "this node hands nothing over": such a node still
-    serves traffic and still adopts a key from a peer, it just never
-    mints and never answers a request.
+    A cluster node must name one: either the CA that signs the fleet's
+    node certificates, or the pins it will accept.  Without one there is
+    no way to tell a peer from an attacker, so the node refuses to start
+    rather than quietly handing its key to anyone who can reach etcd.
     """
-    tls = cfg.tls or TLSConfig()
-    ca_file = (tls.ca_file or "").strip()
+    ca_file = (cfg.identity_ca_file or "").strip()
     pins = list(cfg.trusted_cert_sha256 or [])
     if ca_file == "" and not pins:
-        _log.warning(
-            "cluster mode is on but no trust anchor is configured; this node "
-            "will not mint the fleet's key and will not hand it to new peers"
+        raise InvalidError(
+            "vault: cluster mode needs either etcd.identity_ca_file or "
+            "etcd.trusted_cert_sha256; the handover must know which node "
+            "certificates it may trust"
         )
-        return None
     anchor = anchor_for(ca_file, pins)
     if anchor is None:
-        # Only reachable when nothing was configured, which the branch
-        # above already handled.
-        return None
+        # anchor_for only returns None when both inputs were empty, which
+        # the check above already rejected.
+        raise InvalidError("vault: cluster mode has no usable trust anchor")
     if anchor.pins_take_over() and anchor.has_ca():
         _log.warning(
-            "both etcd.tls.ca_file and cluster.trusted_cert_sha256 are set; "
+            "both etcd.identity_ca_file and cluster.trusted_cert_sha256 are set; "
             "the pin list alone decides which certificates the vault's key is "
             "handed to, and the CA is not consulted",
             extra={"pinned_certificates": len(pins)},
@@ -285,7 +298,7 @@ def obtain_cluster_dek(
             anchor,
         )
     except Exception as exc:
-        from security_gateway.credmgr.clusterkey.clusterkey import ErrNoPeerSealed
+        from security_gateway.vault.clusterkey.clusterkey import ErrNoPeerSealed
 
         if isinstance(exc, ErrNoPeerSealed):
             raise KeyMismatchError(f"{exc}") from exc
@@ -322,8 +335,7 @@ def serve_cluster_wrapping(
     interval: float = CLUSTER_WRAP_INTERVAL,
     watch_store: Any | None = None,
 ) -> None:
-    """Answer the handover requests this node can serve, and ask for a newer generation when it holds an old one.
-    """
+    """Answer the handover requests this node can serve, and ask for a newer generation when it holds an old one."""
     if anchor is None:
         # Nothing here would ever be handed over, so running the loop
         # would only produce a warning every few seconds. Serve traffic

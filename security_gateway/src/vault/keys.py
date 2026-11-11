@@ -87,23 +87,17 @@ KEY_FILE_MODE = 0o600
 #: never rotated — rotating it would mean redistributing the binary.
 #:
 #: Copied byte for byte from ``pkg/vault/keys.go``:
-#: Byte-for-byte copy of the Go constant, kept as plain integers so no
-#: scanner mistakes this public domain-separation shard for key material.
-S3_SHARD = bytes((
-    86, 97, 117, 108, 116, 83, 104, 97,
-    114, 100, 51, 75, 101, 121, 77, 97,
-    116, 101, 114, 105, 97, 108, 50, 48,
-    50, 54, 45, 83, 77, 51, 45, 70,
-))
+#: ``0x56 0x61 0x75 0x6c 0x74 0x53 0x68 0x61 ...`` = "VaultShard3KeyMaterial2026-SM3-F".
+S3_SHARD = bytes.fromhex(
+    "5661756c745368617264334b65794d6174657269616c323032362d534d332d46"
+)
 
 #: A compile-time constant: 16 bytes fixed at build time. It is PBKDF2
 #: domain separation, not a secret — the literal is in the binary.
 #:
-#: Copied byte for byte from ``pkg/vault/keys.go``.
-KEK_SALT = bytes((
-    118, 97, 117, 108, 116, 45, 107, 101,
-    107, 45, 115, 97, 108, 116, 45, 118,
-))
+#: Copied byte for byte from ``pkg/vault/keys.go``:
+#: ``0x76 0x61 0x75 0x6c 0x74 0x2d 0x6b 0x65 ...`` = "vault-kek-salt-v".
+KEK_SALT = bytes.fromhex("7661756c742d6b656b2d73616c742d76")
 
 
 def crypto_mode_unusable(stored: str, exc: Exception) -> KeyMismatchError:
@@ -113,17 +107,13 @@ def crypto_mode_unusable(stored: str, exc: Exception) -> KeyMismatchError:
 
 def config_shard_size_wrong(length: int) -> KeyMismatchError:
     """The stored config shard is not the size a shard has to be."""
-    return KeyMismatchError(
-        f"stored config shard is {length} bytes, want {SHARD_SIZE}"
-    )
+    return KeyMismatchError(f"stored config shard is {length} bytes, want {SHARD_SIZE}")
 
 
 def xor_three(s1: bytes, s2: bytes, s3: bytes) -> bytes:
     """Derive a 32-byte intermediate by XORing three shards."""
     if not len(s1) == len(s2) == len(s3) == SHARD_SIZE:
-        raise KeyMismatchError(
-            f"vault: the key shards are not {SHARD_SIZE} bytes each"
-        )
+        raise KeyMismatchError(f"vault: the key shards are not {SHARD_SIZE} bytes each")
     return bytes(a ^ b ^ c for a, b, c in zip(s1, s2, s3))
 
 
@@ -210,8 +200,7 @@ class KeyManager:
             return out
 
     def swap(self, next_snapshot: KeySnapshot) -> None:
-        """Install ``next_snapshot`` as current and demote the outgoing one to previous.
-        """
+        """Install ``next_snapshot`` as current and demote the outgoing one to previous."""
         with self._lock:
             self._previous = self._current
             self._current = next_snapshot
@@ -271,6 +260,7 @@ class KeyMeta:
     file_shard_version: int = 1
     file_shard_rotated_at: int = 0
     last_rotate_at: int = 0
+    rotation_period: float = -1.0
     wrapped_dek: bytes = b""
     pending_wrapped_dek: bytes = b""
     superseded_dek_version: int = 0
@@ -291,12 +281,12 @@ def read_key_meta(db: Database) -> KeyMeta | None:
     """
     row = db.query_one(
         """
-        SELECT active_dek_version, pending_dek_version, crypto_mode,
-               active_config_shard, pending_config_shard,
-               file_shard_version, file_shard_rotated_at, last_rotate_at,
-               wrapped_dek, pending_wrapped_dek,
-               superseded_dek_version, superseded_wrapped_dek, updated_at
-        FROM vault_key_metadata WHERE id = 1"""
+		SELECT active_dek_version, pending_dek_version, crypto_mode,
+		       active_config_shard, pending_config_shard,
+		       file_shard_version, file_shard_rotated_at, last_rotate_at,
+		       rotation_period, wrapped_dek, pending_wrapped_dek,
+		       superseded_dek_version, superseded_wrapped_dek, updated_at
+		FROM vault_key_metadata WHERE id = 1"""
     )
     if row is None:
         return None
@@ -309,11 +299,12 @@ def read_key_meta(db: Database) -> KeyMeta | None:
         file_shard_version=int(row[5]),
         file_shard_rotated_at=int(row[6]),
         last_rotate_at=int(row[7]),
-        wrapped_dek=row[8],
-        pending_wrapped_dek=row[9],
-        superseded_dek_version=int(row[10]),
-        superseded_wrapped_dek=row[11],
-        updated_at=int(row[12]),
+        rotation_period=float(row[8]),
+        wrapped_dek=row[9],
+        pending_wrapped_dek=row[10],
+        superseded_dek_version=int(row[11]),
+        superseded_wrapped_dek=row[12],
+        updated_at=int(row[13]),
     )
 
 
@@ -322,13 +313,13 @@ def insert_key_meta(db: Database, km: KeyMeta) -> None:
     now = int(time.time())
     db.execute(
         """
-        INSERT INTO vault_key_metadata (
-            id, active_dek_version, pending_dek_version, crypto_mode,
-            active_config_shard, pending_config_shard,
-            file_shard_version, file_shard_rotated_at, last_rotate_at,
-            wrapped_dek, pending_wrapped_dek,
-            superseded_dek_version, superseded_wrapped_dek, updated_at
-        ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+		INSERT INTO vault_key_metadata (
+			id, active_dek_version, pending_dek_version, crypto_mode,
+			active_config_shard, pending_config_shard,
+			file_shard_version, file_shard_rotated_at, last_rotate_at,
+			rotation_period, wrapped_dek, pending_wrapped_dek,
+			superseded_dek_version, superseded_wrapped_dek, updated_at
+		) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             km.active_dek_version,
             km.pending_dek_version,
@@ -338,6 +329,7 @@ def insert_key_meta(db: Database, km: KeyMeta) -> None:
             km.file_shard_version,
             km.file_shard_rotated_at,
             km.last_rotate_at,
+            km.rotation_period,
             _non_nil_blob(km.wrapped_dek),
             _non_nil_blob(km.pending_wrapped_dek),
             km.superseded_dek_version,
@@ -353,13 +345,13 @@ def update_key_meta(db: Database, km: KeyMeta) -> None:
     now = int(time.time())
     cur = db.execute(
         """
-        UPDATE vault_key_metadata SET
-            active_dek_version = ?, pending_dek_version = ?, crypto_mode = ?,
-            active_config_shard = ?, pending_config_shard = ?,
-            file_shard_version = ?, file_shard_rotated_at = ?, last_rotate_at = ?,
-            wrapped_dek = ?, pending_wrapped_dek = ?,
-            superseded_dek_version = ?, superseded_wrapped_dek = ?, updated_at = ?
-        WHERE id = 1""",
+		UPDATE vault_key_metadata SET
+			active_dek_version = ?, pending_dek_version = ?, crypto_mode = ?,
+			active_config_shard = ?, pending_config_shard = ?,
+			file_shard_version = ?, file_shard_rotated_at = ?, last_rotate_at = ?,
+			rotation_period = ?, wrapped_dek = ?, pending_wrapped_dek = ?,
+			superseded_dek_version = ?, superseded_wrapped_dek = ?, updated_at = ?
+		WHERE id = 1""",
         (
             km.active_dek_version,
             km.pending_dek_version,
@@ -369,6 +361,7 @@ def update_key_meta(db: Database, km: KeyMeta) -> None:
             km.file_shard_version,
             km.file_shard_rotated_at,
             km.last_rotate_at,
+            km.rotation_period,
             _non_nil_blob(km.wrapped_dek),
             _non_nil_blob(km.pending_wrapped_dek),
             km.superseded_dek_version,
@@ -436,7 +429,9 @@ def write_s1_to_file(path: str, shard: bytes) -> None:
             f"vault: the S1 shard is {len(shard)} bytes, want {SHARD_SIZE}"
         )
     if not any(shard):
-        raise KeyMismatchError(f"vault: refusing to write an all-zero S1 shard to {path}")
+        raise KeyMismatchError(
+            f"vault: refusing to write an all-zero S1 shard to {path}"
+        )
     mkdir_all_secure(os.path.dirname(path) or ".")
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, KEY_FILE_MODE)
     try:
@@ -474,6 +469,8 @@ def init_keys(
     mode: Mode,
     adopt: AdoptedDEK | None = None,
     shared_key_meta: bool = True,
+    allow_create: bool = True,
+    rotation_period: float | None = None,
 ) -> tuple[KeyManager, KeyMeta]:
     """Prepare the store's key material.
 
@@ -481,14 +478,23 @@ def init_keys(
     DEK and persists them, unless an adopted DEK is supplied. On an
     existing store it loads them.
     """
-    if adopt is not None and adopt.previous:
-        if len(adopt.previous) != DEK_SIZE:
-            raise KeyMismatchError(
-                f"the adopted previous DEK is {len(adopt.previous)} bytes, want {DEK_SIZE}"
-            )
+    if adopt is not None and adopt.previous and len(adopt.previous) != DEK_SIZE:
+        raise KeyMismatchError(
+            f"the adopted previous DEK is {len(adopt.previous)} bytes, want {DEK_SIZE}"
+        )
     km = read_key_meta(db)
     if km is None:
-        return init_fresh_keys(db, secrets_dir, mode, adopt)
+        if not allow_create:
+            from .errors import StoreNotReadyError
+
+            raise StoreNotReadyError("waiting for the host leader to create the key")
+        return init_fresh_keys(
+            db,
+            secrets_dir,
+            mode,
+            adopt,
+            rotation_period=rotation_period if rotation_period is not None else 0.0,
+        )
 
     try:
         stored_mode = parse_mode(km.crypto_mode)
@@ -498,6 +504,16 @@ def init_keys(
         raise KeyMismatchError(
             f'stored crypto mode "{stored_mode}" does not match the configured "{mode}"'
         )
+
+    if rotation_period is not None:
+        if km.rotation_period >= 0 and km.rotation_period != rotation_period:
+            raise KeyMismatchError(
+                f"the stored rotation period is {km.rotation_period:g}s, "
+                f"not the configured {rotation_period:g}s"
+            )
+        if km.rotation_period < 0:
+            km.rotation_period = rotation_period
+            update_key_meta(db, km)
 
     if len(km.active_config_shard) != SHARD_SIZE:
         raise config_shard_size_wrong(len(km.active_config_shard))
@@ -536,10 +552,11 @@ def init_keys(
         # pending rotation means this node died in the middle of one.
         # The authority's generation has already moved, so the node has to
         # come back holding the new key.
-        pending_key_present = (
-            km.pending_dek_version != 0 and bool(km.pending_wrapped_dek)
-        )
-        if not shared_key_meta and pending_key_present:
+        if (
+            not shared_key_meta
+            and km.pending_dek_version != 0
+            and km.pending_wrapped_dek
+        ):
             try:
                 pending = unwrap_dek(mode, kek.bytes(), km.pending_wrapped_dek)
             except CryptoError as exc:
@@ -557,8 +574,7 @@ def init_keys(
             km.wrapped_dek = km.pending_wrapped_dek
             km.pending_wrapped_dek = b""
             km.pending_dek_version = 0
-            if mgr.prev() is None:
-                raise KeyMismatchError("the rotated store has no previous DEK")
+            assert mgr.prev() is not None
             km.superseded_dek_version = mgr.prev().version
             km.superseded_wrapped_dek = old_wrapped
             update_key_meta(db, km)
@@ -570,9 +586,7 @@ def init_keys(
     return mgr, km
 
 
-def unpack_snapshot(
-    kek: KeyBytes, mode: Mode, km: KeyMeta, shared: bool
-) -> KeyManager:
+def unpack_snapshot(kek: KeyBytes, mode: Mode, km: KeyMeta, shared: bool) -> KeyManager:
     """Open the generations a key metadata row names.
 
     The active generation has to open: without it the store cannot be
@@ -661,17 +675,17 @@ def load_snapshot(db: Database, secrets_dir: str) -> tuple[KeyManager, KeyMeta]:
 
 def adopt_predecessor(mgr: KeyManager, adopt: AdoptedDEK | None, mode: Mode) -> None:
     """Install the generation an adopted key replaces."""
-    if adopt is None or not adopt.previous:
+    if (
+        adopt is None
+        or not adopt.previous
+        or mgr.cur() is None
+        or mgr.prev() is not None
+    ):
         return
-    current = mgr.cur()
-    if current is None or mgr.prev() is not None:
-        return
-    if adopt.version != current.version:
+    if adopt.version != mgr.cur().version:
         return
     mgr.set_previous(
-        KeySnapshot(
-            dek=KeyBytes(adopt.previous), version=adopt.version - 1, mode=mode
-        )
+        KeySnapshot(dek=KeyBytes(adopt.previous), version=adopt.version - 1, mode=mode)
     )
 
 
@@ -680,6 +694,7 @@ def init_fresh_keys(
     secrets_dir: str,
     mode: Mode,
     adopt: AdoptedDEK | None = None,
+    rotation_period: float = 0.0,
 ) -> tuple[KeyManager, KeyMeta]:
     """Mint and persist the initial key material.
 
@@ -727,12 +742,15 @@ def init_fresh_keys(
         # as the schedule is concerned: attaching a rotator to a fresh store
         # would rotate a DEK that was minted seconds ago.
         last_rotate_at=int(time.time()),
+        rotation_period=rotation_period,
         wrapped_dek=wrapped,
     )
     insert_key_meta(db, km)
 
     mgr = KeyManager(
-        current=KeySnapshot(dek=KeyBytes(dek_bytes), version=km.active_dek_version, mode=mode)
+        current=KeySnapshot(
+            dek=KeyBytes(dek_bytes), version=km.active_dek_version, mode=mode
+        )
     )
     adopt_predecessor(mgr, adopt, mode)
     return mgr, km

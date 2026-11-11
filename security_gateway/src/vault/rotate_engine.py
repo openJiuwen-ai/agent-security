@@ -116,10 +116,6 @@ class RotationTarget(Protocol):
         """Replace the key snapshot with one read from the store."""
         ...
 
-    def converge_stragglers(self) -> None:
-        """Re-encrypt every record still under an older key generation."""
-        ...
-
 
 def _not_started() -> None:
     """The stop callable of a rotator that was never started."""
@@ -189,9 +185,9 @@ def _claim_rotation(
     def claim() -> bool:
         cur = vault.db.execute(
             """
-        UPDATE vault_key_metadata
-        SET pending_dek_version = ?, pending_wrapped_dek = ?, updated_at = ?
-        WHERE id = 1 AND pending_dek_version = 0 AND active_dek_version = ?""",
+		UPDATE vault_key_metadata
+		SET pending_dek_version = ?, pending_wrapped_dek = ?, updated_at = ?
+		WHERE id = 1 AND pending_dek_version = 0 AND active_dek_version = ?""",
             (target, wrapped, int(time.time()), active),
         )
         return cur.rowcount == 1
@@ -224,12 +220,12 @@ def _commit_rotation(
             now = int(time.time())
             cur = vault.db.execute(
                 """
-        UPDATE vault_key_metadata
-        SET active_dek_version = ?, superseded_dek_version = ?,
-            wrapped_dek = ?, superseded_wrapped_dek = ?,
-            pending_dek_version = 0, pending_wrapped_dek = x'',
-            last_rotate_at = ?, updated_at = ?
-        WHERE id = 1 AND pending_dek_version = ?""",
+		UPDATE vault_key_metadata
+		SET active_dek_version = ?, superseded_dek_version = ?,
+		    wrapped_dek = ?, superseded_wrapped_dek = ?,
+		    pending_dek_version = 0, pending_wrapped_dek = x'',
+		    last_rotate_at = ?, updated_at = ?
+		WHERE id = 1 AND pending_dek_version = ?""",
                 (target, old_version, wrapped, old_wrapped, now, now, target),
             )
             if cur.rowcount != 1:
@@ -270,8 +266,8 @@ def _refresh_lease(
     def refresh() -> None:
         vault.db.execute(
             """
-        UPDATE vault_key_metadata SET updated_at = ?
-        WHERE id = 1 AND pending_dek_version = ?""",
+		UPDATE vault_key_metadata SET updated_at = ?
+		WHERE id = 1 AND pending_dek_version = ?""",
             (int(time.time()), generation),
         )
 
