@@ -27,10 +27,13 @@ dev = [
 
 [tool.setuptools]
 package-dir = { security_gateway = "src" }
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["security_gateway*"]
-namespaces = true
+packages = [
+    "security_gateway",
+    "security_gateway.crypto",
+    "security_gateway.platform",
+    "security_gateway.vault",
+    "security_gateway.vault.etcdstore",
+]
 
 
 [tool.pytest.ini_options]
