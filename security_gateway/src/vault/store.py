@@ -304,7 +304,7 @@ def _row_to_record(row: tuple) -> RecordRow:
     )
 
 
-def get_record(db: Database, id: str) -> RecordRow | None:
+def get_record(db: Database, record_id: str) -> RecordRow | None:
     """Load one record by id.
 
     It returns None when the id is unknown, so the caller distinguishes
@@ -376,17 +376,17 @@ def put_record_cas(db: Database, row: RecordRow, expected_row_version: int) -> b
     return cur.rowcount > 0
 
 
-def delete_record(db: Database, id: str) -> bool:
+def delete_record(db: Database, record_id: str) -> bool:
     """Remove a record."""
-    cur = db.execute("DELETE FROM vault_record WHERE id = ?", (id,))
+    cur = db.execute("DELETE FROM vault_record WHERE id = ?", (record_id,))
     return cur.rowcount > 0
 
 
-def delete_record_cas(db: Database, id: str, expected_row_version: int) -> bool:
+def delete_record_cas(db: Database, record_id: str, expected_row_version: int) -> bool:
     """Remove a record only if it is still at ``expected_row_version``."""
     cur = db.execute(
         "DELETE FROM vault_record WHERE id = ? AND row_version = ?",
-        (id, expected_row_version),
+        (record_id, expected_row_version),
     )
     return cur.rowcount > 0
 

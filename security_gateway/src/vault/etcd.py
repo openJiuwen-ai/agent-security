@@ -556,7 +556,8 @@ def converge_authority(
                 sch = vault.schema_for_version(entry.schema_version)
                 if sch is None:
                     raise SchemaMismatchError(
-                        f'the record "{record.record_id}" was written with schema v{entry.schema_version}, which this store does not know'
+                        f'the record "{record.record_id}" was written with schema '
+                        f'v{entry.schema_version}, which this store does not know'
                     )
                 if int(entry.dek_version) == int(cur.version):
                     break
@@ -569,7 +570,8 @@ def converge_authority(
                     src = vault.keys.by_version(entry.dek_version)
                 if src is None:
                     raise StaleGenerationError(
-                        f'record "{record.record_id}" is under generation {entry.dek_version}, which this store does not hold (it holds '
+                        f'record "{record.record_id}" is under generation '
+                        f'{entry.dek_version}, which this store does not hold (it holds '
                         f"{format_held_versions(vault.keys.held_versions())})"
                     )
                 entry.data = reencrypt_record_payload(entry.data, sch, src, cur)
@@ -625,7 +627,9 @@ def reencrypt_record_payload(
             )
         if f.encrypted != definition.encrypted:
             raise SchemaMismatchError(
-                f'the record\'s field "{f.name}" is marked encrypted={f.encrypted} but schema v{schema.version} says {definition.encrypted}'
+                f'the record\'s field "{f.name}" is marked '
+                f'encrypted={f.encrypted} but schema v{schema.version} says '
+                f'{definition.encrypted}'
             )
         if not definition.encrypted:
             rewritten.append(f)

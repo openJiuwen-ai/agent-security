@@ -574,8 +574,10 @@ def init_keys(
             km.wrapped_dek = km.pending_wrapped_dek
             km.pending_wrapped_dek = b""
             km.pending_dek_version = 0
-            assert mgr.prev() is not None
-            km.superseded_dek_version = mgr.prev().version
+            previous = mgr.prev()
+            if previous is None:
+                raise RuntimeError("the rotated key has no previous generation")
+            km.superseded_dek_version = previous.version
             km.superseded_wrapped_dek = old_wrapped
             update_key_meta(db, km)
     finally:

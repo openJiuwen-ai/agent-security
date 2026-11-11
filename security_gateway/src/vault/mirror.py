@@ -59,7 +59,8 @@ def apply_mirrored_record(
     now = int(time.time())
     db.execute(
         """
-		INSERT INTO vault_record (id, schema_version, data, dek_version, row_version, source_revision, created_at, updated_at)
+		INSERT INTO vault_record (id, schema_version, data, dek_version, row_version,
+			source_revision, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 1, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			schema_version  = excluded.schema_version,
@@ -81,7 +82,7 @@ def apply_mirrored_record(
     )
 
 
-def delete_mirrored_record(db: Database, id: str, source_revision: int) -> None:
+def delete_mirrored_record(db: Database, record_id: str, source_revision: int) -> None:
     """Remove a record the authority has deleted."""
     db.execute(
         "DELETE FROM vault_record WHERE id = ? AND source_revision <= ?",
