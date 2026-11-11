@@ -31,6 +31,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from collections.abc import Mapping
 from typing import Any, Callable
 
@@ -95,15 +96,7 @@ from .store import (
     run_with_busy_retry,
 )
 
-# The names below are not used by the module. They were importable from
-# it before the store was split across several modules, and they are
-# kept importable from here so that nothing that reached for them here
-# stops working.
-import stat  # noqa: F401
-import time  # noqa: F401
-from dataclasses import dataclass, field  # noqa: F401
-from .codec import decode_container  # noqa: F401
-from .errors import VaultError  # noqa: F401
+from contextlib import nullcontext
 
 _log = logging.getLogger(__name__)
 
@@ -157,16 +150,12 @@ def _namespace_registry_key(cfg: Config) -> tuple[tuple[str, ...], str] | None:
     etcd = cfg.etcd
     if etcd is None:
         return None
-    endpoints = tuple(
-        sorted(str(endpoint) for endpoint in (getattr(etcd, "endpoints", ()) or ()))
-    )
+    endpoints = tuple(sorted(str(endpoint) for endpoint in (getattr(etcd, "endpoints", ()) or ())))
     namespace = str(getattr(etcd, "namespace", "") or "default")
     return (endpoints, namespace)
 
 
-def _reserve_registry(
-    db_path: str, data_dir: str, cfg: Config
-) -> tuple[str, str, tuple[tuple[str, ...], str] | None]:
+def _reserve_registry(db_path: str, data_dir: str, cfg: Config) -> tuple[str, str, tuple[tuple[str, ...], str] | None]:
     db_key = os.path.realpath(db_path)
     dir_key = os.path.realpath(data_dir)
     namespace_key = _namespace_registry_key(cfg)
@@ -177,9 +166,7 @@ def _reserve_registry(
             ("etcd namespace", _OPEN_BY_NAMESPACE, namespace_key),
         ):
             if key is not None and key in table:
-                raise InvalidError(
-                    f"vault: this {label} is already open in this process"
-                )
+                raise InvalidError(f"vault: this {label} is already open in this process")
         _OPEN_BY_DB[db_key] = dir_key
         _OPEN_BY_DIR[dir_key] = db_key
         if namespace_key is not None:
@@ -198,16 +185,6 @@ def _release_registry(
         _OPEN_BY_DIR.pop(dir_key, None)
         if namespace_key is not None:
             _OPEN_BY_NAMESPACE.pop(namespace_key, None)
-
-
-class _no_lock:
-    """A context manager that does nothing, for the single-process path."""
-
-    def __enter__(self) -> None:
-        return None
-
-    def __exit__(self, *exc: object) -> None:
-        return None
 
 
 class Vault(AuthorityMixin):
@@ -273,9 +250,7 @@ class Vault(AuthorityMixin):
         self._key_stop: threading.Event | None = None
         self._key_thread: threading.Thread | None = None
         self._shared_key_meta = False
-        self._registry_key: (
-            tuple[str, str, tuple[tuple[str, ...], str] | None] | None
-        ) = None
+        self._registry_key: tuple[str, str, tuple[tuple[str, ...], str] | None] | None = None
         self._dir_guard: DataDirGuard | None = None
         self.rotation_period = 0.0
         self._auto_rotate_stop: Callable[[], None] | None = None
@@ -295,9 +270,7 @@ class Vault(AuthorityMixin):
     # -- construction ---------------------------------------------------
 
     @classmethod
-    def open(
-        cls, cfg: Config, schema: Schema, *, _allow_duplicate: bool = False
-    ) -> "Vault":
+    def open(cls, cfg: Config, schema: Schema, *, _allow_duplicate: bool = False) -> "Vault":
         """Open or initialise a store."""
         schema.validate()
         if not cfg.data_dir:
@@ -306,8 +279,7 @@ class Vault(AuthorityMixin):
             raise InvalidError("vault: rotation_period must not be negative")
         if cfg.etcd is not None and cfg.etcd.endpoints and not cfg.etcd.node_id.strip():
             raise InvalidError(
-                "vault: etcd requires a node_id; an etcd authority without a "
-                "node identity cannot share the DEK"
+                "vault: etcd requires a node_id; an etcd authority without a node identity cannot share the DEK"
             )
         mode = cfg.crypto_mode
         if mode not in (Mode.AES, Mode.SM4):
@@ -328,9 +300,7 @@ class Vault(AuthorityMixin):
                 _release_registry(registry_key)
                 raise
         try:
-            return cls._open(
-                cfg, schema, db_path, secrets_dir, mode, registry_key, dir_guard
-            )
+            return cls._open(cfg, schema, db_path, secrets_dir, mode, registry_key, dir_guard)
         except BaseException:
             if dir_guard is not None:
                 dir_guard.close()
@@ -416,38 +386,26 @@ class Vault(AuthorityMixin):
                     # different half of the same namespace.
                     cluster_store = KVClusterStore(authority.store.kv, authority.ns)
                     local_key = read_key_meta(db)
-                    behind = local_key is None or int(
-                        local_key.active_dek_version
-                    ) < int(authority.generation())
+                    behind = local_key is None or int(local_key.active_dek_version) < int(authority.generation())
                     if not multi_process or (leader is not None and behind):
-                        adopt = obtain_cluster_dek(
-                            cfg.etcd, cluster_store, self_identity, anchor
-                        )
+                        adopt = obtain_cluster_dek(cfg.etcd, cluster_store, self_identity, anchor)
 
             keys = None
-            deadline = time.monotonic() + max(
-                float(getattr(cfg.etcd, "fetch_timeout", 0.0) or 0.0), 30.0
-            )
+            deadline = time.monotonic() + max(float(getattr(cfg.etcd, "fetch_timeout", 0.0) or 0.0), 30.0)
             while keys is None:
                 try:
                     # Every process registers the same data directory, so
                     # the initialise-or-load step has to be serialized: two
                     # processes minting at once would point one metadata row
                     # at the other process's shard file.
-                    with (
-                        initialization_lock(cfg.data_dir)
-                        if multi_process
-                        else _no_lock()
-                    ):
+                    with initialization_lock(cfg.data_dir) if multi_process else nullcontext():
                         keys, _km = init_keys(
                             db,
                             secrets_dir,
                             mode,
                             adopt,
                             shared_key_meta=authority is None or multi_process,
-                            allow_create=authority is None
-                            or not multi_process
-                            or leader is not None,
+                            allow_create=authority is None or not multi_process or leader is not None,
                             rotation_period=cfg.rotation_period,
                         )
                 except StoreNotReadyError:
@@ -459,57 +417,24 @@ class Vault(AuthorityMixin):
                         raise
                     time.sleep(0.05)
             vault = cls(db, keys, secrets_dir, schema, {}, {}, authority)
-            vault._dir_guard = dir_guard
-            vault._registry_key = registry_key
-            vault.rotation_period = cfg.rotation_period
-            if cfg.cache_max_entries > 0:
-                vault._cache = RecordCache(
-                    cfg.cache_max_entries,
-                    cfg.cache_ttl,
-                )
-            vault._leader = leader
-            vault._shared_key_meta = multi_process
-            vault._etcd_cfg = cfg.etcd
-            vault._self_identity = self_identity
-            vault._cluster_anchor = anchor
-            vault._cluster_store = cluster_store
-            try:
-                vault._load_and_validate_schema(schema)
-            except BaseException:
-                vault.close()
-                raise
-
-            # A store that came up with a previous key still in hand was
-            # recovering from an interrupted rotation. The records that were
-            # not re-encrypted yet are still under the old key; finish that
-            # work now, before any caller sees the store.
-            #
-            # An etcd-backed store is the exception: there the rewrite
-            # belongs to the node holding the rotation lock.
-            if authority is None and vault.keys.prev() is not None:
-                vault.converge_stragglers()
-
-            if authority is not None:
-                vault._start_authority(
-                    cfg.etcd, self_identity, anchor, cluster_store, leader
-                )
-                vault._start_presence(
-                    getattr(cfg.etcd, "node_id", "")
-                    or getattr(self_identity, "node_id", "")
-                )
-            if cfg.rotation_period > 0:
-                from .rotate import start_auto_rotate
-
-                vault._auto_rotate_stop = start_auto_rotate(vault, cfg.rotation_period)
+            vault.activate(
+                schema=schema,
+                dir_guard=dir_guard,
+                registry_key=registry_key,
+                cfg=cfg,
+                leader=leader,
+                multi_process=multi_process,
+                self_identity=self_identity,
+                anchor=anchor,
+                cluster_store=cluster_store,
+            )
             return vault
         except BaseException:
             if vault is not None:
                 try:
                     vault.close()
                 except Exception as exc:  # noqa: BLE001 - shutting down anyway
-                    _log.warning(
-                        "could not close the half-open vault", extra={"error": exc}
-                    )
+                    _log.warning("could not close the half-open vault", extra={"error": exc})
                 raise
             if leader is not None:
                 try:
@@ -521,9 +446,7 @@ class Vault(AuthorityMixin):
                 try:
                     authority.close()
                 except Exception as exc:  # noqa: BLE001 - shutting down anyway
-                    _log.warning(
-                        "could not close the etcd authority", extra={"error": exc}
-                    )
+                    _log.warning("could not close the etcd authority", extra={"error": exc})
             db.close()
             raise
 
@@ -543,25 +466,61 @@ class Vault(AuthorityMixin):
         """The schema a record with that version was written with."""
         return self._schemas.get(version)
 
+    def activate(
+        self,
+        *,
+        schema: Schema,
+        dir_guard: DataDirGuard,
+        registry_key: tuple[str, str, str | None],
+        cfg: Config,
+        leader: Any,
+        multi_process: bool,
+        self_identity: Any,
+        anchor: Any,
+        cluster_store: Any,
+    ) -> None:
+        """Finish opening a store that has its keys and its database."""
+        self._dir_guard = dir_guard
+        self._registry_key = registry_key
+        self.rotation_period = cfg.rotation_period
+        if cfg.cache_max_entries > 0:
+            self._cache = RecordCache(cfg.cache_max_entries, cfg.cache_ttl)
+        self._leader = leader
+        self._shared_key_meta = multi_process
+        self._etcd_cfg = cfg.etcd
+        self._self_identity = self_identity
+        self._cluster_anchor = anchor
+        self._cluster_store = cluster_store
+        self._load_and_validate_schema(schema)
+        if self.authority is None and self.keys.prev() is not None:
+            self.converge_stragglers()
+        if self.authority is not None:
+            self._start_authority(cfg.etcd, self_identity, anchor, cluster_store, leader)
+            self._start_presence(getattr(cfg.etcd, "node_id", "") or getattr(self_identity, "node_id", ""))
+        if cfg.rotation_period > 0:
+            from .rotate import start_auto_rotate
+
+            self._auto_rotate_stop = start_auto_rotate(self, cfg.rotation_period)
+
     # -- reading --------------------------------------------------------
 
-    def get(self, id: str) -> Record:
+    def get(self, record_id: str) -> Record:
         """Load a record by id."""
-        if not id:
+        if not record_id:
             raise InvalidRecordError("id is empty")
         self._cache_check()
         if self._cache is not None:
-            cached = self._cache.get(id)
+            cached = self._cache.get(record_id)
             if cached is not None:
                 return cached
         for attempt in range(2):
-            row = get_record(self.db, id)
+            row = get_record(self.db, record_id)
             if row is None:
-                raise NotFoundError(f'"{id}"')
+                raise NotFoundError(f'"{record_id}"')
             sch = self.schema_for_version(row.schema_version)
             if sch is None:
                 raise SchemaMismatchError(
-                    f'record "{id}" was written with schema v{row.schema_version}, which this store does not know'
+                    f'record "{record_id}" was written with schema v{row.schema_version}, which this store does not know'
                 )
             try:
                 record = self._decode_record(row, sch)
@@ -669,9 +628,7 @@ class Vault(AuthorityMixin):
         # which is worse than refusing it.
         for name in rec.fields:
             if name not in self._fields:
-                raise InvalidRecordError(
-                    f'field "{name}" is not declared by the schema'
-                )
+                raise InvalidRecordError(f'field "{name}" is not declared by the schema')
         self._validate_expected(expected)
         if expected is not None and not expected:
             expected = None
@@ -683,9 +640,7 @@ class Vault(AuthorityMixin):
         self._put_local(rec, expected)
         self._cache_put(rec)
 
-    def _put_through_authority(
-        self, rec: Record, expected: Mapping[str, Value] | None = None
-    ) -> None:
+    def _put_through_authority(self, rec: Record, expected: Mapping[str, Value] | None = None) -> None:
         """Write a record to the authority under the generation it holds.
 
         A committed rotation can fence this writer. Reload, ask the fleet
@@ -703,21 +658,18 @@ class Vault(AuthorityMixin):
                 self.reload_snapshot()
                 generation = 0
                 try:
-                    generation = (
-                        int(self.authority.generation()) if self.authority else 0
-                    )
+                    generation = int(self.authority.generation()) if self.authority else 0
                 except Exception:  # noqa: BLE001 - absent generation is zero
                     generation = 0
                 if generation and self.keys.by_version(generation) is None:
                     self.refresh_from_fleet()
                 if attempt < 4:
                     time.sleep(0.1)
-        assert last is not None
+        if last is None:
+            raise RuntimeError("the authority write was never attempted")
         raise last
 
-    def _put_through_authority_once(
-        self, rec: Record, expected: Mapping[str, Value] | None = None
-    ) -> None:
+    def _put_through_authority_once(self, rec: Record, expected: Mapping[str, Value] | None = None) -> None:
         # The write barrier is taken before the key snapshot is captured,
         # and held until the row is written. That ordering is what keeps a
         # concurrent rotation from landing between the two: the rotation's
@@ -753,9 +705,7 @@ class Vault(AuthorityMixin):
                     expected=self._expected_guard(expected),
                 )
 
-    def _delete_through_authority(
-        self, id: str, expected: Mapping[str, Value] | None
-    ) -> None:
+    def _delete_through_authority(self, record_id: str, expected: Mapping[str, Value] | None) -> None:
         """Delete through the authority, refreshing a stale key once."""
         from .etcd import FencedWriteError
 
@@ -763,27 +713,24 @@ class Vault(AuthorityMixin):
         for attempt in range(5):
             try:
                 if expected is None:
-                    self.authority.delete_record(self.db, id)
+                    self.authority.delete_record(self.db, record_id)
                 else:
-                    self.authority.delete_record(
-                        self.db, id, expected=self._expected_guard(expected)
-                    )
+                    self.authority.delete_record(self.db, record_id, expected=self._expected_guard(expected))
                 return
             except (FencedWriteError, StaleGenerationError) as exc:
                 last = exc
                 self.reload_snapshot()
                 generation = 0
                 try:
-                    generation = (
-                        int(self.authority.generation()) if self.authority else 0
-                    )
+                    generation = int(self.authority.generation()) if self.authority else 0
                 except Exception:  # noqa: BLE001 - absent generation is zero
                     generation = 0
                 if generation and self.keys.by_version(generation) is None:
                     self.refresh_from_fleet()
                 if attempt < 4:
                     time.sleep(0.1)
-        assert last is not None
+        if last is None:
+            raise RuntimeError("the authority write was never attempted")
         raise last
 
     def _authority_snapshot(self, *, fallback: bool = False) -> tuple[KeySnapshot, int]:
@@ -807,17 +754,14 @@ class Vault(AuthorityMixin):
                 return snap, generation
             if not fallback:
                 raise StaleGenerationError(
-                    f"the authority is on generation {generation}, which this "
-                    "store does not hold yet"
+                    f"the authority is on generation {generation}, which this store does not hold yet"
                 )
         cur = self.keys.cur()
         if cur is None:
             raise ClosedError("the store has no key", whole=True)
         return cur, int(cur.version)
 
-    def _put_local(
-        self, rec: Record, expected: Mapping[str, Value] | None = None
-    ) -> None:
+    def _put_local(self, rec: Record, expected: Mapping[str, Value] | None = None) -> None:
         """Write a record to the local database.
 
         The transaction holds the write lock from the moment the
@@ -830,9 +774,7 @@ class Vault(AuthorityMixin):
                 return
             except _RowConflict:
                 if attempt == 7:
-                    raise ConflictError(
-                        f'the record "{rec.id}" kept changing'
-                    ) from None
+                    raise ConflictError(f'the record "{rec.id}" kept changing') from None
                 continue
             except StaleGenerationError:
                 if attempt == 7:
@@ -850,13 +792,9 @@ class Vault(AuthorityMixin):
                         target = km.pending_dek_version
                 self._reload_keys(target)
                 continue
-        raise StaleGenerationError(
-            "the store is on a generation this process does not hold"
-        )
+        raise StaleGenerationError("the store is on a generation this process does not hold")
 
-    def _put_local_once(
-        self, rec: Record, expected: Mapping[str, Value] | None = None
-    ) -> None:
+    def _put_local_once(self, rec: Record, expected: Mapping[str, Value] | None = None) -> None:
         """Write a record in one write transaction."""
         with self.wmu:
             with self.db.transaction(immediate=True):
@@ -909,9 +847,7 @@ class Vault(AuthorityMixin):
         for name, value in expected.items():
             definition = self._fields.get(name)
             if definition is None:
-                raise InvalidRecordError(
-                    f'expected field "{name}" is not declared by the schema'
-                )
+                raise InvalidRecordError(f'expected field "{name}" is not declared by the schema')
             if not isinstance(value, Value):
                 raise InvalidRecordError(f'expected field "{name}" is not a Value')
             if value.type != definition.type:
@@ -920,31 +856,25 @@ class Vault(AuthorityMixin):
                 )
             value.validate()
 
-    def _assert_expected(
-        self, current: Record, expected: Mapping[str, Value] | None
-    ) -> None:
+    def _assert_expected(self, current: Record, expected: Mapping[str, Value] | None) -> None:
         """Raise a conflict when a guarded field no longer matches."""
         if expected is None:
             return
-        changed = sorted(
-            name
-            for name, wanted in expected.items()
-            if (present := current.fields.get(name)) is None
-            or present.type != wanted.type
-            or present.data != wanted.data
-        )
+        changed: list[str] = []
+        for name, wanted in expected.items():
+            present = current.fields.get(name)
+            if present is None or present.type != wanted.type or present.data != wanted.data:
+                changed.append(name)
+        changed.sort()
         if changed:
-            raise ConflictError(
-                f"expected field(s) {', '.join(changed)} no longer match"
-            )
+            raise ConflictError(f"expected field(s) {', '.join(changed)} no longer match")
 
     def _decode_current(self, row: RecordRow) -> Record:
         """Decode a row using the schema it was written with."""
         schema = self.schema_for_version(row.schema_version)
         if schema is None:
             raise SchemaMismatchError(
-                f'record "{row.id}" was written with schema v{row.schema_version}, '
-                "which this store does not know"
+                f'record "{row.id}" was written with schema v{row.schema_version}, which this store does not know'
             )
         return self._decode_record(row, schema)
 
@@ -959,9 +889,7 @@ class Vault(AuthorityMixin):
             )
         )
 
-    def _expected_guard(
-        self, expected: Mapping[str, Value] | None
-    ) -> Callable[[str, Any], None] | None:
+    def _expected_guard(self, expected: Mapping[str, Value] | None) -> Callable[[str, Any], None] | None:
         """Build the check the authority runs against its current entry."""
         if expected is None:
             return None
@@ -996,7 +924,7 @@ class Vault(AuthorityMixin):
             )
         return encode_container(container)
 
-    def delete(self, id: str, *, expected: Mapping[str, Value] | None = None) -> None:
+    def delete(self, record_id: str, *, expected: Mapping[str, Value] | None = None) -> None:
         """Remove a record.
 
         It raises :class:`~security_gateway.vault.errors.NotFoundError` when
@@ -1004,26 +932,26 @@ class Vault(AuthorityMixin):
         :meth:`put`; a mismatch refuses the delete with
         :class:`ConflictError`.
         """
-        if not id:
+        if not record_id:
             raise InvalidRecordError("id is empty")
         self._validate_expected(expected)
         # With an authority the delete goes to it, and only to it: the
         # local copy is a mirror, and the watch brings the deletion here.
         # It must not hold the local write lock while it waits for etcd.
         if self.authority is not None:
-            self._delete_through_authority(id, expected)
-            self._cache_delete(id)
+            self._delete_through_authority(record_id, expected)
+            self._cache_delete(record_id)
             return
         with self.wmu:
             if expected is None:
-                if not run_with_busy_retry(lambda: delete_record(self.db, id)):
-                    raise NotFoundError(f'"{id}"')
-                self._cache_delete(id)
+                if not run_with_busy_retry(lambda: delete_record(self.db, record_id)):
+                    raise NotFoundError(f'"{record_id}"')
+                self._cache_delete(record_id)
                 return
             for attempt in range(8):
-                current = run_with_busy_retry(lambda: get_record(self.db, id))
+                current = run_with_busy_retry(lambda: get_record(self.db, record_id))
                 if current is None:
-                    raise NotFoundError(f'"{id}"')
+                    raise NotFoundError(f'"{record_id}"')
                 try:
                     self._assert_expected(self._decode_current(current), expected)
                 except StaleGenerationError:
@@ -1031,12 +959,10 @@ class Vault(AuthorityMixin):
                         raise
                     self.reload_snapshot()
                     continue
-                if run_with_busy_retry(
-                    lambda: delete_record_cas(self.db, id, current.row_version)
-                ):
-                    self._cache_delete(id)
+                if run_with_busy_retry(lambda: delete_record_cas(self.db, record_id, current.row_version)):
+                    self._cache_delete(record_id)
                     return
-            raise ConflictError(f'the record "{id}" kept changing')
+            raise ConflictError(f'the record "{record_id}" kept changing')
 
     # -- housekeeping ---------------------------------------------------
 
@@ -1281,9 +1207,7 @@ class Vault(AuthorityMixin):
                 if self._presence_lease and generation == last:
                     renew_presence(leases, self._presence_lease)
                 else:
-                    self._presence_lease = put_presence(
-                        store.kv, leases, store.ns, node_id, generation
-                    )
+                    self._presence_lease = put_presence(store.kv, leases, store.ns, node_id, generation)
                     last = generation
             except Exception as exc:  # noqa: BLE001 - presence is best effort
                 # The lease may have expired between the renew and the
@@ -1378,12 +1302,9 @@ class Vault(AuthorityMixin):
         behind can now rotate without waiting for the background wrap
         loop to hand it the newer key.
         """
-        if (
-            self.authority is None
-            or self._etcd_cfg is None
-            or self._self_identity is None
-            or self._cluster_store is None
-        ):
+        if self.authority is None or self._etcd_cfg is None:
+            return False
+        if self._self_identity is None or self._cluster_store is None:
             return False
         from .cluster import obtain_cluster_dek
 
@@ -1453,13 +1374,9 @@ class Vault(AuthorityMixin):
                 try:
                     data = self._decrypt_for(row.dek_version, data)
                 except StaleGenerationError as exc:
-                    raise StaleGenerationError(
-                        f'record "{row.id}" field "{f.name}": {exc}'
-                    ) from exc
+                    raise StaleGenerationError(f'record "{row.id}" field "{f.name}": {exc}') from exc
                 except UndecryptableError as exc:
-                    raise UndecryptableError(
-                        f'record "{row.id}" field "{f.name}": {exc}'
-                    ) from exc
+                    raise UndecryptableError(f'record "{row.id}" field "{f.name}": {exc}') from exc
             rec.fields[f.name] = Value(type=f.type, data=data)
         return rec
 
@@ -1510,9 +1427,7 @@ class Vault(AuthorityMixin):
             # leave existing records unreadable, so those are refused.
             stored = registry.get(latest.version)
             if stored is None:
-                raise SchemaMismatchError(
-                    f"the store's schema v{latest.version} is missing from its registry"
-                )
+                raise SchemaMismatchError(f"the store's schema v{latest.version} is missing from its registry")
             if not is_additive(stored, declared):
                 raise SchemaMismatchError(
                     f"schema v{stored.version} -> v{declared.version} changes an existing field; "
