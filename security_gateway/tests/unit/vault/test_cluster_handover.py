@@ -186,7 +186,8 @@ def test_the_handover_loop_does_not_start_without_an_anchor():
     touched = []
 
     class ExplodingAuthority:
-        def __getattr__(self, name):
+        @staticmethod
+        def __getattr__(name):
             touched.append(name)
             raise AssertionError(f"the store must not be touched: {name}")
 

@@ -192,8 +192,8 @@ def test_open_refuses_a_changed_encryption_state(tmp_path):
 def test_a_rotation_keeps_the_records_readable(tmp_path):
     store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     try:
-        for id in ["cred-1", "cred-2", "cred-3"]:
-            put_record(store, id)
+        for record_id in ["cred-1", "cred-2", "cred-3"]:
+            put_record(store, record_id)
 
         before = read_raw_data(str(tmp_path / "vault.db"), "cred-1")
 
@@ -317,8 +317,7 @@ def test_open_refuses_a_data_directory_others_can_write_to(tmp_path):
 
 
 def test_open_accepts_a_sticky_data_directory(tmp_path):
-    """The sticky bit stops anyone from removing what belongs to somebody
-    else, which is what makes a shared directory safe."""
+    """The sticky bit makes a shared directory safe."""
     os.chmod(tmp_path, 0o1777)
     store = Vault.open(Config(data_dir=str(tmp_path)), make_test_schema())
     store.close()
@@ -340,8 +339,7 @@ def test_the_database_file_is_not_world_readable(tmp_path):
 
 
 def test_the_store_holds_whatever_shape_it_is_given(tmp_path):
-    """Nothing in the vault is quietly built around a particular set of
-    field names."""
+    """Nothing in the vault is built around a particular set of field names."""
     schema = Schema(
         version=1,
         fields=[

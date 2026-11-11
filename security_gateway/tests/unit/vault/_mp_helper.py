@@ -155,7 +155,7 @@ def main(argv: list[str]) -> int:
     role = os.environ.get(ROLE_ENV, "")
     directory = os.environ.get(DIR_ENV, "")
     if not role or not directory:
-        print(f"usage: {argv[0]} (needs {ROLE_ENV} and {DIR_ENV})", file=sys.stderr)
+        sys.stderr.write(f"usage: {argv[0]} (needs {ROLE_ENV} and {DIR_ENV})\n")
         return 2
 
     if role == ROLE_CLAIM:
@@ -196,7 +196,7 @@ def main(argv: list[str]) -> int:
         vault.close()
         return 0
 
-    print(f"unknown helper role {role!r}", file=sys.stderr)
+    sys.stderr.write(f"unknown helper role {role!r}\n")
     return 2
 
 

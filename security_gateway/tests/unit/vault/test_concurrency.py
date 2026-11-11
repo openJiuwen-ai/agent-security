@@ -182,10 +182,13 @@ def test_a_write_during_a_rotation_leaves_every_record_readable(vault):
     def writer():
         i = 0
         while not stop.is_set():
-            id = f"writer-{i % 10}"
+            record_id = f"writer-{i % 10}"
             try:
                 vault.put(
-                    Record(id=id, fields={"api_key": Value.new_string("sk-" + id)})
+                    Record(
+                        id=record_id,
+                        fields={"api_key": Value.new_string("sk-" + record_id)},
+                    )
                 )
             except BaseException as exc:  # noqa: BLE001 - reported below
                 failures.append(exc)

@@ -104,7 +104,7 @@ def test_anchor_accepts_a_fingerprint_with_spaces(anchor_pki) -> None:
     # TestAnchorAcceptsAFingerprintWithSpaces
     """Test a fingerprint copied from openssl still verifies."""
     digest = Fingerprint(anchor_pki.client)
-    spaced = " ".join(digest[i : i + 2] for i in range(0, len(digest), 2))
+    spaced = " ".join(digest[i:i + 2] for i in range(0, len(digest), 2))
     anchor = new_anchor("", [spaced])
     anchor.verify(anchor_pki.client)
 

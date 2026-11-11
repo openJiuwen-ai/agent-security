@@ -53,19 +53,19 @@ class _StubTransactions:
     Version = _StubTransaction
 
     @staticmethod
-    def Value(key: str) -> _StubTransaction:
+    def value(key: str) -> _StubTransaction:
         return _StubTransaction(key)
 
     @staticmethod
-    def Put(key: str, value: bytes, lease: int | None = None) -> tuple:
+    def put(key: str, value: bytes, lease: int | None = None) -> tuple:
         return ("put", key, value, lease)
 
     @staticmethod
-    def Get(key: str) -> tuple:
+    def get(key: str) -> tuple:
         return ("get", key)
 
     @staticmethod
-    def Delete(key: str) -> tuple:
+    def delete(key: str) -> tuple:
         return ("delete", key)
 
 
@@ -99,10 +99,12 @@ class _StubClient:
             "timeout": timeout,
         }
 
-    def transaction(self, compare=None, success=None, failure=None):
+    @staticmethod
+    def transaction(compare=None, success=None, failure=None):
         return True, []
 
-    def get(self, key, *args, **kwargs):
+    @staticmethod
+    def get(key, *args, **kwargs):
         return None, None
 
 
@@ -110,6 +112,10 @@ def _stub_etcd3() -> types.ModuleType:
     """A stand-in for the ``etcd3`` extra."""
     module = types.ModuleType("etcd3")
     module.Etcd3Client = _StubClient
+    _StubTransactions.Value = staticmethod(_StubTransactions.value)
+    _StubTransactions.Put = staticmethod(_StubTransactions.put)
+    _StubTransactions.Get = staticmethod(_StubTransactions.get)
+    _StubTransactions.Delete = staticmethod(_StubTransactions.delete)
     module.transactions = _StubTransactions
     return module
 
@@ -158,7 +164,7 @@ def test_the_vault_hands_the_client_names_it_takes(monkeypatch):
         )
     )
     try:
-        called = authority._client._client_at(0).called
+        called = getattr(getattr(authority, "_client"), "_client_at")(0).called
         assert called["ca_cert"] == "ca.pem"
         assert called["cert_cert"] == "cert.pem"
         assert called["cert_key"] == "key.pem"

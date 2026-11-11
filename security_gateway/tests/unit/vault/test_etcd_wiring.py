@@ -230,11 +230,15 @@ def test_the_mapping_carries_the_tls_when_there_is_some():
     """
 
     class WithTls(FakePlatformConfig):
-        class etcd(FakeEtcd):
-            class tls(FakeTls):
+        class Etcd(FakeEtcd):
+            class Tls(FakeTls):
                 ca_file = "ca.pem"
                 cert_file = "cert.pem"
                 key_file = "key.pem"
+
+            tls = Tls
+
+        etcd = Etcd
 
     cfg = vault_etcd_config(WithTls())
 

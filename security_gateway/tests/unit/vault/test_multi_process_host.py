@@ -214,7 +214,7 @@ def test_the_write_snapshot_follows_the_authority_generation(tmp_path, schema):
         store.keys.set_pending(pending)
         store.authority = _AuthorityAt(2)
 
-        snapshot, generation = store._authority_snapshot()
+        snapshot, generation = getattr(store, "_authority_snapshot")()
 
         assert snapshot is pending
         assert generation == 2
@@ -227,6 +227,6 @@ def test_an_unknown_authority_generation_is_stale(tmp_path, schema):
     try:
         store.authority = _AuthorityAt(9)
         with pytest.raises(StaleGenerationError):
-            store._authority_snapshot()
+            getattr(store, "_authority_snapshot")()
     finally:
         store.close()

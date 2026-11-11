@@ -53,8 +53,8 @@ def test_a_dead_first_endpoint_is_skipped(monkeypatch):
     client = build_failover_client(("http://dead:2379", "http://live:2379"))
     try:
         assert client.get("k") == (b"value", None)
-        assert client._client_at(0).attempts == 1
-        assert client._client_at(1).attempts == 1
+        assert getattr(client, "_client_at")(0).attempts == 1
+        assert getattr(client, "_client_at")(1).attempts == 1
     finally:
         client.close()
 

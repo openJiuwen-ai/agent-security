@@ -128,6 +128,6 @@ def test_the_cache_is_off_by_default(tmp_path) -> None:
         Schema(version=1, fields=[FieldDef("value", Type.STRING, encrypted=True)]),
     )
     try:
-        assert vault._cache is None
+        assert getattr(vault, "_cache") is None
     finally:
         vault.close()

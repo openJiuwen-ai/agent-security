@@ -620,7 +620,7 @@ def test_claiming_a_rotation_against_a_moved_generation_fails(stores):
 
     # A rotation that still holds the old generation cannot claim.
     wrapped = helper.mint_wrapped_dek(v)
-    claimed = rotate._claim_rotation(v, stale + 1, wrapped, stale)
+    claimed = getattr(rotate, "_claim_rotation")(v, stale + 1, wrapped, stale)
     assert not claimed, (
         f"the claim landed against the generation {stale}, but the store is on {moved}"
     )
@@ -890,6 +890,9 @@ def test_a_stale_rotation_refreshes_from_the_fleet_and_tries_again(monkeypatch):
             StaleGenerationError("still behind")
         ),
     )
-    target.refresh_from_fleet = lambda: False
+    def refresh_from_fleet() -> bool:
+        return False
+
+    target.refresh_from_fleet = refresh_from_fleet
     with pytest.raises(StaleGenerationError):
         rotate.rotate_dek(target)

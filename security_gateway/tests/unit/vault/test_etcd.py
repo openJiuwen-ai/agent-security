@@ -138,8 +138,7 @@ class RecordingKV(FakeKV):
 
 
 def test_write_record_is_readable_locally(db, authority, fake):
-    """A record written through the authority is readable from the local
-    database — and from the authority itself."""
+    """A record written through the authority is readable from the local database."""
     payload = _payload(make_test_schema(), _snapshot(1), b"secret")
 
     authority.write_record(db, "cred-1", payload, 1, 1)
@@ -163,8 +162,7 @@ def test_delete_record_removes_it_locally(db, authority):
 
 
 def test_reencrypt_record_payload_reencrypts_under_the_new_key():
-    """The payload comes out under the new key, and the old key no longer
-    opens it."""
+    """The payload comes out under the new key, and the old key no longer opens it."""
     schema = make_test_schema()
     prev = _snapshot(1)
     cur = _snapshot(2)
@@ -300,8 +298,7 @@ def test_the_convergence_pass_refuses_a_record_it_cannot_open(db, authority):
 
 
 def test_a_fenced_write_is_not_a_transport_failure(db, authority):
-    """A write from a superseded generation is refused, and refused as
-    what it is: the writer is behind, not the network."""
+    """A write from a superseded generation is refused as a stale writer."""
     schema = make_test_schema()
     payload = _payload(schema, _snapshot(1), b"secret")
     authority.write_record(db, "cred-1", payload, 1, 1)
