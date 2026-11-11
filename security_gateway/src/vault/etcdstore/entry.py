@@ -156,7 +156,10 @@ class Timestamp:
         offset = value.utcoffset()
         if offset is None:
             raise InvalidValueError("etcdstore: a timestamp needs a timezone")
-        stamp = f"{value.year:04d}-{value.month:02d}-{value.day:02d}T{value.hour:02d}:{value.minute:02d}:{value.second:02d}"
+        stamp = (
+            f"{value.year:04d}-{value.month:02d}-{value.day:02d}"
+            f"T{value.hour:02d}:{value.minute:02d}:{value.second:02d}"
+        )
         micro = value.microsecond
         if micro:
             frac = f"{micro:06d}".rstrip("0")
