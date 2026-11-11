@@ -31,6 +31,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from contextlib import nullcontext
 import time
 from collections.abc import Mapping
 from typing import Any, Callable
@@ -96,7 +97,6 @@ from .store import (
     run_with_busy_retry,
 )
 
-from contextlib import nullcontext
 
 _log = logging.getLogger(__name__)
 
