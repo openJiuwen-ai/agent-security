@@ -672,6 +672,7 @@ async def _serve_port(
     port: int,
     egress_filter: EgressFilter,
     stop_event: asyncio.Event,
+    ready: asyncio.Future | None = None,
 ) -> None:
     """在单个端口上监听, 直到 stop_event 触发."""
     server: asyncio.base_events.Server | None = None
@@ -680,12 +681,20 @@ async def _serve_port(
             await _handle_client(r, w, egress_filter)
 
         server = await asyncio.start_server(_cb, host="127.0.0.1", port=port)
+        if ready is not None and not ready.done():
+            ready.set_result(None)
         logger.info("win_proxy 监听 127.0.0.1:%d", port)
         # 阻塞直到 stop_event.
         await stop_event.wait()
-    except OSError as exc:
-        logger.warning("win_proxy 端口 %d 启动失败: %s", port, exc)
+    except Exception as exc:  # Forward bind failures through the ready future.
+        if ready is not None and not ready.done():
+            ready.set_exception(exc)
+            logger.warning("win_proxy 端口 %d 启动失败: %s", port, exc)
+        else:
+            raise
     finally:
+        if ready is not None and not ready.done():
+            ready.cancel()
         if server is not None:
             server.close()
             try:
@@ -713,23 +722,31 @@ async def serve_windows_proxy(  # pylint: disable=huawei-too-many-arguments
     if stop_event is None:
         stop_event = asyncio.Event()
     egress_filter = EgressFilter(egress, ingress, disable_all=disable_all)
+    ready = asyncio.get_running_loop().create_future()
     # 只绑 port_range_start (60080) 一个端口, 而不是整个范围.
     # HTTP_PROXY 始终指向 port_range_start, 其他端口绑了也没用.
     # 60081-60089 释放给沙箱内 render server 等本地服务用.
     tasks = [
         asyncio.create_task(
-            _serve_port(port_range_start, egress_filter, stop_event),
+            _serve_port(port_range_start, egress_filter, stop_event, ready),
             name=f"win-proxy-port-{port_range_start}",
         ),
     ]
 
     async def _supervisor():
         try:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(*tasks)
         except Exception:  # noqa: BLE001
             logger.exception("win_proxy supervisor 异常")
+            raise
 
     proxy_task = asyncio.create_task(_supervisor(), name="win-proxy-supervisor")
+    try:
+        await ready
+    except BaseException:
+        proxy_task.cancel()
+        await asyncio.gather(proxy_task, return_exceptions=True)
+        raise
     logger.info(
         "win_proxy 启动: 端口范围 %d-%d, egress default=%s",
         port_range_start, port_range_end, egress.default,

@@ -30,6 +30,7 @@ WFP user-mode API 位于 fwpuclnt.dll, 通过 ctypes 加载. 所有结构体定�
 from __future__ import annotations
 
 import ctypes
+import json
 import logging
 import subprocess
 import sys
@@ -122,7 +123,9 @@ def _wfp_error(hr: int, where: str) -> "OSError":
         # 精确名需对照本地 SDK fwperr.h (无法在线核实时不臆测写死).
         name = f"FWP_E_UNLISTED_{hr & 0xFFFF:04X} (check fwperr.h)"
     label = name or "UNKNOWN"
-    return OSError(f"[{where}] WFP/HRESULT hr=0x{hr:08X} ({label})")
+    error = OSError(f"[{where}] WFP/HRESULT hr=0x{hr:08X} ({label})")
+    error.winerror = hr
+    return error
 
 
 # ---------------------------------------------------------------------------
@@ -491,12 +494,12 @@ def _get_fwpuclnt() -> ctypes.WinDLL:
             wintypes.HANDLE, ctypes.c_void_p, ctypes.POINTER(wintypes.HANDLE),
         ]
         _fwpuclnt.FwpmFilterCreateEnumHandle0.restype = wintypes.DWORD
-        # FwpmFilterEnum0(engine, enumHandle, numEntriesRequested*, entries**)
-        #   entries 是 FwpmFilter0** (BFE 分配, FwpmFreeMemory0 释放).
+        # UINT32 requested, FWPM_FILTER0*** entries, UINT32* returned.
         _fwpuclnt.FwpmFilterEnum0.argtypes = [
             wintypes.HANDLE, wintypes.HANDLE,
+            wintypes.UINT,
+            ctypes.POINTER(ctypes.POINTER(ctypes.POINTER(FwpmFilter0))),
             ctypes.POINTER(wintypes.UINT),
-            ctypes.POINTER(ctypes.POINTER(FwpmFilter0)),
         ]
         _fwpuclnt.FwpmFilterEnum0.restype = wintypes.DWORD
         # FwpmFilterDestroyEnumHandle0(engine, enumHandle).
@@ -720,8 +723,7 @@ def _add_filter(  # pylint: disable=huawei-too-many-arguments
 ) -> None:
     """安装一个 filter.
 
-    幂等: 已存在 (FWP_E_ALREADY_EXISTS) 则先删后加以升级为 persistent,
-    (旧 docstring 误导为"先删后加", 已修正).
+    已存在的 key 在调用方事务内替换, 更新 SID/条件并保留其他 key.
     """
     fwpu = _get_fwpuclnt()
     fkey = _guid_from_str(filter_key)
@@ -748,10 +750,13 @@ def _add_filter(  # pylint: disable=huawei-too-many-arguments
     fid = ctypes.c_uint64(0)
     hr = fwpu.FwpmFilterAdd0(engine, ctypes.byref(flt), None, ctypes.byref(fid))
     if hr == const.FWP_E_ALREADY_EXISTS:
-        # 旧 filter 已存在 (幂等), 跳过. persistent flag 只在首次创建时生效,
-        # 旧 non-persistent filter 需先 uninstall 再 install 才能升级.
-        logger.debug("Filter 已存在, 跳过: %s", display_name)
-    if hr != 0 and hr != const.FWP_E_ALREADY_EXISTS:
+        # Stable keys do not include the SID. Ignoring duplicates could leave
+        # the block/permit conditions bound to a deleted sandbox account.
+        hr = fwpu.FwpmFilterDeleteByKey0(engine, ctypes.byref(fkey))
+        if hr != 0:
+            raise _wfp_error(hr, f"FwpmFilterDeleteByKey0({display_name})")
+        hr = fwpu.FwpmFilterAdd0(engine, ctypes.byref(flt), None, ctypes.byref(fid))
+    if hr != 0:
         # 诊断: 0x6F7=RPC_X_BAD_STUB_DATA 时打 sizeof(flt)/指针字段值助定位.
         # sizeof(flt) 应与 SDK sizeof(FwpmFilter0) 一致; 指针字段指向有效内存或 NULL.
         # 整块 try 防诊断异常掩盖真实 hr.
@@ -791,6 +796,23 @@ def _add_filter(  # pylint: disable=huawei-too-many-arguments
     logger.info("WFP filter 安装: %s (layer=%s, action=%d)", display_name, layer_key, action_type)
 
 
+def proxy_permits_installed(port_start: int, port_end: int) -> bool:
+    """Check the requested v4/v6 permit keys without modifying shared filters."""
+    _require_windows()
+    engine = _open_engine()
+    try:
+        installed = {key.lower() for key in _enumerate_sublayer_filters(engine, strict=True)}
+        required = {
+            _permit_filter_guid_str(base, port).lower()
+            for base in (const.JBX_FILTER_PERMIT_KEY_V4, const.JBX_FILTER_PERMIT_KEY_V6)
+            for port in range(port_start, port_end + 1)
+        }
+        required.update((const.JBX_FILTER_BLOCK_KEY_V4.lower(), const.JBX_FILTER_BLOCK_KEY_V6.lower()))
+        return required <= installed
+    finally:
+        _get_fwpuclnt().FwpmEngineClose0(engine)
+
+
 def install_wfp_filters(
     sandbox_user_sid: str,
     permit_port_start: int,
@@ -798,8 +820,7 @@ def install_wfp_filters(
 ) -> None:
     """安装 Block + Permit WFP filter set.
 
-    幂等: sublayer/filter 用固定合法 Guid key, 重复安装会命中
-    FWP_E_ALREADY_EXISTS 并被忽略.
+    sublayer/filter 用固定合法 Guid key; 在事务内更新已有 filter 的 SID/条件.
 
     Args:
         sandbox_user_sid: jbx-sandbox 用户 SID 字符串.
@@ -813,7 +834,9 @@ def install_wfp_filters(
 
     engine = _open_engine()
     try:
-        fwpu.FwpmTransactionBegin0(engine, 0)
+        hr = fwpu.FwpmTransactionBegin0(engine, 0)
+        if hr != 0:
+            raise _wfp_error(hr, "FwpmTransactionBegin0")
         try:
             sublayer_key = _add_sublayer(engine, const.JBX_SUBLAYER_KEY, weight=100)
 
@@ -882,7 +905,9 @@ def install_wfp_filters(
                     f"JiuwenBox-Permit-DNS-{dns_key}",
                 )
 
-            fwpu.FwpmTransactionCommit0(engine)
+            hr = fwpu.FwpmTransactionCommit0(engine)
+            if hr != 0:
+                raise _wfp_error(hr, "FwpmTransactionCommit0")
         except Exception:
             fwpu.FwpmTransactionAbort0(engine)
             raise
@@ -894,7 +919,7 @@ def install_wfp_filters(
     )
 
 
-def _enumerate_sublayer_filters(engine) -> "list[str]":
+def _enumerate_sublayer_filters(engine, *, strict: bool = False) -> list[str]:
     """枚举 JBX sublayer 下所有 filter 的 filterKey (Guid 字符串).
 
     review #1: uninstall 用枚举法删全部 filter, 不依赖端口范围即可干净卸载
@@ -912,6 +937,8 @@ def _enumerate_sublayer_filters(engine) -> "list[str]":
         engine, None, ctypes.byref(enum_handle),
     )
     if hr != 0:
+        if strict:
+            raise _wfp_error(hr, "FwpmFilterCreateEnumHandle0")
         logger.warning(
             "FwpmFilterCreateEnumHandle0 失败: %s",
             _wfp_error(hr, "FwpmFilterCreateEnumHandle0"),
@@ -921,12 +948,13 @@ def _enumerate_sublayer_filters(engine) -> "list[str]":
     try:
         while True:
             num_entries = wintypes.UINT(0)
-            entries_ptr = ctypes.POINTER(FwpmFilter0)()
+            entries_ptr = ctypes.POINTER(ctypes.POINTER(FwpmFilter0))()
             hr = fwpu.FwpmFilterEnum0(
-                engine, enum_handle, ctypes.byref(num_entries),
-                ctypes.byref(entries_ptr),
+                engine, enum_handle, 1024, ctypes.byref(entries_ptr), ctypes.byref(num_entries),
             )
             if hr != 0:
+                if strict:
+                    raise _wfp_error(hr, "FwpmFilterEnum0")
                 logger.warning(
                     "FwpmFilterEnum0 失败: %s",
                     _wfp_error(hr, "FwpmFilterEnum0"),
@@ -939,7 +967,7 @@ def _enumerate_sublayer_filters(engine) -> "list[str]":
             try:
                 for i in range(n):
                     try:
-                        flt = entries_ptr[i]
+                        flt = entries_ptr[i].contents
                         # 按 sub_layer_key 过滤: 只收本 sublayer 的 filter.
                         if _guid_equal(flt.sub_layer_key, sublayer_guid):
                             keys.append(_guid_to_str(flt.filter_key))
@@ -949,7 +977,7 @@ def _enumerate_sublayer_filters(engine) -> "list[str]":
                 # BFE 分配的 entries 数组必须用 FwpmFreeMemory0 释放.
                 if entries_ptr:
                     try:
-                        p = ctypes.c_void_p(ctypes.addressof(entries_ptr.contents))
+                        p = ctypes.cast(entries_ptr, ctypes.c_void_p)
                         fwpu.FwpmFreeMemory0(ctypes.byref(p))
                     except Exception:  # noqa: BLE001
                         logger.debug("FwpmFreeMemory0 失败", exc_info=True)
@@ -1070,6 +1098,103 @@ def _delete_filter_by_key(fwpu, engine, fkey: str) -> None:
         logger.warning("删除 WFP filter %s: %s", fkey, _wfp_error(hr, "FwpmFilterDeleteByKey0"))
     except Exception:  # noqa: BLE001
         logger.warning("删除 WFP filter %s 异常", fkey, exc_info=True)
+
+
+def _firewall_remote_ports_cover(ports, port_start: int, port_end: int) -> bool:
+    if not isinstance(ports, list):
+        return False
+    for value in ports:
+        if not isinstance(value, str):
+            continue
+        try:
+            first, separator, last = value.partition("-")
+            if separator and not last:
+                continue
+            start, end = int(first), int(last or first)
+        except ValueError:
+            continue
+        if 1 <= start <= port_start <= port_end <= end <= 65535:
+            return True
+    return False
+
+
+def _firewall_rule_applies(rule, sid: str) -> bool:
+    if not isinstance(rule, dict) or rule.get("enabled") is not True:
+        return False
+    if rule.get("direction") != "Outbound" or rule.get("profile") != "Any":
+        return False
+    if rule.get("local_user") != f"D:(A;;CC;;;{sid})":
+        return False
+    return rule.get("local_addresses") == ["Any"] and rule.get("local_ports") == ["Any"]
+
+
+def _firewall_snapshot_ready(snapshot, sid: str, port_start: int, port_end: int) -> bool:
+    """Validate the current fallback rules, not just their display names."""
+    if not isinstance(snapshot, dict) or snapshot.get("profiles_enabled") is not True:
+        return False
+    rules = snapshot.get("rules")
+    if not isinstance(rules, list):
+        return False
+    block_ready, permit_ready = False, False
+    for rule in rules:
+        if not _firewall_rule_applies(rule, sid):
+            continue
+        if rule.get("name") == "JiuwenBox-Block-Sandbox-Egress":
+            if rule.get("action") != "Block" or rule.get("protocol") not in ("Any", "256"):
+                continue
+            if rule.get("remote_addresses") == ["Any"] and rule.get("remote_ports") == ["Any"]:
+                block_ready = True
+        elif rule.get("name") == "JiuwenBox-Permit-Loopback":
+            if rule.get("action") != "Allow" or rule.get("protocol") not in ("TCP", "6"):
+                continue
+            if rule.get("remote_addresses") not in (["127.0.0.1"], ["127.0.0.1/32"]):
+                continue
+            if _firewall_remote_ports_cover(rule.get("remote_ports"), port_start, port_end):
+                permit_ready = True
+    return block_ready and permit_ready
+
+
+def firewall_permits_installed(sandbox_user_sid: str, port_start: int, port_end: int) -> bool:
+    """Read back effective fallback rules; query failure never means ready."""
+    _require_windows()
+    # Fixed read-only query: caller-controlled SID/ports are checked in Python,
+    # never interpolated into PowerShell. ActiveStore includes merged policy.
+    query = """
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$profiles = @(Get-NetFirewallProfile -PolicyStore ActiveStore)
+$rules = @(Get-NetFirewallRule -PolicyStore ActiveStore -DisplayName `
+    'JiuwenBox-Block-Sandbox-Egress','JiuwenBox-Permit-Loopback')
+$snapshot = @{
+    profiles_enabled = ($profiles.Count -eq 3 -and
+        @($profiles | Where-Object { [string]$_.Enabled -ne 'True' }).Count -eq 0)
+    rules = @($rules | ForEach-Object {
+        $ports = $_ | Get-NetFirewallPortFilter
+        $addresses = $_ | Get-NetFirewallAddressFilter
+        $security = $_ | Get-NetFirewallSecurityFilter
+        @{
+            name = $_.DisplayName; enabled = ([string]$_.Enabled -eq 'True')
+            direction = [string]$_.Direction; action = [string]$_.Action; profile = [string]$_.Profile
+            local_user = [string]$security.LocalUser; protocol = [string]$ports.Protocol
+            local_ports = @($ports.LocalPort); remote_ports = @($ports.RemotePort)
+            local_addresses = @($addresses.LocalAddress); remote_addresses = @($addresses.RemoteAddress)
+        }
+    })
+}
+$snapshot | ConvertTo-Json -Depth 5 -Compress
+"""
+    try:
+        result = subprocess.run(
+            [_get_powershell(), "-NoProfile", "-Command", query], check=True,
+            capture_output=True, timeout=30, encoding="utf-8", **_hidden_kwargs(),
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise OSError("Cannot query current firewall proxy rules") from exc
+    try:
+        snapshot = json.loads(result.stdout)
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError("Invalid firewall rule query result") from exc
+    return _firewall_snapshot_ready(snapshot, sandbox_user_sid, port_start, port_end)
 
 
 def install_firewall_rule_fallback(

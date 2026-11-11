@@ -298,35 +298,28 @@ async def _start_windows_backend(policy_reader: PolicyReader) -> None:
 
     Runs exactly once per process boot on Windows hosts:
 
-    1. ``win_setup.ensure_windows_setup`` — create ``jbx-sandbox`` user /
-       group, grant interactive-logon right, install WFP filters and
-       preinstall read ACLs (elevating via UAC when needed). This is the
-       only place elevation is attempted; the runtime adapter itself never
-       pops a UAC dialog.
+    1. ``win_setup.ensure_windows_setup`` — validate that the account,
+       WFP filters and read ACLs were prepared before service startup.
+       The service never opens a UAC dialog; explicit setup owns elevation.
     2. ``win_proxy.serve_windows_proxy`` — start the loopback egress proxy
        that sandbox traffic is forced through by the WFP permit filter.
 
-    All failures are logged but non-fatal: the Windows runtime adapter
-    fails closed at sandbox-creation time if the environment was not
-    prepared.
+    Policy, setup and egress-proxy failures prevent successful startup.
+    The existing soft-delete broker fallback is unchanged.
     """
     global _win_proxy_task, _win_proxy_stop_event
     from jiuwenbox.supervisor import win_proxy, win_setup
-    from jiuwenbox.supervisor import win_constants as _wconst
 
     # 1. Environment preparation (elevates only when required).
     try:
-        _root_policy = policy_reader.load_policy()
-        _preinstall = win_setup.collect_preinstall_paths(_root_policy)
-        _proxy_start = _root_policy.windows.proxy.port_range_start
-        _proxy_end = _root_policy.windows.proxy.port_range_end
+        root_policy = policy_reader.load_policy()
+        _preinstall = win_setup.collect_preinstall_paths(root_policy)
+        _proxy_start = root_policy.windows.proxy.port_range_start
+        _proxy_end = root_policy.windows.proxy.port_range_end
         _policy_path = str(getattr(policy_reader, "policy_path", "") or "")
     except Exception:  # noqa: BLE001
-        logger.exception("Windows policy 读取失败, 使用默认 setup 参数")
-        _preinstall = None
-        _proxy_start = _wconst.DEFAULT_PROXY_PORT_RANGE_START
-        _proxy_end = _wconst.DEFAULT_PROXY_PORT_RANGE_END
-        _policy_path = ""
+        logger.exception("Windows policy 读取失败, 不执行 setup")
+        raise
 
     try:
         win_setup.ensure_windows_setup(
@@ -338,12 +331,12 @@ async def _start_windows_backend(policy_reader: PolicyReader) -> None:
         )
     except Exception:  # noqa: BLE001
         logger.exception(
-            "ensure_windows_setup 失败; Windows 沙箱可能不可用",
+            "ensure_windows_setup 失败; Windows 沙箱启动终止",
         )
+        raise
 
     # 2. Egress proxy (egress rules from the root policy's windows.network).
     try:
-        root_policy = policy_reader.load_policy()
         egress = root_policy.windows.network.egress
         ingress = root_policy.windows.network.ingress
         net_disable_all = bool(root_policy.windows.network.disable_all)
@@ -358,8 +351,9 @@ async def _start_windows_backend(policy_reader: PolicyReader) -> None:
         )
     except Exception:  # noqa: BLE001
         logger.exception(
-            "Windows 出站代理启动失败; 沙箱网络隔离将不可用",
+            "Windows 出站代理启动失败; Windows 沙箱启动终止",
         )
+        raise
 
     try:
         from jiuwenbox.supervisor.win_recycle_broker import (
