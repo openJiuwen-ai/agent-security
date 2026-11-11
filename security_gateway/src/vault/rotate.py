@@ -48,9 +48,11 @@ from security_gateway.crypto import (
     DEK_SIZE,
     SHARD_SIZE,
     KeyBytes,
+    Mode,
     decrypt_credential,
     encrypt_credential,
     parse_mode,
+    unwrap_dek,
     wrap_dek,
 )
 from security_gateway.crypto.errors import CryptoError
@@ -76,9 +78,11 @@ from .keys import (
     crypto_mode_unusable,
     derive_kek,
     load_s1_from_file,
+    random_shard,
     read_key_meta,
     s1_path,
     update_key_meta,
+    write_s1_to_file,
 )
 from .schema import Schema  # noqa: F401 - re-exported
 from .store import Database  # noqa: F401 - re-exported
@@ -86,18 +90,34 @@ from .store import count_stragglers as _count_store_stragglers  # noqa: F401 - r
 from .store import run_with_busy_retry, select_stragglers, update_record_cipher
 
 from .rotate_authority import (
-    _advance_generation, _authority_store, _converge_authority,
+    _advance_generation,
+    _authority_store,
+    _converge_authority,
     _count_authority_stragglers,  # noqa: F401 - re-exported
-    _fleet_rotation_gate, _record_fleet_rotation_gate, _release_fleet_lock,
+    _fleet_rotation_gate,
+    _record_fleet_rotation_gate,
+    _release_fleet_lock,
     _reencrypt_payload,  # noqa: F401 - re-exported
-    count_stragglers, rotation_holder,
+    count_stragglers,
+    rotation_holder,
 )
 from .rotate_engine import (
-    MAX_CLAIM_ATTEMPTS, MAX_ROTATION_ATTEMPTS, PENDING_LEASE_JITTER_SECONDS,
-    PENDING_LEASE_SECONDS, ROTATION_BATCH_SIZE, ROTATION_LOCK_TTL_SECONDS,
-    RotationTarget, _claim_rotation, _commit_rotation, _not_started,
-    _refresh_lease, _sleep_jitter, _stop_check, _stop_from_event,
-    converge_stragglers, rotation_finished_elsewhere,
+    MAX_CLAIM_ATTEMPTS,
+    MAX_ROTATION_ATTEMPTS,
+    PENDING_LEASE_JITTER_SECONDS,
+    PENDING_LEASE_SECONDS,
+    ROTATION_BATCH_SIZE,
+    ROTATION_LOCK_TTL_SECONDS,
+    RotationTarget,
+    _claim_rotation,
+    _commit_rotation,
+    _not_started,
+    _refresh_lease,
+    _sleep_jitter,
+    _stop_check,
+    _stop_from_event,
+    converge_stragglers,
+    rotation_finished_elsewhere,
 )
 
 
@@ -113,7 +133,10 @@ __all__ = [
     "converge_stragglers",
     "converge_to",
     "count_stragglers",
+    "finish_pending_rotation",
     "rotate_dek",
+    "rotate_s1",
+    "rotate_s2",
     "rotation_finished_elsewhere",
     "rotation_holder",
     "set_rotate_before_claim_hook",
@@ -122,6 +145,104 @@ __all__ = [
 ]
 
 _log = logging.getLogger(__name__)
+
+
+def _kek_shard(shard: bytes | None) -> bytes:
+    """Validate an operator-provided shard or mint a fresh one."""
+    if shard is None:
+        return random_shard()
+    if not isinstance(shard, (bytes, bytearray)) or len(shard) != SHARD_SIZE:
+        raise KeyMismatchError(
+            f"vault: the KEK shard is {len(shard)} bytes, want {SHARD_SIZE}"
+        )
+    value = bytes(shard)
+    if not any(value):
+        raise KeyMismatchError("vault: refusing an all-zero KEK shard")
+    return value
+
+
+def _rewrap_dek(
+    mode: Mode, old_kek: KeyBytes, new_kek: KeyBytes, wrapped: bytes
+) -> bytes:
+    """Move one wrapped DEK from the old KEK to the new one."""
+    if not wrapped:
+        return b""
+    try:
+        dek = unwrap_dek(mode, old_kek.bytes(), wrapped)
+    except CryptoError as exc:
+        raise KeyMismatchError(
+            "the stored DEK does not open with this store's key material"
+        ) from exc
+    return wrap_dek(mode, new_kek.bytes(), dek)
+
+
+def _rotate_kek(vault: RotationTarget, shard: bytes | None, *, s1: bool) -> None:
+    """Replace S1 or S2 and re-wrap every DEK generation under the new KEK.
+
+    The DEK does not change, so no record is rewritten. A new S1 is
+    written before the metadata moves; a crash in between leaves the old
+    row pointing at the old, still-present file.
+    """
+    with vault.rotate_mu:
+        with vault.wmu:
+            km = read_key_meta(vault.db)
+            if km is None:
+                raise KeyMismatchError("the store has no key metadata")
+            try:
+                mode = parse_mode(km.crypto_mode)
+            except CryptoError as exc:
+                raise KeyMismatchError(
+                    f'stored crypto mode "{km.crypto_mode}" is not usable: {exc}'
+                ) from exc
+            if len(km.active_config_shard) != SHARD_SIZE:
+                raise KeyMismatchError(
+                    f"stored config shard is {len(km.active_config_shard)} bytes, "
+                    f"want {SHARD_SIZE}"
+                )
+            old_s1 = load_s1_from_file(
+                s1_path(vault.secrets_dir, km.file_shard_version)
+            )
+            new_shard = _kek_shard(shard)
+            old_kek = derive_kek(old_s1, km.active_config_shard, mode)
+            try:
+                if s1:
+                    new_kek = derive_kek(new_shard, km.active_config_shard, mode)
+                else:
+                    new_kek = derive_kek(old_s1, new_shard, mode)
+                try:
+                    new_wrapped = _rewrap_dek(mode, old_kek, new_kek, km.wrapped_dek)
+                    new_pending = _rewrap_dek(
+                        mode, old_kek, new_kek, km.pending_wrapped_dek
+                    )
+                    new_superseded = _rewrap_dek(
+                        mode, old_kek, new_kek, km.superseded_wrapped_dek
+                    )
+                finally:
+                    new_kek.zero()
+            finally:
+                old_kek.zero()
+
+            if s1:
+                new_version = km.file_shard_version + 1
+                write_s1_to_file(s1_path(vault.secrets_dir, new_version), new_shard)
+                km.file_shard_version = new_version
+                km.file_shard_rotated_at = int(time.time())
+            else:
+                km.active_config_shard = new_shard
+            km.wrapped_dek = new_wrapped
+            km.pending_wrapped_dek = new_pending
+            km.superseded_wrapped_dek = new_superseded
+            update_key_meta(vault.db, km)
+
+
+def rotate_s1(vault: RotationTarget, shard: bytes | None = None) -> None:
+    """Replace the S1 shard and re-wrap the store's DEK generations."""
+    _rotate_kek(vault, shard, s1=True)
+
+
+def rotate_s2(vault: RotationTarget, shard: bytes | None = None) -> None:
+    """Replace the S2 shard and re-wrap the store's DEK generations."""
+    _rotate_kek(vault, shard, s1=False)
 
 
 def rotate_dek(
@@ -133,10 +254,15 @@ def rotate_dek(
 ) -> None:
     """Replace the store's data encryption key.
 
-    ``leases`` is the lease factory the rotation lock is taken on. The
-    lock lives on an etcd lease, and a lease that is not renewed is a
-    lock that expires in the middle of a rotation.
+    The same call works in both storage modes. When the vault has an
+    etcd authority the authority's store is used to take the fleet's
+    rotation lock; ``store`` is only needed by callers that hold a
+    lower-level handle. ``leases`` is the lease factory that lock is
+    taken on: a lock without a lease never expires.
     """
+    if store is None:
+        authority = getattr(vault, "authority", None)
+        store = getattr(authority, "store", None)
     with vault.rotate_mu:
         lock = None
         stop_heartbeat = None
@@ -152,13 +278,41 @@ def rotate_dek(
             # loss stops the rotation rather than being logged and ignored.
             stop_heartbeat, lost_lock = _start_rotation_lock_heartbeat(lock)
         try:
-            _rotate_locked(vault, store, _stop_check(lost_lock, cancel))
+            for attempt in range(2):
+                try:
+                    _rotate_locked(vault, store, _stop_check(lost_lock, cancel))
+                    break
+                except StaleGenerationError:
+                    # Another node moved the fleet on while this process
+                    # still held the generation before.  Adopt what the
+                    # fleet has and try again; if it cannot be adopted,
+                    # the stale key is the honest answer.
+                    refresh = getattr(vault, "refresh_from_fleet", None)
+                    if attempt == 1 or refresh is None or not refresh():
+                        raise
             if store is not None:
                 # The fleet's gate: one timestamp for the whole fleet, so
                 # three nodes with three tickers rotate once between them
                 # and not three times. Only the node that held the lock
                 # writes it.
                 _record_fleet_rotation_gate(store)
+                wait = getattr(vault, "await_adoption", None)
+                km = read_key_meta(vault.db)
+                if wait is not None and km is not None:
+                    from security_gateway.vault.etcdstore import PRESENCE_TTL_SECONDS
+
+                    result = wait(
+                        int(km.active_dek_version),
+                        timeout=2.0 * PRESENCE_TTL_SECONDS + 10.0,
+                    )
+                    if result.timed_out and result.required:
+                        _log.warning(
+                            "vault: generation %s was adopted by %s of %s "
+                            "required peers before the barrier timed out",
+                            km.active_dek_version,
+                            result.confirmed,
+                            result.required,
+                        )
         finally:
             if stop_heartbeat is not None:
                 stop_heartbeat()
@@ -310,8 +464,7 @@ def converge_to(
                 # The record is named: a container that does not parse is
                 # one record's damage, and which record it is, is the whole
                 # of what the operator needs to know.
-                raise VaultError(
-                    f'vault: decode record "{row.id}": {exc}') from exc
+                raise VaultError(f'vault: decode record "{row.id}": {exc}') from exc
             defs = sch.field_lookup()
 
             src = vault.keys.by_version(row.dek_version)
@@ -328,11 +481,9 @@ def converge_to(
                 vault.reload_snapshot()
                 src = vault.keys.by_version(row.dek_version)
             if src is None:
-                held = format_held_versions(vault.keys.held_versions())
                 raise StaleGenerationError(
-                    f'record "{row.id}" is under generation '
-                    f"{row.dek_version}, which this store does not hold "
-                    f"(it holds {held})"
+                    f'record "{row.id}" is under generation {row.dek_version}, which this store does not hold (it holds '
+                    f"{format_held_versions(vault.keys.held_versions())})"
                 )
 
             rewritten: list[ContainerField] = []
@@ -344,9 +495,7 @@ def converge_to(
                     )
                 if f.encrypted != definition.encrypted:
                     raise SchemaMismatchError(
-                        f'record "{row.id}" field "{f.name}" is marked '
-                        f"encrypted={f.encrypted} but schema v{sch.version} "
-                        f"says {definition.encrypted}"
+                        f'record "{row.id}" field "{f.name}" is marked encrypted={f.encrypted} but schema v{sch.version} says {definition.encrypted}'
                     )
                 if not definition.encrypted:
                     rewritten.append(f)
@@ -358,13 +507,11 @@ def converge_to(
                         f'record "{row.id}" field "{f.name}" is under neither the current nor the previous key'
                     ) from exc
                 try:
-                    sealed = encrypt_credential(
-                        target.mode, target.dek_bytes(), plain
-                    )
+                    sealed = encrypt_credential(target.mode, target.dek_bytes(), plain)
                 except CryptoError as exc:
                     raise VaultError(
-                        f"vault: re-encrypt record {row.id!r} field "
-                        f"{f.name!r}: {exc}") from exc
+                        f"vault: re-encrypt record {row.id!r} field {f.name!r}: {exc}"
+                    ) from exc
                 rewritten.append(
                     ContainerField(
                         name=f.name,
@@ -391,6 +538,51 @@ def converge_to(
             )
 
         _refresh_lease(vault, target.version, stop)
+
+
+def finish_pending_rotation(
+    vault: RotationTarget,
+    store: Any | None = None,
+    cancel: Callable[[], BaseException | None] | None = None,
+) -> None:
+    """Finish a rotation left pending by another process.
+
+    The fleet lock makes this safe to attempt from every process:
+    whoever holds the lock finishes the pending generation, and the
+    others see the lock and leave it alone.
+    """
+    with vault.rotate_mu:
+        store = store if store is not None else _authority_store(vault)
+        if store is None:
+            _takeover_locked(vault, cancel)
+            return
+        try:
+            lock = _acquire_fleet_lock(store, None)
+        except RotationInProgressError:
+            return
+        try:
+            km = read_key_meta(vault.db)
+            if km is None or km.pending_dek_version == 0:
+                return
+            pending = vault.keys.pend()
+            if pending is None:
+                vault.reload_snapshot()
+                pending = vault.keys.pend()
+            if pending is None:
+                return
+            _run_claimed_rotation(
+                vault,
+                store,
+                km,
+                int(km.pending_dek_version),
+                pending,
+                bytes(km.pending_wrapped_dek),
+                bytes(km.wrapped_dek),
+                int(km.active_dek_version),
+                cancel,
+            )
+        finally:
+            _release_fleet_lock(lock)
 
 
 def takeover_pending(
@@ -427,9 +619,7 @@ def _takeover_locked(
     # A fresh lease means the rotation that claimed the generation is still
     # working. It is not ours to take over.
     if (time.time() - updated_at) < PENDING_LEASE_SECONDS:
-        raise RotationInProgressError(
-            f"a rotation to v{pending} is in progress"
-        )
+        raise RotationInProgressError(f"a rotation to v{pending} is in progress")
 
     # Wait a random moment, then look again. Several processes can notice
     # the same stale lease at the same time; staggering them means one of
@@ -449,9 +639,7 @@ def _takeover_locked(
         )
     if km.updated_at != updated_at:
         # The lease was refreshed: the rotation is alive.
-        raise RotationInProgressError(
-            f"a rotation to v{pending} is in progress"
-        )
+        raise RotationInProgressError(f"a rotation to v{pending} is in progress")
 
     # Adopt the pending generation. The key is already in the store — the
     # rotation that claimed it wrapped it there before it died — so the
@@ -556,7 +744,7 @@ def _rotate_locked(
             # the fleet. A target taken from the local row would mint a key
             # for a generation the fleet has already left — two keys under
             # one generation, and records neither of them can open.
-            from security_gateway.credmgr.etcdstore import read_generation
+            from security_gateway.vault.etcdstore import read_generation
 
             try:
                 gen, present = read_generation(store.kv, store.ns)
@@ -634,9 +822,7 @@ def _rotate_locked(
         if now.active_dek_version > start_version:
             vault.reload_snapshot()
             return
-    raise RotationInProgressError(
-        "the generation kept moving under the rotation"
-    )
+    raise RotationInProgressError("the generation kept moving under the rotation")
 
 
 def _run_claimed_rotation(
@@ -744,7 +930,7 @@ def _acquire_fleet_lock(store: Any, leases: Any | None) -> Any:
     for the same generation, so it is taken before anything else
     happens.
     """
-    from security_gateway.credmgr.etcdstore import acquire_rotation_lock
+    from security_gateway.vault.etcdstore import acquire_rotation_lock
 
     if leases is None:
         leases = getattr(store, "leases", None)
@@ -753,7 +939,7 @@ def _acquire_fleet_lock(store: Any, leases: Any | None) -> Any:
             "vault: etcd: the rotation lock needs a lease factory; the lock "
             "lives on a lease and a lock without one never expires"
         )
-    from security_gateway.credmgr.etcdstore.errors import RotationHeldError
+    from security_gateway.vault.etcdstore.errors import RotationHeldError
 
     try:
         return acquire_rotation_lock(
@@ -766,9 +952,7 @@ def _acquire_fleet_lock(store: Any, leases: Any | None) -> Any:
             "another node holds the fleet's rotation lock"
         ) from exc
     except Exception as exc:  # noqa: BLE001 - remapped to a vault error below
-        raise VaultError(
-            f"vault: etcd: acquire the rotation lock: {exc}"
-        ) from exc
+        raise VaultError(f"vault: etcd: acquire the rotation lock: {exc}") from exc
 
 
 def _start_rotation_lock_heartbeat(
