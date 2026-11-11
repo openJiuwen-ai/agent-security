@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import logging
+import os
 import shutil
 import socket
 import subprocess
@@ -34,6 +35,106 @@ IPTABLES_LEGACY_BINARY = "iptables-legacy"
 IP6TABLES_LEGACY_BINARY = "ip6tables-legacy"
 IPTABLES_NFT_BINARY = "iptables-nft"
 IP6TABLES_NFT_BINARY = "ip6tables-nft"
+
+# Seconds to wait for the xtables lock before giving up.
+#
+# ``iptables`` serialises every mutation through a single kernel lock
+# (``/run/xtables.lock``, or the nftables equivalent). Without ``-w`` the lock
+# is taken non-blocking, so a concurrent caller fails outright instead of
+# queueing:
+#
+#   Can't lock /run/xtables.lock: Resource temporarily unavailable
+#
+# Sandbox provisioning issues several iptables calls per sandbox, so creating
+# sandboxes in parallel made a large fraction of them fail with that error.
+# ``-w`` makes the kernel wait for the lock, turning the race into
+# serialisation.
+#
+# ``JIUWENBOX_IPTABLES_LOCK_WAIT_TIME`` holds a plain integer number of
+# seconds. Only the number is configurable - the ``-w`` flag itself is always
+# built here, so the value can never inject arbitrary iptables arguments:
+#
+#   unset             -> ``-w 5`` (the default)
+#   1 .. 300          -> ``-w <that many seconds>``
+#   "0" or empty      -> no ``-w`` at all (documented way to opt out)
+#   anything else     -> no ``-w`` at all, plus a one-off warning
+#   above 300         -> clamped to ``-w 300``, plus a one-off warning
+#
+# The escape hatch exists for iptables builds predating ``--wait``
+# (v1.4.20, 2013), which reject the flag outright.
+ENV_IPTABLES_LOCK_WAIT_TIME = "JIUWENBOX_IPTABLES_LOCK_WAIT_TIME"
+DEFAULT_IPTABLES_LOCK_WAIT_SECONDS = 5
+
+# Upper bound for the configured wait. ``-w`` takes an unsigned int, so an
+# absurd value would make every invocation fail on argument parsing - sandbox
+# creation would break outright instead of degrading - and a merely large
+# value would park each call for minutes. Five minutes is far above the
+# milliseconds a single rule batch needs, while still bounding that worst case.
+MAX_IPTABLES_LOCK_WAIT_SECONDS = 300
+
+# Values already reported, so a degraded deployment logs one warning instead of
+# one per iptables call.
+_warned_lock_wait_values: set[str] = set()
+
+_INVALID_LOCK_WAIT_REASON = (
+    "is not a positive integer; running iptables without -w, so concurrent "
+    "sandbox creation may fail with 'Can't lock /run/xtables.lock'."
+)
+
+
+def _warn_degraded_lock_wait(value: str, reason: str) -> None:
+    """Report a bad setting at most once per distinct value."""
+    if value not in _warned_lock_wait_values:
+        _warned_lock_wait_values.add(value)
+        logger.warning("%s=%r %s", ENV_IPTABLES_LOCK_WAIT_TIME, value, reason)
+
+
+def _parse_lock_wait_seconds(value: str) -> int:
+    """Return the configured wait in seconds, or ``0`` to disable ``-w``.
+
+    Only a plain ASCII decimal integer is accepted. Anything else - flags,
+    signs, floats, or Unicode digits such as ``"\u00b2"`` - yields ``0`` so a
+    typo can never splice foreign arguments onto the iptables command line.
+    """
+    text = value.strip()
+    if not text:
+        # Explicit empty value: the operator wants no -w at all. That is a
+        # documented setting rather than a mistake, so stay quiet.
+        return 0
+    # ``str.isdigit`` also accepts characters like "\u00b2" that ``int``
+    # rejects; that ValueError would escape as a non-NetworkSetupError and
+    # abort sandbox creation, defeating the "degrade instead" contract.
+    if not (text.isascii() and text.isdecimal()):
+        # A negative number is a typo too - the documented way to disable the
+        # wait is "0" or an empty value, neither of which reaches this branch.
+        _warn_degraded_lock_wait(value, _INVALID_LOCK_WAIT_REASON)
+        return 0
+    seconds = int(text)
+    if seconds > MAX_IPTABLES_LOCK_WAIT_SECONDS:
+        _warn_degraded_lock_wait(
+            value,
+            f"exceeds the {MAX_IPTABLES_LOCK_WAIT_SECONDS}s maximum and was "
+            f"clamped to {MAX_IPTABLES_LOCK_WAIT_SECONDS}s.",
+        )
+        return MAX_IPTABLES_LOCK_WAIT_SECONDS
+    return seconds
+
+
+def iptables_lock_wait_seconds() -> int:
+    """Seconds to wait for the xtables lock; ``0`` means "do not pass -w"."""
+    raw = os.environ.get(ENV_IPTABLES_LOCK_WAIT_TIME)
+    if raw is None:
+        return DEFAULT_IPTABLES_LOCK_WAIT_SECONDS
+    return _parse_lock_wait_seconds(raw)
+
+
+def iptables_wait_args() -> tuple[str, ...]:
+    """Arguments prepended to every iptables invocation.
+
+    ``("-w", "<s>")`` when the wait is enabled, otherwise empty.
+    """
+    seconds = iptables_lock_wait_seconds()
+    return ("-w", str(seconds)) if seconds > 0 else ()
 
 
 class NetworkSetupError(RuntimeError):
@@ -181,6 +282,30 @@ def _iptables_candidates(ip_version: int) -> list[str]:
     ))
 
 
+def build_iptables_argv(
+    binary: str,
+    args: list[str],
+    *,
+    namespace: str | None = None,
+) -> list[str]:
+    """Full argv used to invoke ``binary``, including the netns wrapper.
+
+    Shared by the runner and by the backend probe so diagnostics always
+    describe the command that actually ran.
+    """
+    # The xtables lock wait goes first: ``-w`` is a global option and must
+    # precede the command-specific ones (``-t``, ``-A``, ...). Callers never
+    # pass their own ``-w``, so prepending here cannot duplicate it.
+    #
+    # Default is ``-w 5``; ``JIUWENBOX_IPTABLES_LOCK_WAIT_TIME`` overrides the
+    # number of seconds, and a non-positive / non-integer value drops the flag
+    # for iptables builds without ``--wait``.
+    cmd = [binary, *iptables_wait_args()] + args
+    if namespace:
+        cmd = [IP_BINARY, "netns", "exec", namespace, *cmd]
+    return cmd
+
+
 def _run_iptables_binary(
     binary: str,
     args: list[str],
@@ -188,9 +313,7 @@ def _run_iptables_binary(
     check: bool = True,
     namespace: str | None = None,
 ) -> subprocess.CompletedProcess:
-    cmd = [binary] + args
-    if namespace:
-        cmd = [IP_BINARY, "netns", "exec", namespace, *cmd]
+    cmd = build_iptables_argv(binary, args, namespace=namespace)
     logger.debug("%s: %s", binary, " ".join(cmd))
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
@@ -236,9 +359,7 @@ def _select_iptables_binary(
         if result.returncode == 0:
             return binary
         failures.append(_format_command_error(
-            [IP_BINARY, "netns", "exec", namespace, binary, *probe_args]
-            if namespace
-            else [binary, *probe_args],
+            build_iptables_argv(binary, probe_args, namespace=namespace),
             result,
         ))
 
@@ -564,6 +685,45 @@ def run_iptables_nat(
     )
 
 
+# ``iptables -C`` exit codes. Only ``EXIT_RULE_ABSENT`` proves the rule is
+# missing; every other non-zero code means the probe itself failed, so the
+# caller must not treat it as "absent" and insert a duplicate.
+#
+#   0  rule present
+#   1  rule absent                      (the only "no" answer)
+#   2  command-line parameter problem
+#   3  incompatible kernel / missing table or target
+#   4  resource problem - typically "Can't lock /run/xtables.lock"
+EXIT_RULE_ABSENT = 1
+
+
+class RuleProbeError(NetworkSetupError):
+    """``iptables -C`` could not decide whether the rule exists."""
+
+
+def rule_probe_verdict(
+    returncode: int,
+    argv: list[str],
+    result: subprocess.CompletedProcess,
+) -> bool:
+    """Interpret an ``iptables -C`` exit code.
+
+    Returns ``True`` when the rule is present and ``False`` only when iptables
+    positively answered "absent" (exit 1). Any other outcome - a bad argv, a
+    missing table, or a lock timeout - raises ``RuleProbeError``, because
+    guessing "absent" would make the caller insert a duplicate MASQUERADE or
+    management-port REJECT rule on top of an existing one.
+
+    Kept free of subprocess calls so the verdict table can be tested without
+    iptables or a network namespace.
+    """
+    if returncode == 0:
+        return True
+    if returncode == EXIT_RULE_ABSENT:
+        return False
+    raise RuleProbeError(_format_command_error(argv, result))
+
+
 def _iptables_rule_exists(
     args: list[str],
     *,
@@ -571,12 +731,19 @@ def _iptables_rule_exists(
     ip_version: int = 4,
     table: str | None = None,
 ) -> bool:
+    """Return whether *args* already matches a rule.
+
+    Raises ``RuleProbeError`` when the probe could not reach a verdict, so a
+    lock timeout can never be mistaken for "rule absent".
+    """
     check_args = ["-C", *args]
     if table == "nat":
         result = run_iptables_nat(check_args, check=False, namespace=namespace, ip_version=ip_version)
     else:
         result = run_iptables(check_args, check=False, namespace=namespace, ip_version=ip_version)
-    return result.returncode == 0
+    # ``result.args`` is the argv that actually ran, so the message names the
+    # real backend and includes -w and the netns wrapper.
+    return rule_probe_verdict(result.returncode, list(result.args), result)
 
 
 def _ensure_iptables_rule(
