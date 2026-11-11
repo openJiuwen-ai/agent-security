@@ -8,6 +8,7 @@ change here is a change to every file the store has ever written.
 from __future__ import annotations
 
 import pytest
+
 from security_gateway.vault import (
     CONTAINER_FORMAT,
     CONTAINER_HEADER_SIZE,
@@ -21,25 +22,29 @@ from security_gateway.vault import (
 
 
 def _fields():
-    """Fields."""
     return [
         ContainerField(
-            name="endpoint", type=Type.STRING, encrypted=False,
+            name="endpoint",
+            type=Type.STRING,
+            encrypted=False,
             data=b"https://api.example.com",
         ),
         ContainerField(
-            name="api_key", type=Type.STRING, encrypted=True,
+            name="api_key",
+            type=Type.STRING,
+            encrypted=True,
             data=bytes([0x01, 0x02, 0x03, 0x04]),
         ),
         ContainerField(
-            name="retries", type=Type.INT64, encrypted=False,
+            name="retries",
+            type=Type.INT64,
+            encrypted=False,
             data=bytes([0, 0, 0, 0, 0, 0, 0, 7]),
         ),
     ]
 
 
 def test_container_round_trip():
-    """Test container round trip."""
     fields = _fields()
     decoded = decode_container(encode_container(fields))
     assert len(decoded) == len(fields)
@@ -53,11 +58,7 @@ def test_container_round_trip():
 def test_the_container_bytes_are_what_the_format_says():
     """The layout is fixed by the format, not by this implementation."""
     encoded = encode_container(
-        [
-            ContainerField(
-                name="a", type=Type.STRING, encrypted=False, data=b"xy"
-            )
-        ]
+        [ContainerField(name="a", type=Type.STRING, encrypted=False, data=b"xy")]
     )
     assert encoded == (
         b"VREC"
@@ -74,13 +75,8 @@ def test_the_container_bytes_are_what_the_format_says():
 
 
 def test_the_encrypted_flag_is_bit_zero():
-    """Test the encrypted flag is bit zero."""
     encoded = encode_container(
-        [
-            ContainerField(
-                name="a", type=Type.STRING, encrypted=True, data=b"xy"
-            )
-        ]
+        [ContainerField(name="a", type=Type.STRING, encrypted=True, data=b"xy")]
     )
     # magic, format, count, name length, name, type, flags
     assert encoded[CONTAINER_HEADER_SIZE + 2 + 1 + 1] == 0x01
@@ -96,13 +92,11 @@ def test_the_encrypted_flag_is_bit_zero():
     ],
 )
 def test_decode_container_rejects_malformed_input(name, data):
-    """Test decode container rejects malformed input."""
     with pytest.raises(InvalidRecordError):
         decode_container(data)
 
 
 def test_decode_container_rejects_a_truncated_blob():
-    """Test decode container rejects a truncated blob."""
     valid = encode_container(
         [ContainerField(name="a", type=Type.STRING, encrypted=False, data=b"x")]
     )
@@ -113,8 +107,7 @@ def test_decode_container_rejects_a_truncated_blob():
 
 def test_decode_container_rejects_a_count_larger_than_the_data():
     """A field count that claims more fields than the blob holds must be an
-    error, not a read past the end of the buffer.
-    """
+    error, not a read past the end of the buffer."""
     data = CONTAINER_MAGIC + bytes([CONTAINER_FORMAT]) + b"\xff\xff"
     with pytest.raises(InvalidRecordError):
         decode_container(data)
@@ -122,8 +115,7 @@ def test_decode_container_rejects_a_count_larger_than_the_data():
 
 def test_decode_container_rejects_a_hostile_length():
     """A length field that claims more bytes than the blob holds must be an
-    error, not an out-of-range read.
-    """
+    error, not an out-of-range read."""
     data = (
         CONTAINER_MAGIC
         + bytes([CONTAINER_FORMAT])

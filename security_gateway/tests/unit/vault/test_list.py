@@ -5,14 +5,15 @@ The Go counterpart is ``tests/unit/vault/list_test.go``.
 
 from __future__ import annotations
 
-from security_gateway.vault import Config, FieldDef, Record, Schema, Type, Value, Vault
 
 from .conftest import put_record
 
+from security_gateway.vault import Config, FieldDef, Record, Schema, Type, Value, Vault
+
 
 def test_list_returns_only_the_records_under_the_prefix(vault):
-    for record_id in ["a/one", "a/two", "b/one"]:
-        put_record(vault, record_id)
+    for id in ["a/one", "a/two", "b/one"]:
+        put_record(vault, id)
 
     entries = vault.list("a/")
     assert len(entries) == 2
@@ -21,8 +22,8 @@ def test_list_returns_only_the_records_under_the_prefix(vault):
 
 
 def test_list_with_an_empty_prefix_returns_everything(vault):
-    for record_id in ["a", "ab", "b"]:
-        put_record(vault, record_id)
+    for id in ["a", "ab", "b"]:
+        put_record(vault, id)
 
     entries = vault.list("")
     assert len(entries) == 3
@@ -35,8 +36,8 @@ def test_list_prefix_boundary(vault):
     The ids here are chosen to sit on both sides of that boundary: "ab" is
     under the prefix "a", and "b" is the first id that is not.
     """
-    for record_id in ["a", "ab", "abc", "b", "ba"]:
-        put_record(vault, record_id)
+    for id in ["a", "ab", "abc", "b", "ba"]:
+        put_record(vault, id)
 
     entries = vault.list("a")
     assert [entry.id for entry in entries] == ["a", "ab", "abc"]
@@ -73,23 +74,23 @@ def test_the_vault_holds_whatever_shape_it_is_given(tmp_path):
             FieldDef(name="on", type=Type.BOOL),
         ],
     )
-    vault = Vault.open(Config(data_dir=str(tmp_path)), schema)
+    store = Vault.open(Config(data_dir=str(tmp_path)), schema)
     try:
-        vault.put(
+        store.put(
             Record(
                 id="thing/one",
                 fields={
                     "label": Value.new_string("a-label"),
-                    "secret": Value.new_bytes(b"abc"),
+                    "secret": Value.new_bytes(b"sk-abc"),
                     "count": Value.new_int64(7),
                     "on": Value.new_bool(True),
                 },
             )
         )
 
-        entries = vault.list("thing/")
+        entries = store.list("thing/")
         assert len(entries) == 1
         assert "secret" not in entries[0].fields
         assert "label" in entries[0].fields
     finally:
-        vault.close()
+        store.close()

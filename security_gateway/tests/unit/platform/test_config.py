@@ -11,6 +11,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+
 from security_gateway.platform.config import (
     Config,
     ConfigError,
@@ -20,12 +21,8 @@ from security_gateway.platform.config import (
     parse_duration,
 )
 
+
 # --- durations --------------------------------------------------------------
-
-
-def _loopback() -> str:
-    """Return the loopback address without writing it as one literal."""
-    return ".".join(("127", "0", "0", "1"))
 
 
 @pytest.mark.parametrize(
@@ -41,13 +38,7 @@ def _loopback() -> str:
     ],
 )
 def test_a_go_duration_string_is_parsed(text, nanoseconds):
-    """Test a go duration string is parsed."""
     assert parse_duration(text) == timedelta(microseconds=nanoseconds / 1000)
-
-
-def _ip(*parts: str) -> str:
-    """Build an IPv4 literal without writing one into the source."""
-    return ".".join(parts)
 
 
 def test_a_bare_number_is_refused():
@@ -79,12 +70,10 @@ def test_a_null_duration_is_zero():
 
 
 def test_a_negative_duration_is_allowed():
-    """Test a negative duration is allowed."""
     assert parse_duration("-5m") == timedelta(minutes=-5)
 
 
 def test_a_duration_renders_the_go_way():
-    """Test a duration renders the go way."""
     assert format_duration(timedelta(hours=720)) == "720h0m0s"
     assert format_duration(timedelta(seconds=30)) == "30s"
     assert format_duration(timedelta(0)) == "0s"
@@ -92,7 +81,6 @@ def test_a_duration_renders_the_go_way():
 
 @pytest.mark.parametrize("bad", ["", "5", "5x", "h", "5 h", "00", "1.2.3s"])
 def test_a_broken_duration_is_refused(bad):
-    """Test a broken duration is refused."""
     with pytest.raises(ConfigError):
         parse_duration(bad)
 
@@ -112,7 +100,6 @@ def test_a_number_without_a_unit_says_so():
 
 
 def test_the_defaults_match_the_go_service():
-    """The zero values expand to the Go defaults."""
     config = Config()
     assert config.upstream_timeout_ms == 30000
     assert config.data_dir == "./data"
@@ -147,7 +134,6 @@ def test_the_defaults_match_the_go_service():
 
 
 def test_the_defaults_are_a_usable_configuration():
-    """Test the defaults are a usable configuration."""
     Config().validate()
 
 
@@ -155,35 +141,56 @@ def test_the_defaults_are_a_usable_configuration():
 
 
 def test_etcd_is_on_when_endpoints_are_given():
-    """Test etcd is on when endpoints are given."""
     assert not Config().etcd.enabled()
     assert Config.from_dict({"etcd": {"endpoints": ["http://x:2379"]}}).etcd.enabled()
 
 
+def test_etcd_defaults_to_the_security_gateway_namespace():
+    assert Config().etcd.namespace == "security_gateway"
+
+
+def test_etcd_without_a_node_id_is_refused():
+    config = Config.from_dict({"etcd": {"endpoints": ["http://x:2379"]}})
+    with pytest.raises(ConfigError, match="node_id"):
+        config.validate()
+
+
 def test_the_cluster_is_on_when_the_node_has_an_identity():
-    """Test the cluster is on when the node has an identity."""
     assert not Config().cluster.enabled()
     assert Config.from_dict({"cluster": {"node_id": "n1"}}).cluster.enabled()
 
 
 def test_the_vault_is_on_when_it_has_a_data_directory():
-    """Test the vault is on when it has a data directory."""
     assert not Config().vault.enabled()
-    raw = {"vault": {"data_dir": "/srv/vault",
-                     "rpc": {"unix_path": "/run/vault.sock"}}}
+    raw = {"vault": {"data_dir": "/srv/vault", "rpc": {"unix_path": "/run/vault.sock"}}}
     assert Config.from_dict(raw).vault.enabled()
+
+
+def test_the_vault_can_share_its_store_between_host_processes():
+    assert not Config().vault.multi_process
+    raw = {
+        "vault": {
+            "data_dir": "/srv/vault",
+            "rpc": {"unix_path": "/run/vault.sock"},
+            "multi_process": True,
+        }
+    }
+    assert Config.from_dict(raw).vault.multi_process
 
 
 # --- the paths --------------------------------------------------------------
 
 
 def test_the_paths_are_derived_from_the_data_directories():
-    """Test the paths are derived from the data directories."""
-    config = Config.from_dict({
-        "data_dir": "/srv/data",
-        "vault": {"data_dir": "/srv/vault",
-                  "rpc": {"unix_path": "/run/vault.sock"}},
-    })
+    config = Config.from_dict(
+        {
+            "data_dir": "/srv/data",
+            "vault": {
+                "data_dir": "/srv/vault",
+                "rpc": {"unix_path": "/run/vault.sock"},
+            },
+        }
+    )
     assert config.db_path() == "/srv/data/credentials.db"
     assert config.secrets_dir() == "/srv/data/secrets"
     assert config.vault_db_path() == "/srv/vault/vault.db"
@@ -194,7 +201,6 @@ def test_the_paths_are_derived_from_the_data_directories():
 
 
 def test_an_unknown_crypto_mode_is_refused():
-    """Test an unknown crypto mode is refused."""
     with pytest.raises(ConfigError):
         Config.from_dict({"crypto_mode": "rot13"}).validate()
 
@@ -202,64 +208,80 @@ def test_an_unknown_crypto_mode_is_refused():
 def test_the_admin_api_may_not_bind_every_interface():
     """The admin API has no authentication, so it must not be reachable."""
     with pytest.raises(ConfigError):
-        Config.from_dict({"admin": {"addr": _ip("0", "0", "0", "0") + ":8080"}}).validate()
+        Config.from_dict({"admin": {"addr": "0.0.0.0:8080"}}).validate()
     with pytest.raises(ConfigError):
         Config.from_dict({"admin": {"addr": "[::]:8080"}}).validate()
 
 
 def test_the_admin_api_may_bind_a_private_address():
-    """Test the admin api may bind a private address."""
-    Config.from_dict({"admin": {"addr": _loopback() + ":8080"}}).validate()
-    Config.from_dict({"admin": {"addr": _ip("10", "0", "0", "5") + ":8080"}}).validate()
+    Config.from_dict({"admin": {"addr": "127.0.0.1:8080"}}).validate()
+    Config.from_dict({"admin": {"addr": "10.0.0.5:8080"}}).validate()
 
 
 def test_an_external_address_is_required_when_the_bind_is_a_wildcard():
-    """Test an external address is required when the bind is a wildcard."""
     with pytest.raises(ConfigError):
-        Config.from_dict({"server": {"bind_address": _ip("0", "0", "0", "0") + ":8080"}}).validate()
-    Config.from_dict({
-        "server": {"bind_address": _ip("0", "0", "0", "0") + ":8080",
-                   "external_address": "https://router.example"},
-    }).validate()
+        Config.from_dict({"server": {"bind_address": "0.0.0.0:8080"}}).validate()
+    Config.from_dict(
+        {
+            "server": {
+                "bind_address": "0.0.0.0:8080",
+                "external_address": "https://router.example",
+            },
+        }
+    ).validate()
 
 
 def test_the_external_address_must_be_an_http_url():
-    """Test the external address must be an http url."""
     with pytest.raises(ConfigError):
-        Config.from_dict({
-            "server": {"bind_address": _ip("0", "0", "0", "0") + ":8080",
-                       "external_address": "ftp://router.example"},
-        }).validate()
+        Config.from_dict(
+            {
+                "server": {
+                    "bind_address": "0.0.0.0:8080",
+                    "external_address": "ftp://router.example",
+                },
+            }
+        ).validate()
 
 
 def test_the_etcd_namespace_may_not_contain_a_slash_or_whitespace():
-    """Test the etcd namespace may not contain a slash or whitespace."""
     with pytest.raises(ConfigError):
-        Config.from_dict({
-            "etcd": {"endpoints": ["http://x:2379"], "namespace": "a/b"},
-        }).validate()
+        Config.from_dict(
+            {
+                "etcd": {"endpoints": ["http://x:2379"], "namespace": "a/b"},
+            }
+        ).validate()
     with pytest.raises(ConfigError):
-        Config.from_dict({
-            "etcd": {"endpoints": ["http://x:2379"], "namespace": "a b"},
-        }).validate()
+        Config.from_dict(
+            {
+                "etcd": {"endpoints": ["http://x:2379"], "namespace": "a b"},
+            }
+        ).validate()
 
 
 def test_a_partial_etcd_tls_set_is_refused():
     """A partial set is refused rather than silently downgraded."""
     with pytest.raises(ConfigError):
-        Config.from_dict({
-            "etcd": {"endpoints": ["http://x:2379"],
-                     "tls": {"ca_file": "/ca.pem"}},
-        }).validate()
-    Config.from_dict({
-        "etcd": {"endpoints": ["http://x:2379"],
-                 "tls": {"ca_file": "/ca.pem", "cert_file": "/c.pem",
-                         "key_file": "/k.pem"}},
-    }).validate()
+        Config.from_dict(
+            {
+                "etcd": {"endpoints": ["http://x:2379"], "tls": {"ca_file": "/ca.pem"}},
+            }
+        ).validate()
+    Config.from_dict(
+        {
+            "etcd": {
+                "endpoints": ["http://x:2379"],
+                "tls": {
+                    "ca_file": "/ca.pem",
+                    "cert_file": "/c.pem",
+                    "key_file": "/k.pem",
+                },
+            },
+            "cluster": {"node_id": "node-a", "identity_ca_file": "/id-ca.pem"},
+        }
+    ).validate()
 
 
 def test_a_vault_with_a_data_directory_needs_a_listener():
-    """Test a vault with a data directory needs a listener."""
     with pytest.raises(ConfigError):
         Config.from_dict({"vault": {"data_dir": "/srv/vault"}}).validate()
 
@@ -271,8 +293,9 @@ def test_a_client_that_opens_the_store_itself_needs_no_listener():
     must not be made to declare a listener it will never open — and the
     credential-router service must not open a socket nobody asked for.
     """
-    config = Config.from_dict({"vault": {"data_dir": "/srv/vault",
-                                         "schema": _a_schema()}})
+    config = Config.from_dict(
+        {"vault": {"data_dir": "/srv/vault", "schema": _a_schema()}}
+    )
     config.validate(serving=False)
     assert config.vault.data_dir == "/srv/vault"
 
@@ -280,64 +303,91 @@ def test_a_client_that_opens_the_store_itself_needs_no_listener():
 def test_a_client_still_refuses_a_broken_vault():
     """Only the listener is waived; the other rules are not."""
     with pytest.raises(ConfigError):
-        Config.from_dict({
-            "vault": {"data_dir": "/srv/vault",
-                      "rpc": {"unix_path": "vault.sock"}},
-        }).validate(serving=False)
+        Config.from_dict(
+            {
+                "vault": {"data_dir": "/srv/vault", "rpc": {"unix_path": "vault.sock"}},
+            }
+        ).validate(serving=False)
 
 
 def test_the_vault_socket_path_must_be_absolute():
     """The socket is shared across processes; a relative path would not be."""
     with pytest.raises(ConfigError):
-        Config.from_dict({
-            "vault": {"data_dir": "/srv/vault",
-                      "rpc": {"unix_path": "vault.sock"}},
-        }).validate()
+        Config.from_dict(
+            {
+                "vault": {"data_dir": "/srv/vault", "rpc": {"unix_path": "vault.sock"}},
+            }
+        ).validate()
 
 
 def test_a_tcp_vault_needs_a_token_or_clients():
-    """Test a tcp vault needs a token or clients."""
     with pytest.raises(ConfigError):
-        Config.from_dict({
-            "vault": {"data_dir": "/srv/vault",
-                      "rpc": {"tcp_addr": _loopback() + ":19000"}},
-        }).validate()
+        Config.from_dict(
+            {
+                "vault": {
+                    "data_dir": "/srv/vault",
+                    "rpc": {"tcp_addr": "127.0.0.1:19000"},
+                },
+            }
+        ).validate()
 
 
 def test_the_clients_are_enough_without_a_shared_token():
     """Each client brings a secret of its own; the shared one is not needed."""
-    Config.from_dict({
-        "vault": {"data_dir": "/srv/vault",
-                  "schema": _a_schema(),
-                  "rpc": {"tcp_addr": _loopback() + ":19000",
-                          "clients": [{"name": "backend",
-                                       "token_file": "/etc/backend.token"}]}},
-    }).validate()
+    Config.from_dict(
+        {
+            "vault": {
+                "data_dir": "/srv/vault",
+                "schema": _a_schema(),
+                "rpc": {
+                    "tcp_addr": "127.0.0.1:19000",
+                    "clients": [
+                        {"name": "backend", "token_file": "/etc/backend.token"}
+                    ],
+                },
+            },
+        }
+    ).validate()
 
 
 def test_the_shared_token_and_the_clients_are_mutually_exclusive():
     """The two are ways of saying the same thing; saying both says nothing."""
     with pytest.raises(ConfigError):
-        Config.from_dict({
-            "vault": {"data_dir": "/srv/vault",
-                      "rpc": {"tcp_addr": _loopback() + ":19000",
-                              "token_file": "/etc/shared.token",
-                              "clients": [{"name": "backend",
-                                           "token_file": "/etc/backend.token"}]}},
-        }).validate()
+        Config.from_dict(
+            {
+                "vault": {
+                    "data_dir": "/srv/vault",
+                    "rpc": {
+                        "tcp_addr": "127.0.0.1:19000",
+                        "token_file": "/etc/shared.token",
+                        "clients": [
+                            {"name": "backend", "token_file": "/etc/backend.token"}
+                        ],
+                    },
+                },
+            }
+        ).validate()
 
 
 def test_the_clients_are_read():
-    """The client entries are read from the config."""
-    config = Config.from_dict({
-        "vault": {"data_dir": "/srv/vault",
-                  "rpc": {"tcp_addr": _loopback() + ":19000",
-                          "clients": [{"name": "backend",
-                                       "token_file": "/etc/backend.token",
-                                       "prefixes": ["litellm/"]},
-                                      {"name": "litellm",
-                                       "token_file": "/etc/litellm.token"}]}},
-    })
+    config = Config.from_dict(
+        {
+            "vault": {
+                "data_dir": "/srv/vault",
+                "rpc": {
+                    "tcp_addr": "127.0.0.1:19000",
+                    "clients": [
+                        {
+                            "name": "backend",
+                            "token_file": "/etc/backend.token",
+                            "prefixes": ["litellm/"],
+                        },
+                        {"name": "litellm", "token_file": "/etc/litellm.token"},
+                    ],
+                },
+            },
+        }
+    )
     clients = config.vault.rpc.clients
     assert len(clients) == 2
     assert clients[0].name == "backend"
@@ -350,75 +400,109 @@ def test_the_clients_are_read():
 def test_a_client_without_a_name_is_refused():
     """The name is what a refused request is reported against."""
     with pytest.raises(ConfigError):
-        Config.from_dict({
-            "vault": {"data_dir": "/srv/vault",
-                      "rpc": {"tcp_addr": _loopback() + ":19000",
-                              "clients": [{"name": "  ",
-                                           "token_file": "/etc/backend.token"}]}},
-        }).validate()
+        Config.from_dict(
+            {
+                "vault": {
+                    "data_dir": "/srv/vault",
+                    "rpc": {
+                        "tcp_addr": "127.0.0.1:19000",
+                        "clients": [{"name": "  ", "token_file": "/etc/backend.token"}],
+                    },
+                },
+            }
+        ).validate()
 
 
 def test_two_clients_with_the_same_name_are_refused():
-    """Test two clients with the same name are refused."""
     with pytest.raises(ConfigError):
-        Config.from_dict({
-            "vault": {"data_dir": "/srv/vault",
-                      "rpc": {"tcp_addr": _loopback() + ":19000",
-                              "clients": [{"name": "backend",
-                                           "token_file": "/etc/backend.token"},
-                                          {"name": "backend",
-                                           "token_file": "/etc/other.token"}]}},
-        }).validate()
+        Config.from_dict(
+            {
+                "vault": {
+                    "data_dir": "/srv/vault",
+                    "rpc": {
+                        "tcp_addr": "127.0.0.1:19000",
+                        "clients": [
+                            {"name": "backend", "token_file": "/etc/backend.token"},
+                            {"name": "backend", "token_file": "/etc/other.token"},
+                        ],
+                    },
+                },
+            }
+        ).validate()
 
 
 def test_a_client_without_a_token_file_is_refused():
     """A client with no secret of its own would fall back to the shared one."""
     with pytest.raises(ConfigError):
-        Config.from_dict({
-            "vault": {"data_dir": "/srv/vault",
-                      "rpc": {"tcp_addr": _loopback() + ":19000",
-                              "clients": [{"name": "backend"}]}},
-        }).validate()
+        Config.from_dict(
+            {
+                "vault": {
+                    "data_dir": "/srv/vault",
+                    "rpc": {
+                        "tcp_addr": "127.0.0.1:19000",
+                        "clients": [{"name": "backend"}],
+                    },
+                },
+            }
+        ).validate()
 
 
 def test_two_scopes_for_the_same_uid_are_refused():
-    """Test two scopes for the same uid are refused."""
     with pytest.raises(ConfigError):
-        Config.from_dict({
-            "vault": {"data_dir": "/srv/vault",
-                      "rpc": {"unix_path": "/run/vault.sock",
-                              "uid_scopes": [{"uid": 1000, "prefixes": ["a/"]},
-                                             {"uid": 1000,
-                                              "prefixes": ["b/"]}]}},
-        }).validate()
+        Config.from_dict(
+            {
+                "vault": {
+                    "data_dir": "/srv/vault",
+                    "rpc": {
+                        "unix_path": "/run/vault.sock",
+                        "uid_scopes": [
+                            {"uid": 1000, "prefixes": ["a/"]},
+                            {"uid": 1000, "prefixes": ["b/"]},
+                        ],
+                    },
+                },
+            }
+        ).validate()
 
 
 def test_the_socket_mode_must_be_octal_and_within_the_permission_bits():
-    """Test the socket mode must be octal and within the permission bits."""
     with pytest.raises(ConfigError):
-        Config.from_dict({
-            "vault": {"data_dir": "/srv/vault",
-                      "rpc": {"unix_path": "/run/vault.sock",
-                              "socket_mode": "not-octal"}},
-        }).validate()
+        Config.from_dict(
+            {
+                "vault": {
+                    "data_dir": "/srv/vault",
+                    "rpc": {"unix_path": "/run/vault.sock", "socket_mode": "not-octal"},
+                },
+            }
+        ).validate()
     with pytest.raises(ConfigError):
-        Config.from_dict({
-            "vault": {"data_dir": "/srv/vault",
-                      "rpc": {"unix_path": "/run/vault.sock",
-                              "socket_mode": "10000"}},
-        }).validate()
+        Config.from_dict(
+            {
+                "vault": {
+                    "data_dir": "/srv/vault",
+                    "rpc": {"unix_path": "/run/vault.sock", "socket_mode": "10000"},
+                },
+            }
+        ).validate()
 
 
 # --- the auth rules ---------------------------------------------------------
 
 
 def test_the_auth_rules_are_read():
-    """Test the auth rules are read."""
-    config = Config.from_dict({
-        "admin": {"auth_types": {"my_type": {"header": "X-Key",
-                                             "prefix": "Bearer ",
-                                             "query_params": ["k"]}}},
-    })
+    config = Config.from_dict(
+        {
+            "admin": {
+                "auth_types": {
+                    "my_type": {
+                        "header": "X-Key",
+                        "prefix": "Bearer ",
+                        "query_params": ["k"],
+                    }
+                }
+            },
+        }
+    )
     rule = config.admin.auth_types["my_type"]
     assert rule.header == "X-Key"
     assert rule.prefix == "Bearer "
@@ -439,24 +523,31 @@ def test_the_vault_rotation_period_defaults_to_zero():
 
 def test_the_vault_rotation_period_is_read():
     """The period is a duration, like the other knobs."""
-    config = Config.from_dict({
-        "vault": {"data_dir": "/srv/vault",
-                  "rpc": {"unix_path": "/run/vault.sock"},
-                  "rotation": {"period": "720h"}},
-    })
+    config = Config.from_dict(
+        {
+            "vault": {
+                "data_dir": "/srv/vault",
+                "rpc": {"unix_path": "/run/vault.sock"},
+                "rotation": {"period": "720h"},
+            },
+        }
+    )
     assert config.vault.rotation.period == 720 * 3600
 
 
 def test_a_negative_vault_rotation_period_is_refused():
     """Zero is "not scheduled"; a negative period is not another way of
-    saying the same thing.
-    """
+    saying the same thing."""
     with pytest.raises(ConfigError):
-        Config.from_dict({
-            "vault": {"data_dir": "/srv/vault",
-                      "rpc": {"unix_path": "/run/vault.sock"},
-                      "rotation": {"period": "-5m"}},
-        }).validate()
+        Config.from_dict(
+            {
+                "vault": {
+                    "data_dir": "/srv/vault",
+                    "rpc": {"unix_path": "/run/vault.sock"},
+                    "rotation": {"period": "-5m"},
+                },
+            }
+        ).validate()
 
 
 def test_a_negative_vault_rotation_period_is_refused_even_when_the_store_is_off():
@@ -469,9 +560,11 @@ def test_a_negative_vault_rotation_period_is_refused_even_when_the_store_is_off(
     it.
     """
     with pytest.raises(ConfigError) as refused:
-        Config.from_dict({
-            "vault": {"rotation": {"period": "-5m"}},
-        }).validate()
+        Config.from_dict(
+            {
+                "vault": {"rotation": {"period": "-5m"}},
+            }
+        ).validate()
     assert "vault.rotation.period" in str(refused.value)
 
 
@@ -497,11 +590,13 @@ def _write_a_config(tmp_path, vault: dict) -> Path:
 
     path = tmp_path / "config.yaml"
     path.write_text(
-        yaml.safe_dump({
-            "data_dir": str(tmp_path / "data"),
-            "backup_dir": str(tmp_path / "backups"),
-            "vault": vault,
-        }),
+        yaml.safe_dump(
+            {
+                "data_dir": str(tmp_path / "data"),
+                "backup_dir": str(tmp_path / "backups"),
+                "vault": vault,
+            }
+        ),
         encoding="utf-8",
     )
     return path
@@ -515,8 +610,9 @@ def test_an_enabled_store_with_no_listener_gets_the_local_socket(tmp_path):
     and the two must not drift: a configuration the Go starts on is a
     configuration this side starts on too.
     """
-    path = _write_a_config(tmp_path, {"data_dir": str(tmp_path / "vault"),
-                                      "schema": _a_schema()})
+    path = _write_a_config(
+        tmp_path, {"data_dir": str(tmp_path / "vault"), "schema": _a_schema()}
+    )
 
     config = load(str(path))
 
@@ -529,8 +625,9 @@ def test_the_store_only_configuration_names_no_channel(tmp_path):
     It must not be handed a socket path it will never open: this process
     is the answer, and there is no socket.
     """
-    path = _write_a_config(tmp_path, {"data_dir": str(tmp_path / "vault"),
-                                      "schema": _a_schema()})
+    path = _write_a_config(
+        tmp_path, {"data_dir": str(tmp_path / "vault"), "schema": _a_schema()}
+    )
 
     config = load_for_store(str(path))
 
@@ -539,17 +636,19 @@ def test_the_store_only_configuration_names_no_channel(tmp_path):
 
 def test_a_named_tcp_listener_is_not_joined_by_a_unix_socket(tmp_path):
     """The local socket is a default, not something added to a choice."""
-    path = _write_a_config(tmp_path, {
-        "data_dir": str(tmp_path / "vault"),
-        "schema": _a_schema(),
-        "rpc": {"tcp_addr": _loopback() + ":19000",
-                "token_file": "/etc/vault.token"},
-    })
+    path = _write_a_config(
+        tmp_path,
+        {
+            "data_dir": str(tmp_path / "vault"),
+            "schema": _a_schema(),
+            "rpc": {"tcp_addr": "127.0.0.1:19000", "token_file": "/etc/vault.token"},
+        },
+    )
 
     config = load(str(path))
 
     assert config.vault.rpc.unix_path == ""
-    assert config.vault.rpc.tcp_addr == _loopback() + ":19000"
+    assert config.vault.rpc.tcp_addr == "127.0.0.1:19000"
 
 
 # --- the crypto mode's two spellings ---------------------------------------
@@ -565,10 +664,8 @@ def test_the_crypto_mode_is_normalized_to_what_the_cipher_speaks(tmp_path):
     import yaml
 
     def a_config_with(mode: str):
-        """A config with."""
         path = tmp_path / f"{mode}.yaml"
-        path.write_text(
-            yaml.safe_dump({"crypto_mode": mode}), encoding="utf-8")
+        path.write_text(yaml.safe_dump({"crypto_mode": mode}), encoding="utf-8")
         return load(str(path))
 
     assert a_config_with("sm").crypto_mode == "sm"
@@ -589,12 +686,11 @@ def test_an_etcd_endpoint_must_be_a_url():
     both sides.
     """
     with pytest.raises(ConfigError) as refused:
-        Config.from_dict({"etcd": {"endpoints": [_loopback() + ":2379"]}}).validate()
+        Config.from_dict({"etcd": {"endpoints": ["127.0.0.1:2379"]}}).validate()
     assert "http(s) URL" in str(refused.value)
 
 
 def test_a_node_without_a_roster_is_refused():
-    """Test a node without a roster is refused."""
     with pytest.raises(ConfigError) as refused:
         Config.from_dict({"cluster": {"node_id": "node-a"}}).validate()
     assert "etcd.endpoints is empty" in str(refused.value)
@@ -603,34 +699,55 @@ def test_a_node_without_a_roster_is_refused():
 def test_a_node_without_a_certificate_has_nothing_to_wrap_with():
     """The wrapping key is the node's own etcd client certificate."""
     with pytest.raises(ConfigError) as refused:
-        Config.from_dict({
-            "etcd": {"endpoints": ["http://" + _loopback() + ":2379"]},
-            "cluster": {"node_id": "node-a"},
-        }).validate()
+        Config.from_dict(
+            {
+                "etcd": {"endpoints": ["http://127.0.0.1:2379"]},
+                "cluster": {"node_id": "node-a"},
+            }
+        ).validate()
     assert "etcd.tls.cert_file" in str(refused.value)
 
 
 def test_a_complete_node_is_accepted():
-    """Test a complete node is accepted."""
-    config = Config.from_dict({
-        "etcd": {
-            "endpoints": ["http://" + _loopback() + ":2379"],
-            "tls": {
-                "ca_file": "/etc/etcd/ca.pem",
-                "cert_file": "/etc/etcd/node.pem",
-                "key_file": "/etc/etcd/node.key",
+    config = Config.from_dict(
+        {
+            "etcd": {
+                "endpoints": ["http://127.0.0.1:2379"],
+                "tls": {
+                    "ca_file": "/etc/etcd/ca.pem",
+                    "cert_file": "/etc/etcd/node.pem",
+                    "key_file": "/etc/etcd/node.key",
+                },
             },
-        },
-        "cluster": {"node_id": "node-a"},
-    })
+            "cluster": {"node_id": "node-a", "identity_ca_file": "/id-ca.pem"},
+        }
+    )
     config.validate()
 
 
 def test_a_node_id_may_not_break_the_key_layout():
-    """Test a node id may not break the key layout."""
     with pytest.raises(ConfigError) as refused:
-        Config.from_dict({
-            "etcd": {"endpoints": ["http://" + _loopback() + ":2379"]},
-            "cluster": {"node_id": "node/a"},
-        }).validate()
+        Config.from_dict(
+            {
+                "etcd": {"endpoints": ["http://127.0.0.1:2379"]},
+                "cluster": {"node_id": "node/a"},
+            }
+        ).validate()
     assert "cluster.node_id" in str(refused.value)
+
+
+def test_cluster_needs_an_identity_ca_or_pins():
+    with pytest.raises(ConfigError, match="identity_ca_file"):
+        Config.from_dict(
+            {
+                "etcd": {
+                    "endpoints": ["http://127.0.0.1:2379"],
+                    "tls": {
+                        "ca_file": "/ca.pem",
+                        "cert_file": "/c.pem",
+                        "key_file": "/k.pem",
+                    },
+                },
+                "cluster": {"node_id": "node-a"},
+            }
+        ).validate()
