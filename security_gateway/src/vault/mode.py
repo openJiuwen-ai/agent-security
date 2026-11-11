@@ -196,7 +196,6 @@ class DataDirGuard:
             lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
             try:
                 if not _try_lock(lock_fd, exclusive=(mode != MODE_MULTI_PROCESS)):
-                    os.close(lock_fd)
                     if mode == MODE_MULTI_PROCESS:
                         detail = (
                             "a single-process vault already holds the exclusive lock; multi_process=True cannot join it"

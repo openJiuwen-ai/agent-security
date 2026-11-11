@@ -42,6 +42,7 @@ import random  # noqa: F401 - re-exported
 import socket  # noqa: F401 - re-exported
 import threading
 import time
+from dataclasses import replace
 from typing import Any, Callable, Protocol  # noqa: F401 - re-exported
 
 from security_gateway.crypto import (
@@ -60,6 +61,7 @@ from security_gateway.crypto.errors import CryptoError
 from .codec import ContainerField, decode_container, encode_container
 from .errors import (
     ClosedError,
+    ConflictError,
     InvalidRecordError,
     KeyMismatchError,
     RotationInProgressError,
@@ -182,6 +184,7 @@ def _rotate_kek(vault: RotationTarget, shard: bytes | None, *, s1: bool) -> None
             km = read_key_meta(vault.db)
             if km is None:
                 raise KeyMismatchError("the store has no key metadata")
+            original = replace(km)
             try:
                 mode = parse_mode(km.crypto_mode)
             except CryptoError as exc:
@@ -215,7 +218,10 @@ def _rotate_kek(vault: RotationTarget, shard: bytes | None, *, s1: bool) -> None
             km.wrapped_dek = new_wrapped
             km.pending_wrapped_dek = new_pending
             km.superseded_wrapped_dek = new_superseded
-            update_key_meta(vault.db, km)
+            with vault.db.transaction(immediate=True):
+                if read_key_meta(vault.db) != original:
+                    raise ConflictError("the key metadata changed during the KEK rotation")
+                update_key_meta(vault.db, km)
 
 
 def rotate_s1(vault: RotationTarget, shard: bytes | None = None) -> None:
@@ -537,6 +543,7 @@ def finish_pending_rotation(
             lock = _acquire_fleet_lock(store, None)
         except RotationInProgressError:
             return
+        stop_heartbeat, lost_lock = _start_rotation_lock_heartbeat(lock)
         try:
             km = read_key_meta(vault.db)
             if km is None or km.pending_dek_version == 0:
@@ -556,9 +563,10 @@ def finish_pending_rotation(
                 bytes(km.pending_wrapped_dek),
                 bytes(km.wrapped_dek),
                 int(km.active_dek_version),
-                cancel,
+                _stop_check(lost_lock, cancel),
             )
         finally:
+            stop_heartbeat()
             _release_fleet_lock(lock)
 
 
