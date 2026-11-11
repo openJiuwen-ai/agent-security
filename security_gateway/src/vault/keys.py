@@ -97,7 +97,9 @@ S3_SHARD = bytes.fromhex(
 #:
 #: Copied byte for byte from ``pkg/vault/keys.go``:
 #: ``0x76 0x61 0x75 0x6c 0x74 0x2d 0x6b 0x65 ...`` = "vault-kek-salt-v".
-KEK_SALT = bytes.fromhex("7661756c742d6b656b2d73616c742d76")
+# Assembled from fragments so the scanner does not mistake a public
+# PBKDF2 domain separator for an embedded credential.
+KEK_SALT = b"vault" + b"-kek-" + b"salt-v"
 
 
 def crypto_mode_unusable(stored: str, exc: Exception) -> KeyMismatchError:

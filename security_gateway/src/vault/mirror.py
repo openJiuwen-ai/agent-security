@@ -174,8 +174,8 @@ class MirrorApplier:
             )
 
         local = list_mirrored_record_ids(self._db)
-        for id in local - present:
-            delete_mirrored_record(self._db, id, PURGE_ALL_REVISIONS)
+        for record_id in local - present:
+            delete_mirrored_record(self._db, record_id, PURGE_ALL_REVISIONS)
         self._changed()
 
     def apply_upsert(self, key: str, item: RecordEntry) -> None:

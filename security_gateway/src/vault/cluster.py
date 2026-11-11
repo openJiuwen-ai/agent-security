@@ -201,7 +201,10 @@ def vault_etcd_config(cfg: Any) -> EtcdConfig:
     )
     # The TLS material only when there is any: an empty set of paths handed
     # to the client is a FileNotFoundError on "".
-    if tls is not None and (tls.ca_file or tls.cert_file or tls.key_file):
+    has_tls_material = tls is not None and bool(
+        tls.ca_file or tls.cert_file or tls.key_file
+    )
+    if has_tls_material:
         out = EtcdConfig(
             endpoints=out.endpoints,
             namespace=out.namespace,
