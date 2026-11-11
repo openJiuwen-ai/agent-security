@@ -540,6 +540,10 @@ class Vault(AuthorityMixin):
                     self._reconcile_mirror()
         raise AssertionError("unreachable")
 
+    def get_many(self, ids: list[str]) -> dict[str, Record]:
+        """Return the records that exist, keyed by id."""
+        return self._get_many(ids)
+
     def _get_many(self, ids: list[str]) -> dict[str, Record]:
         if any(not record_id for record_id in ids):
             raise InvalidRecordError("id is empty")
