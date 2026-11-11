@@ -59,9 +59,7 @@ def test_anchor_rejects_a_certificate_without_client_auth(anchor_pki, leaf) -> N
     # TestAnchorRejectsACertificateWithoutClientAuth
     """Test anchor rejects a certificate without client auth."""
     anchor = new_anchor(anchor_pki.ca_pem_file, None)
-    server_only = leaf(
-        anchor_pki.ca_cert, anchor_pki.ca_key, "some-unrelated-service", SERVER_AUTH
-    )
+    server_only = leaf(anchor_pki.ca_cert, anchor_pki.ca_key, "some-unrelated-service", SERVER_AUTH)
     # A server certificate from the same CA must be refused: a CA that also
     # signs unrelated services would then be a path to the DEK.
     with pytest.raises(AnchorError):
@@ -93,15 +91,22 @@ def test_anchor_pins_take_over_when_both_are_configured(anchor_pki, leaf) -> Non
 
     # A CA-issued certificate that is *not* pinned is refused outright: the
     # pool is parsed but never consulted, which is what makes pins exclusive.
-    unpinned = leaf(
-        anchor_pki.ca_cert, anchor_pki.ca_key, "ca-issued but unpinned", CLIENT_AUTH
-    )
+    unpinned = leaf(anchor_pki.ca_cert, anchor_pki.ca_key, "ca-issued but unpinned", CLIENT_AUTH)
     with pytest.raises(AnchorError):
         both.verify(unpinned)
 
     # Blank pins are not an anchor, so this stays a CA-only setup and must work.
     ca_only = new_anchor(anchor_pki.ca_pem_file, ["  ", ""])
     ca_only.verify(anchor_pki.client)
+
+
+def test_anchor_accepts_a_fingerprint_with_spaces(anchor_pki) -> None:
+    # TestAnchorAcceptsAFingerprintWithSpaces
+    """Test a fingerprint copied from openssl still verifies."""
+    digest = Fingerprint(anchor_pki.client)
+    spaced = " ".join(digest[i : i + 2] for i in range(0, len(digest), 2))
+    anchor = new_anchor("", [spaced])
+    anchor.verify(anchor_pki.client)
 
 
 def test_anchor_accepts_a_labelled_upper_case_pin(anchor_pki) -> None:

@@ -68,9 +68,7 @@ def store(namespace):
 
     host, port = _endpoint()
     client = etcd3.Etcd3Client(host=host, port=port)
-    handle = Store.from_client(
-        client, namespace, generation_key=generation_key(namespace)
-    )
+    handle = Store.from_client(client, namespace, generation_key=generation_key(namespace))
     try:
         yield handle
     finally:
@@ -102,12 +100,8 @@ def test_the_mint_election_has_exactly_one_winner(cluster):
     The guard is a create-if-absent comparison: it holds only for a key
     that has never existed, so exactly one caller can ever win it.
     """
-    assert cluster.claim_mint("node-a") is True, (
-        "the first node did not win the election"
-    )
-    assert cluster.claim_mint("node-b") is False, (
-        "two nodes both won the mint election; the fleet would have split"
-    )
+    assert cluster.claim_mint("node-a") is True, "the first node did not win the election"
+    assert cluster.claim_mint("node-b") is False, "two nodes both won the mint election; the fleet would have split"
     assert cluster.mint_owner() == "node-a"
 
     # And the loser's attempt left the winner's claim untouched.
@@ -140,15 +134,17 @@ def test_the_takeover_claim_is_exclusive_and_leased(cluster):
     holder at a time, and a holder that stops renewing stops counting
     within its TTL.
     """
-    assert cluster.claim_takeover("node-a", 30) is True
-    assert cluster.claim_takeover("node-b", 30) is False, (
-        "two nodes both claimed the takeover"
-    )
+    claimed_a, lease_a = cluster.claim_takeover("node-a", 30)
+    assert claimed_a is True
+    assert lease_a is not None
+    claimed_b, lease_b = cluster.claim_takeover("node-b", 30)
+    assert claimed_b is False, "two nodes both claimed the takeover"
+    assert lease_b is None
 
-    cluster.release_takeover()
-    assert cluster.claim_takeover("node-b", 30) is True, (
-        "the claim did not free itself when its holder released it"
-    )
+    cluster.release_takeover(lease_a)
+    claimed_b, lease_b = cluster.claim_takeover("node-b", 30)
+    assert claimed_b is True, "the claim did not free itself when its holder released it"
+    assert lease_b is not None
 
 
 def test_a_rotation_marker_round_trips(cluster):
@@ -164,9 +160,7 @@ def test_a_rotation_marker_round_trips(cluster):
     cluster.put_rotation_marker("node-a", 2)
 
     markers = cluster.stalled_markers()
-    assert [marker.node_id for marker in markers] == ["node-a"], (
-        f"the rotation marker is not there: {markers}"
-    )
+    assert [marker.node_id for marker in markers] == ["node-a"], f"the rotation marker is not there: {markers}"
     assert markers[0].value == "2", f"the marker lost its target generation: {markers}"
     assert cluster.stalled_rotations() == ["node-a"]
     assert cluster.stalled_rotation_targets() == {"node-a": 2}
