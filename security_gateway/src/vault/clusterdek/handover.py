@@ -114,18 +114,14 @@ def _append_field(dst: bytearray, field: bytes) -> None:
     dst += field
 
 
-def verify_request(
-    pub: ec.EllipticCurvePublicKey, request: HandoverRequest | None
-) -> None:
+def verify_request(pub: ec.EllipticCurvePublicKey, request: HandoverRequest | None) -> None:
     """Check the signature against the roster's vouching certificate."""
     if pub is None:
         raise ErrCurve("clusterdek: verify the handover request: nil public key")
     if request is None:
         raise ErrMalformed("clusterdek: malformed wrapped blob: nil handover request")
     if not request.signature:
-        raise ErrMalformed(
-            "clusterdek: malformed wrapped blob: the handover request is not signed"
-        )
+        raise ErrMalformed("clusterdek: malformed wrapped blob: the handover request is not signed")
     digest = hashlib.sha256(request.signed_bytes()).digest()
     try:
         pub.verify(request.signature, digest, ec.ECDSA(Prehashed(hashes.SHA256())))
@@ -139,17 +135,13 @@ def marshal_public_key(pub: ec.EllipticCurvePublicKey) -> bytes:
     """Encode an ECDSA public key in the uncompressed SEC1 form."""
     if pub is None:
         raise ErrCurve("clusterdek: encode a public key: nil public key")
-    return pub.public_bytes(
-        encoding=Encoding.X962, format=PublicFormat.UncompressedPoint
-    )
+    return pub.public_bytes(encoding=Encoding.X962, format=PublicFormat.UncompressedPoint)
 
 
 def parse_public_key(data: bytes) -> ec.EllipticCurvePublicKey:
     """Decode an uncompressed SEC1 public key."""
     if not data:
-        raise ErrMalformed(
-            "clusterdek: malformed wrapped blob: the one-shot public key is not a point on the curve"
-        )
+        raise ErrMalformed("clusterdek: malformed wrapped blob: the one-shot public key is not a point on the curve")
     try:
         return ec.EllipticCurvePublicKey.from_encoded_point(_ONE_SHOT_CURVE, data)
     except ValueError as exc:
@@ -177,13 +169,9 @@ def unmarshal_request(data: bytes) -> HandoverRequest:
     try:
         parsed = json.loads(data.decode("utf-8"))
     except ValueError as exc:
-        raise ErrMalformed(
-            f"clusterdek: malformed wrapped blob: decode the handover request: {exc}"
-        ) from exc
+        raise ErrMalformed(f"clusterdek: malformed wrapped blob: decode the handover request: {exc}") from exc
     if not isinstance(parsed, dict):
-        raise ErrMalformed(
-            "clusterdek: malformed wrapped blob: decode the handover request: not a JSON object"
-        )
+        raise ErrMalformed("clusterdek: malformed wrapped blob: decode the handover request: not a JSON object")
     for field in ("public_key", "signature"):
         if not isinstance(parsed.get(field, ""), str):
             raise ErrMalformed(
@@ -191,13 +179,13 @@ def unmarshal_request(data: bytes) -> HandoverRequest:
             )
     try:
         public_key = base64.b64decode(parsed.get("public_key", ""), validate=True)
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         raise ErrMalformed(
             f"clusterdek: malformed wrapped blob: decode the handover request: public_key is not base64: {exc}"
         ) from exc
     try:
         signature = base64.b64decode(parsed.get("signature", ""), validate=True)
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         raise ErrMalformed(
             f"clusterdek: malformed wrapped blob: decode the handover request: signature is not base64: {exc}"
         ) from exc

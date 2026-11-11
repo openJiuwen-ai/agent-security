@@ -132,9 +132,7 @@ class Anchor:
             raise AnchorError("clusterdek: the anchor has no roots")
         problem = _client_chain_problem(cert, self._roots)
         if problem is not None:
-            raise AnchorError(
-                f"clusterdek: certificate is not issued by the cluster CA: {problem}"
-            )
+            raise AnchorError(f"clusterdek: certificate is not issued by the cluster CA: {problem}")
 
 
 def new_anchor(
@@ -157,16 +155,14 @@ def new_anchor(
         try:
             raw = bytes.fromhex(pin)
         except ValueError as exc:
-            raise ValueError(
-                f"clusterdek: pinned certificate {pin!r} must be 32 hex-encoded bytes: {exc}"
-            ) from exc
+            raise ValueError(f"clusterdek: pinned certificate {pin!r} must be 32 hex-encoded bytes: {exc}") from exc
         if len(raw) != hashlib.sha256().digest_size:
             raise ValueError(
                 f"clusterdek: pinned certificate {pin!r} must be {hashlib.sha256().digest_size} hex-encoded bytes"
             )
-        cleaned.append(pin)
+        cleaned.append(raw.hex())
 
-    pin_set = {pin.lower() for pin in cleaned} if cleaned else None
+    pin_set = set(cleaned) if cleaned else None
 
     roots: list[x509.Certificate] | None = None
     if ca_file is not None and str(ca_file).strip():
@@ -176,9 +172,7 @@ def new_anchor(
             raise ValueError(f"clusterdek: read trust anchor CA: {exc}") from exc
         roots = _load_pem_certificates(pem)
         if not roots:
-            raise ValueError(
-                f"clusterdek: trust anchor CA {ca_file} yielded no usable certificate"
-            )
+            raise ValueError(f"clusterdek: trust anchor CA {ca_file} yielded no usable certificate")
 
     anchor = Anchor(roots=roots, pins=pin_set)
     anchor.validate()
@@ -262,9 +256,7 @@ def _utcnow():
 def _is_ca(cert: x509.Certificate) -> bool:
     """Report whether a certificate may act as an issuer."""
     try:
-        constraints = cert.extensions.get_extension_for_class(
-            x509.BasicConstraints
-        ).value
+        constraints = cert.extensions.get_extension_for_class(x509.BasicConstraints).value
     except x509.ExtensionNotFound:
         return False
     return bool(constraints.ca)
@@ -279,9 +271,7 @@ def _may_sign_certificates(cert: x509.Certificate) -> bool:
     return bool(usage.key_cert_sign)
 
 
-def _client_chain_problem(
-    leaf: x509.Certificate, pool: list[x509.Certificate]
-) -> str | None:
+def _client_chain_problem(leaf: x509.Certificate, pool: list[x509.Certificate]) -> str | None:
     """Return why ``leaf`` may not be a client certificate, or None."""
     if not _valid_now(leaf):
         return "the certificate is outside its validity window"
@@ -314,9 +304,7 @@ def _client_chain_problem(
 _MAX_CHAIN_DEPTH = 10
 
 
-def _build_chain(
-    leaf: x509.Certificate, pool: list[x509.Certificate]
-) -> list[x509.Certificate] | None:
+def _build_chain(leaf: x509.Certificate, pool: list[x509.Certificate]) -> list[x509.Certificate] | None:
     """Build a chain from ``leaf`` up into the pool, or return None."""
     issuer = _find_issuer(leaf, pool)
     if issuer is None:
