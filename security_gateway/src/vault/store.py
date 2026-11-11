@@ -28,23 +28,23 @@ from .format import format_duration
 #: The records table.
 RECORD_DDL = """
 CREATE TABLE IF NOT EXISTS vault_record (
-	id             TEXT PRIMARY KEY,
-	schema_version INTEGER NOT NULL,
-	data           BLOB NOT NULL,
-	dek_version    INTEGER NOT NULL,
-	row_version    INTEGER NOT NULL DEFAULT 1,
-	source_revision INTEGER NOT NULL DEFAULT 0,
-	created_at     INTEGER NOT NULL,
-	updated_at     INTEGER NOT NULL
+    id             TEXT PRIMARY KEY,
+    schema_version INTEGER NOT NULL,
+    data           BLOB NOT NULL,
+    dek_version    INTEGER NOT NULL,
+    row_version    INTEGER NOT NULL DEFAULT 1,
+    source_revision INTEGER NOT NULL DEFAULT 0,
+    created_at     INTEGER NOT NULL,
+    updated_at     INTEGER NOT NULL
 )"""
 
 #: The schema registry.
 SCHEMA_DDL = """
 CREATE TABLE IF NOT EXISTS vault_schema (
-	version    INTEGER PRIMARY KEY,
-	hash       BLOB NOT NULL,
-	definition TEXT NOT NULL,
-	created_at INTEGER NOT NULL
+    version    INTEGER PRIMARY KEY,
+    hash       BLOB NOT NULL,
+    definition TEXT NOT NULL,
+    created_at INTEGER NOT NULL
 )"""
 
 #: The key material and the rotation state.
