@@ -70,6 +70,16 @@ def mint_key(ns: str) -> str:
     return f"{KEYSPACE_PREFIX}{namespace}/{MINT_SEGMENT}"
 
 
+def mint_claim_key(ns: str) -> str:
+    """The leased mint claim: ``/security_gateway/<ns>/mint_claim``.
+
+    It is separate from :func:`mint_key` because the claim is a lease and
+    the permanent record is not: one key cannot be both.
+    """
+    namespace = check_segment(ns, "namespace")
+    return f"{KEYSPACE_PREFIX}{namespace}/mint_claim"
+
+
 def presence_key(ns: str, node_id: str) -> str:
     """The presence key: ``/security_gateway/<ns>/presence/<node_id>``."""
     namespace = check_segment(ns, "namespace")

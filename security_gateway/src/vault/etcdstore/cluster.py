@@ -48,6 +48,7 @@ from .cluster_keys import (
     _unmarshal_node_entry,
     generation_key,
     last_rotation_key,
+    mint_claim_key,
     mint_key,
     node_key,
     nodes_prefix,
@@ -116,6 +117,7 @@ __all__ = [
     "last_rotation_key",
     "list_nodes",
     "list_present",
+    "mint_claim_key",
     "mint_key",
     "mint_owner",
     "release_mint",
@@ -348,6 +350,61 @@ class Cluster:
             return False
         result = self._txn([compare_value(key, found.value)], [DeleteOp(key)])
         return result.succeeded
+
+    def claim_mint_leased(
+        self, node_id: str, ttl_seconds: int = 30
+    ) -> tuple[bool, int]:
+        """Claim the first-DEK mint under a lease."""
+        if not node_id:
+            raise ValueError("etcdstore: claim mint: empty node id")
+        key = mint_claim_key(self._ns)
+        lease = self._leases.lease(ttl_seconds)
+        lease_id = lease.grant()
+        try:
+            result = self._txn(
+                [compare_create(key)],
+                [LeasePutOp(key, node_id.encode("utf-8"), lease_id)],
+            )
+        except Exception:
+            try:
+                lease.revoke()
+            except Exception:  # noqa: BLE001 - the original error matters more
+                pass
+            raise
+        if not result.succeeded:
+            try:
+                lease.revoke()
+            except Exception:  # noqa: BLE001 - a lost race is not an error
+                pass
+            return False, 0
+        return True, lease_id
+
+    def commit_mint(self, node_id: str, lease_id: int) -> bool:
+        """Turn a leased claim into the permanent mint record."""
+        if not node_id or not lease_id:
+            raise ValueError("etcdstore: commit mint: empty node id or lease")
+        self.ensure_generation()
+        if self.generation() != 1:
+            return False
+        claim = mint_claim_key(self._ns)
+        mint = mint_key(self._ns)
+        result = self._txn(
+            [
+                compare_value(claim, node_id.encode("utf-8")),
+                compare_create(mint),
+            ],
+            [
+                PutOp(mint, node_id.encode("utf-8")),
+                DeleteOp(claim),
+            ],
+        )
+        return bool(result.succeeded)
+
+    def release_mint_claim(self, lease_id: int) -> None:
+        """Drop a leased claim without committing it."""
+        if not lease_id:
+            return
+        self._leases.lease(0, lease_id).revoke()
 
     # -- presence ----------------------------------------------------------
 
