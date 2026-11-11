@@ -86,7 +86,7 @@ def delete_mirrored_record(db: Database, record_id: str, source_revision: int) -
     """Remove a record the authority has deleted."""
     db.execute(
         "DELETE FROM vault_record WHERE id = ? AND source_revision <= ?",
-        (id, int(source_revision)),
+        (record_id, int(source_revision)),
     )
 
 

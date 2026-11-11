@@ -311,7 +311,7 @@ def get_record(db: Database, record_id: str) -> RecordRow | None:
     "absent" from "failed" without inspecting an error string.
     """
     row = db.query_one(
-        f"SELECT {_RECORD_COLUMNS} FROM vault_record WHERE id = ?", (id,)
+        f"SELECT {_RECORD_COLUMNS} FROM vault_record WHERE id = ?", (record_id,)
     )
     if row is None:
         return None
