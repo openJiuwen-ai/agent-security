@@ -15,6 +15,7 @@ from pathlib import Path
 
 from jiuwenbox.logging_config import configure_logging
 from jiuwenbox.models.policy import SyscallPolicy
+from jiuwenbox.supervisor.syscall_numbers import AARCH64_SYSCALLS, X86_64_SYSCALLS
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -92,81 +93,20 @@ def _arch_aliases() -> tuple[str, ...]:
 
 
 def _fallback_syscall_numbers() -> dict[str, int]:
-    """Return a small syscall table for the current architecture."""
+    """Return pinned native ABI numbers when host headers are unavailable."""
     if _audit_arch() == AUDIT_ARCH_AARCH64:
-        return {
-            "lookup_dcookie": 18,
-            "umount2": 39,
-            "mount": 40,
-            "pivot_root": 41,
-            "nfsservctl": 42,
-            "acct": 89,
-            "exit": 93,
-            "unshare": 97,
-            "kexec_load": 104,
-            "init_module": 105,
-            "delete_module": 106,
-            "ptrace": 117,
-            "reboot": 142,
-            "kill": 129,
-            "tkill": 130,
-            "tgkill": 131,
-            "getpid": 172,
-            "getppid": 173,
-            "add_key": 217,
-            "request_key": 218,
-            "keyctl": 219,
-            "swapon": 224,
-            "swapoff": 225,
-            "perf_event_open": 241,
-            "name_to_handle_at": 264,
-            "open_by_handle_at": 265,
-            "setns": 268,
-            "finit_module": 273,
-            "bpf": 280,
-            "userfaultfd": 282,
-            "kexec_file_load": 294,
-            "io_uring_setup": 425,
-            "io_uring_enter": 426,
-            "io_uring_register": 427,
-            "clone3": 435,
-        }
-
-    return {
-        "read": 0, "write": 1, "open": 2, "close": 3, "stat": 4,
-        "fstat": 5, "lstat": 6, "poll": 7, "lseek": 8, "mmap": 9,
-        "mprotect": 10, "munmap": 11, "brk": 12, "ioctl": 16,
-        "access": 21, "pipe": 22, "select": 23, "sched_yield": 24,
-        "dup": 32, "dup2": 33, "pause": 34, "nanosleep": 35,
-        "getpid": 39, "socket": 41, "connect": 42, "accept": 43,
-        "sendto": 44, "recvfrom": 45, "bind": 49, "listen": 50,
-        "clone": 56, "fork": 57, "vfork": 58, "execve": 59, "exit": 60,
-        "wait4": 61, "kill": 62, "uname": 63, "fcntl": 72,
-        "flock": 73, "fsync": 74, "getcwd": 79, "chdir": 80,
-        "mkdir": 83, "rmdir": 84, "link": 86, "unlink": 87,
-        "chmod": 90, "chown": 92, "getuid": 102, "getgid": 104,
-        "geteuid": 107, "getegid": 108,
-        "ptrace": 101, "mount": 165, "umount2": 166, "reboot": 169,
-        "swapon": 167, "swapoff": 168, "pivot_root": 155,
-        "kexec_load": 246, "kexec_file_load": 320,
-        "unshare": 272, "setns": 308, "clone3": 435,
-        "userfaultfd": 323, "perf_event_open": 298, "bpf": 321,
-        "add_key": 248, "request_key": 249, "keyctl": 250,
-        "io_uring_setup": 425, "io_uring_enter": 426, "io_uring_register": 427,
-        "open_by_handle_at": 304, "name_to_handle_at": 303,
-        "init_module": 175, "finit_module": 313, "delete_module": 176,
-        "acct": 163, "nfsservctl": 180, "lookup_dcookie": 212,
-    }
+        return dict(AARCH64_SYSCALLS)
+    return dict(X86_64_SYSCALLS)
 
 
 @lru_cache(maxsize=1)
 def _get_syscall_numbers() -> dict[str, int]:
     """Load the syscall number table for the current architecture.
 
-    Falls back to a small architecture-specific subset if /usr/include headers
-    are absent.
+    Pinned native ABI numbers are extended by literal definitions in matching
+    host headers. Partial headers cannot discard or override known ABI numbers.
     """
-    table: dict[str, int] = {}
+    table = _fallback_syscall_numbers()
 
     machine = _machine()
     if machine in {"aarch64", "arm64"}:
@@ -179,7 +119,6 @@ def _get_syscall_numbers() -> dict[str, int]:
         headers = [
             Path("/usr/include/asm/unistd_64.h"),
             Path("/usr/include/x86_64-linux-gnu/asm/unistd_64.h"),
-            Path("/usr/include/asm-generic/unistd.h"),
         ]
 
     for header in headers:
@@ -191,16 +130,16 @@ def _get_syscall_numbers() -> dict[str, int]:
                         parts = line.split()
                         if len(parts) >= 3:
                             name = parts[1].removeprefix("__NR_")
+                            if name == "syscalls":  # Header count, not a callable syscall.
+                                continue
                             try:
-                                table[name] = int(parts[2])
+                                table.setdefault(name, int(parts[2]))
                             except ValueError:
                                 continue
-                if table:
-                    return table
             except OSError:
                 continue
 
-    return _fallback_syscall_numbers()
+    return table
 
 
 def _blocked_syscalls_for_current_arch(policy: SyscallPolicy) -> list[str]:
@@ -285,7 +224,7 @@ def build_seccomp_filter(policy: SyscallPolicy) -> bytes:
         if name in syscall_table:
             blocked_nrs.append(syscall_table[name])
         else:
-            logger.warning("Unknown syscall '%s', skipping", name)
+            raise ValueError(f"Cannot resolve configured syscall for {_machine()}: {name}")
 
     blocked_nrs.sort()
     return _assemble_bpf(blocked_nrs)
