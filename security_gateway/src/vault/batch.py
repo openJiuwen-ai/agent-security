@@ -39,7 +39,7 @@ def batch_get(vault: Vault, ids: Sequence[str]) -> dict[str, Record]:
     cannot be decrypted raises, exactly as :meth:`Vault.get` does.
     """
     unique = list(dict.fromkeys(ids))
-    found = vault._get_many(unique)
+    found = vault.get_many(unique)
     return {record_id: found[record_id] for record_id in unique if record_id in found}
 
 

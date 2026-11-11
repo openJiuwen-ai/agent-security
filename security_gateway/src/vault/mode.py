@@ -55,9 +55,7 @@ def _fingerprint(cfg: Any, schema: Any) -> str:
     etcd = getattr(cfg, "etcd", None)
     payload: dict[str, Any] = {
         "mode": mode_name(cfg),
-        "db_path": os.path.abspath(
-            getattr(cfg, "db_path", "") or os.path.join(cfg.data_dir, "vault.db")
-        ),
+        "db_path": os.path.abspath(getattr(cfg, "db_path", "") or os.path.join(cfg.data_dir, "vault.db")),
         "crypto_mode": str(getattr(cfg, "crypto_mode", "")),
         "etcd": None,
     }
@@ -91,13 +89,9 @@ def _read_mode(path: str) -> dict[str, Any] | None:
     except FileNotFoundError:
         return None
     except (OSError, ValueError) as exc:
-        raise InvalidError(
-            f"vault: read the data directory's mode file {path!r}: {exc}"
-        ) from exc
+        raise InvalidError(f"vault: read the data directory's mode file {path!r}: {exc}") from exc
     if not isinstance(value, dict) or not value.get("mode"):
-        raise InvalidError(
-            f"vault: the data directory's mode file {path!r} is malformed"
-        )
+        raise InvalidError(f"vault: the data directory's mode file {path!r} is malformed")
     return value
 
 
@@ -105,11 +99,18 @@ def _write_mode(path: str, value: dict[str, Any]) -> None:
     tmp = f"{path}.{os.getpid()}.tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(value, f, sort_keys=True)
-            f.write("\n")
-            f.flush()
-            os.fsync(f.fileno())
+        f = os.fdopen(fd, "w", encoding="utf-8")
+    except BaseException:
+        os.close(fd)
+        raise
+    try:
+        json.dump(value, f, sort_keys=True)
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    finally:
+        f.close()
+    try:
         os.replace(tmp, path)
     except BaseException:
         try:
@@ -121,10 +122,7 @@ def _write_mode(path: str, value: dict[str, Any]) -> None:
 
 def _try_lock(fd: int, exclusive: bool) -> bool:
     if fcntl is None:  # pragma: no cover - Windows is not supported
-        raise InvalidError(
-            "vault: the data directory guard needs fcntl, which this "
-            "platform does not provide"
-        )
+        raise InvalidError("vault: the data directory guard needs fcntl, which this platform does not provide")
     flags = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
     try:
         fcntl.flock(fd, flags | fcntl.LOCK_NB)
@@ -186,10 +184,7 @@ class DataDirGuard:
             fcntl.flock(init_fd, fcntl.LOCK_EX)
             existing = _read_mode(mode_path)
             if existing is not None:
-                if (
-                    existing.get("mode") != mode
-                    or existing.get("fingerprint") != fingerprint
-                ):
+                if existing.get("mode") != mode or existing.get("fingerprint") != fingerprint:
                     raise InvalidError(
                         "vault: the data directory "
                         f"{data_dir!r} already belongs to a different vault "
@@ -204,8 +199,7 @@ class DataDirGuard:
                     os.close(lock_fd)
                     if mode == MODE_MULTI_PROCESS:
                         detail = (
-                            "a single-process vault already holds the "
-                            "exclusive lock; multi_process=True cannot join it"
+                            "a single-process vault already holds the exclusive lock; multi_process=True cannot join it"
                         )
                     else:
                         detail = (
@@ -213,9 +207,7 @@ class DataDirGuard:
                             "Set multi_process=True in every process to share "
                             "one directory"
                         )
-                    raise InvalidError(
-                        f"vault: cannot open the data directory {data_dir!r}: {detail}"
-                    )
+                    raise InvalidError(f"vault: cannot open the data directory {data_dir!r}: {detail}")
                 if existing is None:
                     _write_mode(
                         mode_path,

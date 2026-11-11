@@ -152,27 +152,21 @@ def _kek_shard(shard: bytes | None) -> bytes:
     if shard is None:
         return random_shard()
     if not isinstance(shard, (bytes, bytearray)) or len(shard) != SHARD_SIZE:
-        raise KeyMismatchError(
-            f"vault: the KEK shard is {len(shard)} bytes, want {SHARD_SIZE}"
-        )
+        raise KeyMismatchError(f"vault: the KEK shard is {len(shard)} bytes, want {SHARD_SIZE}")
     value = bytes(shard)
     if not any(value):
         raise KeyMismatchError("vault: refusing an all-zero KEK shard")
     return value
 
 
-def _rewrap_dek(
-    mode: Mode, old_kek: KeyBytes, new_kek: KeyBytes, wrapped: bytes
-) -> bytes:
+def _rewrap_dek(mode: Mode, old_kek: KeyBytes, new_kek: KeyBytes, wrapped: bytes) -> bytes:
     """Move one wrapped DEK from the old KEK to the new one."""
     if not wrapped:
         return b""
     try:
         dek = unwrap_dek(mode, old_kek.bytes(), wrapped)
     except CryptoError as exc:
-        raise KeyMismatchError(
-            "the stored DEK does not open with this store's key material"
-        ) from exc
+        raise KeyMismatchError("the stored DEK does not open with this store's key material") from exc
     return wrap_dek(mode, new_kek.bytes(), dek)
 
 
@@ -191,17 +185,10 @@ def _rotate_kek(vault: RotationTarget, shard: bytes | None, *, s1: bool) -> None
             try:
                 mode = parse_mode(km.crypto_mode)
             except CryptoError as exc:
-                raise KeyMismatchError(
-                    f'stored crypto mode "{km.crypto_mode}" is not usable: {exc}'
-                ) from exc
+                raise KeyMismatchError(f'stored crypto mode "{km.crypto_mode}" is not usable: {exc}') from exc
             if len(km.active_config_shard) != SHARD_SIZE:
-                raise KeyMismatchError(
-                    f"stored config shard is {len(km.active_config_shard)} bytes, "
-                    f"want {SHARD_SIZE}"
-                )
-            old_s1 = load_s1_from_file(
-                s1_path(vault.secrets_dir, km.file_shard_version)
-            )
+                raise KeyMismatchError(f"stored config shard is {len(km.active_config_shard)} bytes, want {SHARD_SIZE}")
+            old_s1 = load_s1_from_file(s1_path(vault.secrets_dir, km.file_shard_version))
             new_shard = _kek_shard(shard)
             old_kek = derive_kek(old_s1, km.active_config_shard, mode)
             try:
@@ -211,12 +198,8 @@ def _rotate_kek(vault: RotationTarget, shard: bytes | None, *, s1: bool) -> None
                     new_kek = derive_kek(old_s1, new_shard, mode)
                 try:
                     new_wrapped = _rewrap_dek(mode, old_kek, new_kek, km.wrapped_dek)
-                    new_pending = _rewrap_dek(
-                        mode, old_kek, new_kek, km.pending_wrapped_dek
-                    )
-                    new_superseded = _rewrap_dek(
-                        mode, old_kek, new_kek, km.superseded_wrapped_dek
-                    )
+                    new_pending = _rewrap_dek(mode, old_kek, new_kek, km.pending_wrapped_dek)
+                    new_superseded = _rewrap_dek(mode, old_kek, new_kek, km.superseded_wrapped_dek)
                 finally:
                     new_kek.zero()
             finally:
@@ -307,8 +290,7 @@ def rotate_dek(
                     )
                     if result.timed_out and result.required:
                         _log.warning(
-                            "vault: generation %s was adopted by %s of %s "
-                            "required peers before the barrier timed out",
+                            "vault: generation %s was adopted by %s of %s required peers before the barrier timed out",
                             km.active_dek_version,
                             result.confirmed,
                             result.required,
@@ -355,9 +337,7 @@ def set_rotate_before_claim_hook(fn: Callable[[], None] | None) -> None:
     _rotate_before_claim_hook = fn
 
 
-def _auto_rotate_loop(
-    vault: RotationTarget, period: float, stop: threading.Event
-) -> None:
+def _auto_rotate_loop(vault: RotationTarget, period: float, stop: threading.Event) -> None:
     """Run the ticker: one tick now, then one per period.
 
     A tick that fails is logged and the loop goes on: one bad tick must
@@ -401,8 +381,7 @@ def _rotate_once(
             takeover_pending(vault, stop)
         except Exception as exc:  # noqa: BLE001 - reported, not fatal
             _log.info(
-                "vault: the auto-rotate could not take the pending rotation "
-                "over: generation=%d err=%s",
+                "vault: the auto-rotate could not take the pending rotation over: generation=%d err=%s",
                 km.pending_dek_version,
                 exc,
             )
@@ -417,8 +396,7 @@ def _rotate_once(
         rotated_at = _fleet_rotation_gate(store)
     if rotated_at > 0 and (time.time() - rotated_at) < period:
         _log.info(
-            "vault: the auto-rotate is skipping this tick: reason=gate "
-            "last_rotate_at=%d period=%s",
+            "vault: the auto-rotate is skipping this tick: reason=gate last_rotate_at=%d period=%s",
             rotated_at,
             period,
         )
@@ -482,7 +460,8 @@ def converge_to(
                 src = vault.keys.by_version(row.dek_version)
             if src is None:
                 raise StaleGenerationError(
-                    f'record "{row.id}" is under generation {row.dek_version}, which this store does not hold (it holds '
+                    f'record "{row.id}" is under generation {row.dek_version}, '
+                    "which this store does not hold (it holds "
                     f"{format_held_versions(vault.keys.held_versions())})"
                 )
 
@@ -495,7 +474,9 @@ def converge_to(
                     )
                 if f.encrypted != definition.encrypted:
                     raise SchemaMismatchError(
-                        f'record "{row.id}" field "{f.name}" is marked encrypted={f.encrypted} but schema v{sch.version} says {definition.encrypted}'
+                        f'record "{row.id}" field "{f.name}" is marked '
+                        f"encrypted={f.encrypted} but schema v{sch.version} "
+                        f"says {definition.encrypted}"
                     )
                 if not definition.encrypted:
                     rewritten.append(f)
@@ -509,9 +490,7 @@ def converge_to(
                 try:
                     sealed = encrypt_credential(target.mode, target.dek_bytes(), plain)
                 except CryptoError as exc:
-                    raise VaultError(
-                        f"vault: re-encrypt record {row.id!r} field {f.name!r}: {exc}"
-                    ) from exc
+                    raise VaultError(f"vault: re-encrypt record {row.id!r} field {f.name!r}: {exc}") from exc
                 rewritten.append(
                     ContainerField(
                         name=f.name,
@@ -531,9 +510,7 @@ def converge_to(
             # A rotation that gave up its turn would leave the store in the
             # pending state until the lease expires.
             run_with_busy_retry(
-                lambda: update_record_cipher(
-                    vault.db, row.id, row.row_version, encoded, target.version
-                ),
+                lambda: update_record_cipher(vault.db, row.id, row.row_version, encoded, target.version),
                 stop,
             )
 
@@ -634,9 +611,7 @@ def _takeover_locked(
         # Somebody else finished it while we waited.
         return
     if km.pending_dek_version != pending:
-        raise RotationInProgressError(
-            f"the pending generation moved from v{pending} to v{km.pending_dek_version}"
-        )
+        raise RotationInProgressError(f"the pending generation moved from v{pending} to v{km.pending_dek_version}")
     if km.updated_at != updated_at:
         # The lease was refreshed: the rotation is alive.
         raise RotationInProgressError(f"a rotation to v{pending} is in progress")
@@ -647,9 +622,7 @@ def _takeover_locked(
     vault.reload_snapshot()
     target = vault.keys.pend()
     if target is None or target.version != pending:
-        raise KeyMismatchError(
-            f"the pending generation {pending} does not open with this store's key material"
-        )
+        raise KeyMismatchError(f"the pending generation {pending} does not open with this store's key material")
 
     # Announce the takeover: a fresh lease tells the other processes that
     # somebody is on it.
@@ -714,9 +687,7 @@ def _rotate_locked(
         if _attempt == 0:
             start_version = km.active_dek_version
         if km.pending_dek_version != 0:
-            raise RotationInProgressError(
-                f"a rotation to v{km.pending_dek_version} is already in progress"
-            )
+            raise RotationInProgressError(f"a rotation to v{km.pending_dek_version} is already in progress")
 
         try:
             mode = parse_mode(km.crypto_mode)
@@ -749,9 +720,7 @@ def _rotate_locked(
             try:
                 gen, present = read_generation(store.kv, store.ns)
             except Exception as exc:  # noqa: BLE001 - remapped to a vault error
-                raise VaultError(
-                    f"vault: etcd: read the authority's generation: {exc}"
-                ) from exc
+                raise VaultError(f"vault: etcd: read the authority's generation: {exc}") from exc
             if not present:
                 # The authority has no fence yet: nothing has been written
                 # to it, and this node's own generation is the only one in
@@ -789,9 +758,7 @@ def _rotate_locked(
             # whether this is an error, a retry, or a success.
             now = read_key_meta(vault.db)
             if now is not None and now.pending_dek_version != 0:
-                raise RotationInProgressError(
-                    f"a rotation to v{now.pending_dek_version} is already in progress"
-                )
+                raise RotationInProgressError(f"a rotation to v{now.pending_dek_version} is already in progress")
             # Nobody is rotating. Either another rotation finished under
             # us — the generation moved — or the claim lost to something
             # else. Both are a retry: the loop reads the generation that is
@@ -816,9 +783,7 @@ def _rotate_locked(
     now = read_key_meta(vault.db)
     if now is not None:
         if now.pending_dek_version != 0:
-            raise RotationInProgressError(
-                f"a rotation to v{now.pending_dek_version} is already in progress"
-            )
+            raise RotationInProgressError(f"a rotation to v{now.pending_dek_version} is already in progress")
         if now.active_dek_version > start_version:
             vault.reload_snapshot()
             return
@@ -942,15 +907,11 @@ def _acquire_fleet_lock(store: Any, leases: Any | None) -> Any:
     from security_gateway.vault.etcdstore.errors import RotationHeldError
 
     try:
-        return acquire_rotation_lock(
-            store.kv, leases, store.ns, rotation_holder(), ROTATION_LOCK_TTL_SECONDS
-        )
+        return acquire_rotation_lock(store.kv, leases, store.ns, rotation_holder(), ROTATION_LOCK_TTL_SECONDS)
     except RotationHeldError as exc:
         # Another node is rotating the fleet right now. That is the one
         # contention a rotation is allowed to fail on.
-        raise RotationInProgressError(
-            "another node holds the fleet's rotation lock"
-        ) from exc
+        raise RotationInProgressError("another node holds the fleet's rotation lock") from exc
     except Exception as exc:  # noqa: BLE001 - remapped to a vault error below
         raise VaultError(f"vault: etcd: acquire the rotation lock: {exc}") from exc
 
@@ -979,9 +940,7 @@ def _start_rotation_lock_heartbeat(
         finally:
             done.set()
 
-    thread = threading.Thread(
-        target=beat, name="vault-rotation-lock-heartbeat", daemon=True
-    )
+    thread = threading.Thread(target=beat, name="vault-rotation-lock-heartbeat", daemon=True)
     thread.start()
 
     def stop_heartbeat() -> None:
