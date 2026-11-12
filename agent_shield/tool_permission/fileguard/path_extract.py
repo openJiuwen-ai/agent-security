@@ -12,7 +12,7 @@ import logging
 import os
 import re
 import shlex
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -321,7 +321,10 @@ def _segment_tokens(segment: str, shell_type: str = "auto") -> tuple[list[str], 
     return tokens, redirects
 
 
-def _resolve_shell_operand(tok: str, cwd: Path | None, shell_type: str, *, bare: bool = False) -> Path | None:
+def _resolve_shell_operand(
+    tok: str, cwd: Path | None, shell_type: str, *, bare: bool = False,
+    resolve_path: Callable[[Path], Path] | None = None,
+) -> Path | None:
     quoted = tok.startswith(('"', "'"))
     if shell_type in {"bash", "sh"} and not _is_windows_abs_text(tok):
         try:
@@ -348,7 +351,7 @@ def _resolve_shell_operand(tok: str, cwd: Path | None, shell_type: str, *, bare:
             return None
         path = cwd / path
     try:
-        return _resolve_extract_path(path)
+        return (resolve_path or _resolve_extract_path)(path)
     except (OSError, RuntimeError):
         return None
 
@@ -540,6 +543,7 @@ def _powershell_cd_target(tokens: list[str]) -> _CdTarget:
 
 def _cd_accesses(
     tokens: list[str], cwd: Path | None, *, include_cd_reads: bool, shell_type: str,
+    resolve_path: Callable[[Path], Path] | None = None,
 ) -> tuple[list[tuple[Path, FileAction]], Path | None]:
     if shell_type in {"bash", "sh"}:
         target = _posix_cd_target(tokens, shell_type)
@@ -554,13 +558,13 @@ def _cd_accesses(
     directory = None
     if target.kind == "home":
         try:
-            directory = Path.home().resolve()
+            directory = (resolve_path or _resolve_extract_path)(Path.home())
         except (OSError, RuntimeError) as exc:
             raise ShellPathUnresolvedCwdError("Shell working directory could not be resolved") from exc
     elif target.kind == "literal" and not _cd_has_dynamic_glob(
         target.operand, shell_type, literal_path=target.literal_path,
     ):
-        directory = _resolve_shell_operand(target.operand, cwd, shell_type, bare=True)
+        directory = _resolve_shell_operand(target.operand, cwd, shell_type, bare=True, resolve_path=resolve_path)
     if directory is None:
         raise ShellPathUnresolvedCwdError("Shell working directory requires a literal cd target")
     cmd_on_windows = shell_type == "cmd" and os.name == "nt"
@@ -577,6 +581,19 @@ def _cd_accesses(
     return accesses, directory
 
 
+def _directory_command(tokens: list[str], shell_type: str) -> bool:
+    """Recognize cwd builtins once for every resource-analysis consumer."""
+    if not tokens:
+        return False
+    cmd0 = _basename_lower(_decode_cmd_word(tokens[0]) if shell_type == "cmd" else tokens[0].strip('"').strip("'"))
+    if cmd0 in {"pushd", "popd", "push-location", "pop-location"}:
+        raise ShellPathUnresolvedCwdError("Shell working directory stack is unknown")
+    aliases = {"cd", "set-location", "sl", "chdir"} if shell_type == "powershell" else (
+        {"cd", "chdir"} if shell_type == "cmd" else {"cd"}
+    )
+    return cmd0 in aliases
+
+
 def _path_aware_one_segment(
     segment: str, cwd: Path | None, *, include_cd_reads: bool = True, shell_type: str = "auto",
 ) -> tuple[list[tuple[Path, FileAction]], Path | None]:
@@ -585,17 +602,10 @@ def _path_aware_one_segment(
     if not tokens:
         return [], None
     cmd0 = _basename_lower(_decode_cmd_word(tokens[0]) if shell_type == "cmd" else tokens[0].strip('"').strip("'"))
-    if cmd0 in {"pushd", "popd", "push-location", "pop-location"}:
-        raise ShellPathUnresolvedCwdError("Shell working directory stack is unknown")
-    directory_aliases = {"set-location", "sl", "chdir"} if shell_type == "powershell" else (
-        {"chdir"} if shell_type == "cmd" else set()
-    )
-    if cmd0 in directory_aliases:
-        cmd0 = "cd"
+    if _directory_command(tokens, shell_type):
+        return _cd_accesses(tokens, cwd, include_cd_reads=include_cd_reads, shell_type=shell_type)
     if cmd0 not in _PATH_AWARE_COMMANDS:
         return [], None
-    if cmd0 == "cd":
-        return _cd_accesses(tokens, cwd, include_cd_reads=include_cd_reads, shell_type=shell_type)
     base = _resolve_extract_path(cwd) if cwd is not None else None
     path_tokens: list[tuple[Path, int]] = []
 
@@ -658,7 +668,6 @@ def _path_aware_one_segment(
 
 def _shell_segment_accesses(
     segment: str, cwd: Path | None, *, include_cd_reads: bool, shell_type: str, shell_extras: bool,
-    depth: int, budget: list[int],
 ) -> tuple[list[tuple[Path, FileAction]], Path | None]:
     """Use one entry cwd for file operands, interpreter scripts and redirects."""
     part, new_cwd = _path_aware_one_segment(
@@ -671,6 +680,10 @@ def _shell_segment_accesses(
             path = _resolve_shell_operand(tok, cwd, shell_type, bare=True)
             if path is not None:
                 part.append((path, action))
+    return part, new_cwd
+
+
+def _inline_shell_command(segment: str, tokens: list[str], shell_type: str) -> tuple[str | None, str]:
     inline = _literal_shell_inline(tokens, shell_type)
     child_shell = "bash" if tokens and _basename_lower(tokens[0]) == "bash" else "sh"
     if inline is None and tokens:
@@ -680,17 +693,7 @@ def _shell_segment_accesses(
             if peeled != segment:
                 inline = peeled
                 child_shell = "cmd" if launcher == "cmd" else "powershell"
-    if inline is not None:
-        if depth >= _MAX_INLINE_DEPTH:
-            _raise_analysis_limit("inline shell depth limit")
-        part.extend(_extract_segment_accesses(
-            inline, cwd, include_cd_reads=include_cd_reads,
-            shell_type=child_shell, shell_extras=shell_extras,
-            depth=depth + 1, budget=budget,
-        ))
-        # Each interpreter owns its cwd; only its resource effects reach the parent.
-        new_cwd = None
-    return part, new_cwd
+    return inline, child_shell
 
 
 def _literal_shell_inline(tokens: list[str], shell_type: str) -> str | None:
@@ -747,44 +750,79 @@ def _raise_analysis_limit(reason: str) -> None:
 def _shell_profiles(command: str, shell_type: str) -> tuple[str, ...]:
     """An unknown host shell requires conservative views, never host imports."""
     del command
+    shell_type = {"pwsh": "powershell", "ps": "powershell", "dos": "cmd"}.get(shell_type, shell_type)
     if shell_type == "auto":
         return ("cmd", "powershell", "sh") if os.name == "nt" else ("sh",)
     return (shell_type,)
+
+
+def _walk_shell_segments(
+    command: str, workdir: str | Path | None, *, shell_type: str,
+    resolve_path: Callable[[Path], Path] | None = None, depth: int = 0, budget: list[int] | None = None,
+) -> Iterator[tuple[str, Path | None, str]]:
+    """Share literal control flow, cwd candidates and budgets without resolving operands.
+
+    File access resolves cwd aliases for policy matching; deletion counting can
+    supply lexical normalization to retain the identity of links being deleted.
+    Inline shells inherit entry cwd, but never change their parent's cwd.
+    """
+    if budget is None:
+        budget = [_MAX_EXTRACTION_STEPS]
+    for profile in _shell_profiles(command, shell_type):
+        segments = _shell_segments(command, profile)
+        # A later ; / || can resume after an earlier && chain was skipped.
+        # Keep its failure cwd candidates across the whole chain. A pipeline
+        # alone cannot resume a skipped && branch; its cwd uncertainty is local.
+        may_resume = any(op not in {"", "&&", "|", "|&"} for _, op in segments)
+        cwds = {(resolve_path or _resolve_extract_path)(Path(workdir)) if workdir is not None else None}
+        previous_op = ""
+        for segment, connector in segments:
+            next_cwds: set[Path | None] = set()
+            for cwd in sorted(cwds, key=str):
+                budget[0] -= 1
+                if budget[0] < 0:
+                    _raise_analysis_limit("shell path analysis work limit")
+                tokens, _ = _segment_tokens(segment, profile)
+                tokens = _execution_tokens(tokens, profile)
+                new_cwd = None
+                if _directory_command(tokens, profile):
+                    _, new_cwd = _cd_accesses(
+                        tokens, cwd, include_cd_reads=False, shell_type=profile, resolve_path=resolve_path,
+                    )
+                yield segment, cwd, profile
+                inline, child_shell = _inline_shell_command(segment, tokens, profile)
+                if inline is not None:
+                    if depth >= _MAX_INLINE_DEPTH:
+                        _raise_analysis_limit("inline shell depth limit")
+                    yield from _walk_shell_segments(
+                        inline, cwd, shell_type=child_shell, resolve_path=resolve_path, depth=depth + 1, budget=budget,
+                    )
+                    new_cwd = None
+                if new_cwd is not None:
+                    next_cwds.add(new_cwd)
+                else:
+                    next_cwds.add(cwd)
+            # Pipeline cd commands may run in child processes. Retain the
+            # pipeline entry cwd through its last stage for later parent work.
+            uncertain_cwd = may_resume or connector in {"|", "|&"} or previous_op in {"|", "|&"}
+            cwds = cwds | next_cwds if uncertain_cwd else next_cwds
+            previous_op = connector
+            if len(cwds) > _MAX_CWD_CANDIDATES:
+                _raise_analysis_limit("shell path extraction exceeded the cwd candidate limit")
 
 
 def _extract_segment_accesses(
     command: str, workdir: str | Path | None, *, include_cd_reads: bool, shell_type: str, shell_extras: bool,
     depth: int = 0, budget: list[int] | None = None,
 ) -> list[tuple[Path, FileAction]]:
-    """Walk literal segments, conservatively retaining conditional cwd states."""
     results: list[tuple[Path, FileAction]] = []
-    if budget is None:
-        budget = [_MAX_EXTRACTION_STEPS]
-    for profile in _shell_profiles(command, shell_type):
-        segments = _shell_segments(command, profile)
-        uncertain_cwd = any(op not in {"", "&&"} for _, op in segments)
-        cwds = {_resolve_extract_path(Path(workdir)) if workdir is not None else None}
-        for segment, _ in segments:
-            next_cwds: set[Path | None] = set()
-            for cwd in sorted(cwds, key=str):
-                budget[0] -= 1
-                if budget[0] < 0:
-                    _raise_analysis_limit("shell path analysis work limit")
-                part, new_cwd = _shell_segment_accesses(
-                    segment, cwd, include_cd_reads=include_cd_reads, shell_type=profile, shell_extras=shell_extras,
-                    depth=depth, budget=budget,
-                )
-                results.extend(part)
-                if new_cwd is not None:
-                    next_cwds.add(new_cwd)
-                else:
-                    next_cwds.add(cwd)
-            # && reaches the following command only after a successful cd.
-            # Other control flow can retain an earlier directory (cd failure,
-            # pipeline child, or an unexecuted branch); keep those candidates.
-            cwds = cwds | next_cwds if uncertain_cwd else next_cwds
-            if len(cwds) > _MAX_CWD_CANDIDATES:
-                _raise_analysis_limit("shell path extraction exceeded the cwd candidate limit")
+    for segment, cwd, profile in _walk_shell_segments(
+        command, workdir, shell_type=shell_type, depth=depth, budget=budget,
+    ):
+        part, _ = _shell_segment_accesses(
+            segment, cwd, include_cd_reads=include_cd_reads, shell_type=profile, shell_extras=shell_extras,
+        )
+        results.extend(part)
     return list(dict.fromkeys(results))
 
 

@@ -407,11 +407,11 @@ class WindowsRuntime(RuntimeAdapter):
         env.setdefault("APPDATA", os.path.join(under_profile, "AppData", "Roaming"))
         from jiuwenbox.server.environment import inherited_environment
         from jiuwenbox.supervisor.win_recycle_broker import prepare_runner_recycle
-        from jiuwenbox.supervisor.win_softdelete import merge_soft_delete_spawn_env
+        from jiuwenbox.supervisor.win_softdelete import _merge_soft_delete_runner_env
 
         for _k, _v in inherited_environment(for_runner=True).items():
             env.setdefault(_k, _v)
-        merge_soft_delete_spawn_env(env)
+        _merge_soft_delete_runner_env(env)
         if env.get("JIUWENBOX_SOFT_DELETE") == "1":
             _drive = (os.environ.get("SystemDrive") or "C:").rstrip("\\")
             env["JIUWENBOX_SOFT_DELETE_TRACE"] = os.path.join(
@@ -431,7 +431,6 @@ class WindowsRuntime(RuntimeAdapter):
                 "软删除回收登记失败, 沙箱仍会启动 sandbox=%s", sandbox_id,
             )
             recycle_token = None
-        merge_soft_delete_spawn_env(env)
         self._win_recycle_tokens[sandbox_id] = recycle_token
 
         def _apply_acl():

@@ -101,16 +101,20 @@ def merge_soft_delete_env(env: dict[str, str]) -> None:
 
 
 def merge_soft_delete_spawn_env(env: dict[str, str]) -> None:
-    """把当前进程 (box-server 或 runner) 的软删除变量写入目标 env 块.
+    """Copy runner settings to exec; broker credentials always belong to the runner."""
+    _merge_soft_delete_runner_env(env)
+    for key in (ENV_RECYCLE_PORT, ENV_RECYCLE_TOKEN):
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
+        else:
+            env.pop(key, None)
 
-    runner 第一跳用自定义 env 块启动, 不会自动带上父进程环境; exec 子进程
-    同样只拿 IPC 传来的 env + 本函数从 runner os.environ 补齐. 统一入口避免
-    只登记了 recycle port 却漏掉 ``JIUWENBOX_SOFT_DELETE`` / DLL 路径.
-    """
+
+def _merge_soft_delete_runner_env(env: dict[str, str]) -> None:
+    """Copy server settings without importing a different broker's credentials."""
     merge_host_log_layout_env(env)
-    for key in (
-        ENV_ENABLED, ENV_ARCHIVE, ENV_DLL, ENV_RECYCLE_PORT, ENV_RECYCLE_TOKEN, ENV_TRACE,
-    ):
+    for key in (ENV_ENABLED, ENV_ARCHIVE, ENV_DLL, ENV_TRACE):
         value = os.environ.get(key)
         if value:
             env.setdefault(key, value)

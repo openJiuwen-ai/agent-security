@@ -6,7 +6,7 @@
 达到阈值时，把本次调用抬升为 ASK（``del_guard:batch_delete``）。
 
 - 未达阈值 / 非删除命令 / 软删除关闭 → 返回 ``None``（不改变既有判定）。
-- 解析失败 / 目标不可访问 → fail-open，返回 ``None`` 只告警，由既有规则兜底。
+- Shell 分析、目标读取或目录扫描不完整 → ASK，不能把偏小计数当作低于阈值。
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from typing import Any, Callable
 
 from ..fileguard.tool_categories import is_shell_tool, shell_tools_from_config
 from ..models import PermissionLevel, PermissionResult
-from .del_count import count_deletion_targets
+from .del_count import _DeletionCountIncompleteError, count_deletion_targets
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +135,12 @@ class DeletionGuard:
 
         try:
             count, hit_paths = count_deletion_targets(command, shell_type, workdir)
+        except _DeletionCountIncompleteError:
+            return PermissionResult(
+                permission=PermissionLevel.ASK,
+                matched_rule="del_guard:batch_delete",
+                reason="删除范围分析或目录扫描不完整，无法完整估算删除数量，需要确认",
+            )
         except Exception:  # noqa: BLE001 - fail-open
             logger.warning("[DeletionGuard] count failed tool=%s", tool_name, exc_info=True)
             return None
