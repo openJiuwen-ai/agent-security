@@ -1011,9 +1011,45 @@ def _rollback_acl_changes(changes: list[_AclChange]) -> None:
             logger.warning("[ACL] rollback failed path=%s", change.path, exc_info=True)
 
 
+def _write_bounded_acl(path: str, root: str, acl, sd, aces: list, sid_keys: set[str],
+                       change: _AclChange, legacy_owner_sid: str | None) -> None:
+    """Retry a denied policy write only after verified host management repair."""
+    try:
+        _write_file_dacl(path, acl, sd=sd)
+    except Exception as exc:
+        if not legacy_owner_sid or getattr(exc, "winerror", None) != 5:
+            raise
+        from jiuwenbox.supervisor.win_acl_recovery import recover_dacl_management
+
+        with recover_dacl_management(path, root, legacy_owner_sid, change.identity) as repaired:
+            if repaired is None:
+                raise exc
+            # Management is an independent repair. Roll policy back to this
+            # descriptor, not to one that would remove the host's management ACE.
+            before_acl = repaired.GetSecurityDescriptorDacl()
+            retry_acl = _rebuild_acl_with_order(before_acl, aces, drop_sid_keys=sid_keys)
+            change.before_acl = before_acl
+            change.before_entries = _acl_entries(before_acl)
+            change.after_entries = _acl_entries(retry_acl)
+            change.protected = repaired.GetSecurityDescriptorControl()[0] & const.SE_DACL_PROTECTED
+            operation = "retry_write_dacl"
+            try:
+                _write_file_dacl(path, retry_acl, sd=repaired)
+                operation = "verify_policy"
+                api, _, _ = _ensure_pywin32()
+                after = api.GetFileSecurity(path, api.DACL_SECURITY_INFORMATION)
+                if (_acl_entries(after.GetSecurityDescriptorDacl()) != change.after_entries
+                        or after.GetSecurityDescriptorControl()[0] & const.SE_DACL_PROTECTED != change.protected):
+                    raise RuntimeError("Recovered sandbox policy readback mismatch") from exc
+            except Exception:
+                logger.warning("[ACL] recovered policy failed root=%s path=%s operation=%s",
+                               root, path, operation, exc_info=True)
+                raise
+
+
 def _apply_bounded_acl(
     root: str, sid_objs: list, policy: dict, *, require_write: bool = False,
-    changes: list[_AclChange] | None = None, recursive: bool = True,
+    changes: list[_AclChange] | None = None, recursive: bool = True, legacy_owner_sid: str | None = None,
 ) -> list[str]:
     """Apply final policy per object; never ask Windows to propagate a whole tree.
 
@@ -1068,12 +1104,13 @@ def _apply_bounded_acl(
             existing = sd.GetSecurityDescriptorDacl()
             acl = _rebuild_acl_with_order(existing, aces, drop_sid_keys=sid_keys)
             if _acl_entries(existing) != _acl_entries(acl):
+                change = _AclChange(
+                    path, _acl_object_identity(path), existing, _acl_entries(existing), _acl_entries(acl),
+                    sd.GetSecurityDescriptorControl()[0] & const.SE_DACL_PROTECTED,
+                )
                 if changes is not None:
-                    changes.append(_AclChange(
-                        path, _acl_object_identity(path), existing, _acl_entries(existing), _acl_entries(acl),
-                        sd.GetSecurityDescriptorControl()[0] & const.SE_DACL_PROTECTED,
-                    ))
-                _write_file_dacl(path, acl, sd=sd)
+                    changes.append(change)
+                _write_bounded_acl(path, walk_root, acl, sd, aces, sid_keys, change, legacy_owner_sid)
                 written += 1
             elapsed = time.perf_counter() - t_obj
             if elapsed >= _ACL_SLOW_OBJECT_SECONDS:
@@ -1186,6 +1223,7 @@ def apply_sandbox_acl(
         for root in roots:
             applied.extend(_apply_bounded_acl(
                 root, purge_sids, bounded_policy, require_write=True, changes=changes, recursive=recursive_root(root),
+                legacy_owner_sid=sandbox_user_sid,
             ))
     except Exception:
         _rollback_acl_changes(changes)
