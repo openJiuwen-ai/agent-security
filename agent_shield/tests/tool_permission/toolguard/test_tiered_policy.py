@@ -48,6 +48,30 @@ def test_rule_match_and_strictest_across_builtin_and_user() -> None:
     assert "user-deny" not in result.matched_rule
 
 
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    [("normal", PermissionLevel.ALLOW), ("strict", PermissionLevel.ASK)],
+)
+def test_medium_severity_without_action_uses_permission_mode(mode, expected) -> None:
+    component = TieredPolicyComponent()
+    component.configure(
+        {
+            "permission_mode": mode,
+            "package_builtin_rules": False,
+            "rules": [
+                {"tools": ["bash"], "pattern": "re:review", "severity": "MEDIUM"},
+            ],
+        }
+    )
+
+    result = asyncio.run(
+        component.evaluate("bash", {"command": "review"}, route=_BASH_ROUTE)
+    )
+
+    assert result is not None
+    assert result.permission is expected
+
+
 def test_action_override_uses_tools_and_pattern_not_id() -> None:
     component = TieredPolicyComponent()
     component.configure(
