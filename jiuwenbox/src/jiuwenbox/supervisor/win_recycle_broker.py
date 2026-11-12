@@ -48,6 +48,7 @@ _FOF_NOERRORUI = 0x0400
 Recycler = Callable[[str], bool]
 
 _broker: RecycleBroker | None = None
+_permit_ports: list[int] = []
 _broker_lock = threading.Lock()
 
 
@@ -462,7 +463,8 @@ class RecycleBroker:
 
     @property
     def running(self) -> bool:
-        return self._sock is not None and not self._stopped.is_set()
+        return (self._sock is not None and not self._stopped.is_set()
+                and self._thread is not None and self._thread.is_alive())
 
     def start(self, ports: list[int] | None = None) -> int:
         """监听 ``127.0.0.1``. ``ports`` 按顺序尝试, 省略时由系统分配.
@@ -481,7 +483,8 @@ class RecycleBroker:
             for port in candidates:
                 trial = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 try:
-                    trial.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    option = socket.SO_EXCLUSIVEADDRUSE if sys.platform == "win32" else socket.SO_REUSEADDR
+                    trial.setsockopt(socket.SOL_SOCKET, option, 1)
                     trial.bind(("127.0.0.1", port))
                     trial.listen(16)
                 except OSError as exc:
@@ -562,18 +565,25 @@ class RecycleBroker:
         return ok
 
     def _serve(self) -> None:
-        while not self._stopped.is_set():
-            sock = self._sock
-            if sock is None:
-                return
-            try:
-                conn, _addr = sock.accept()
-            except OSError:
-                return
-            threading.Thread(
-                target=self._handle_conn, args=(conn,), name="jiuwen-recycle-conn",
-                daemon=True,
-            ).start()
+        sock = self._sock
+        if sock is None:
+            return
+        try:
+            while not self._stopped.is_set():
+                try:
+                    conn, _addr = sock.accept()
+                except OSError:
+                    return
+                threading.Thread(
+                    target=self._handle_conn, args=(conn,), name="jiuwen-recycle-conn",
+                    daemon=True,
+                ).start()
+        finally:
+            with self._lock:
+                if self._sock is sock:
+                    self._sock = None
+                    self._stopped.set()
+            sock.close()
 
     def _handle_conn(self, conn: socket.socket) -> None:
         try:
@@ -606,12 +616,14 @@ def get_broker() -> RecycleBroker | None:
 
 def start_broker(ports: list[int] | None = None) -> RecycleBroker:
     """启动进程内唯一的转发服务."""
-    global _broker
+    global _broker, _permit_ports
     with _broker_lock:
+        if ports:
+            _permit_ports = list(ports)
         if _broker is not None and _broker.running:
             return _broker
         broker = RecycleBroker()
-        broker.start(ports)
+        broker.start(_permit_ports or ports)
         _broker = broker
         return broker
 
@@ -621,8 +633,23 @@ def stop_broker() -> None:
     with _broker_lock:
         broker = _broker
         _broker = None
+        _permit_ports.clear()
     if broker is not None:
         broker.stop()
+
+
+def _recover_broker() -> RecycleBroker | None:
+    """Recover only while a permitted-port configuration is still active."""
+    global _broker
+    with _broker_lock:
+        if _broker is not None and _broker.running:
+            return _broker
+        if not _permit_ports:
+            return None
+        broker = RecycleBroker()
+        broker.start(list(_permit_ports))
+        _broker = broker
+        return broker
 
 
 def prepare_runner_recycle(env: dict[str, str], roots: list[str]) -> str | None:
@@ -632,9 +659,16 @@ def prepare_runner_recycle(env: dict[str, str], roots: list[str]) -> str | None:
     端口写成 0, 让沙箱里的 DLL 走转发而不是在沙箱内直接调用回收站.
     转发不可用时, DLL 外层钩子回落到真实删除.
     """
+    env.pop(ENV_RECYCLE_PORT, None)
+    env.pop(ENV_RECYCLE_TOKEN, None)
     if not enabled_from_environ():
         return None
     broker = get_broker()
+    if broker is None or not broker.running:
+        try:
+            broker = _recover_broker()
+        except Exception:  # Preserve the existing deletion fallback.
+            logger.exception("回收站转发未能在已放行端口恢复")
     if broker is None or not broker.running:
         logger.error(
             "软删除已开启, 但回收站转发服务没有在监听; 沙箱仍会启动, 删除会落到真实删除"

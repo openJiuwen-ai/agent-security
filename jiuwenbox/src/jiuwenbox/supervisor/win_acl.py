@@ -21,6 +21,8 @@ import logging
 import os
 import sys
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -891,8 +893,8 @@ _ACL_SLOW_OBJECT_SECONDS = 1.0
 _ACL_MAX_FAILURE_LOGS = 20
 
 
-def _walk_acl_objects(root: str):
-    """Visit existing objects once, without following Windows reparse points."""
+def _walk_acl_objects(root: str, *, strict: bool | Callable[[str], bool] = False, recursive: bool = True):
+    """Visit objects without reparse traversal; required paths cannot be skipped."""
     pending = [root]
     while pending:
         path = pending.pop()
@@ -901,15 +903,21 @@ def _walk_acl_objects(root: str):
             if os.path.islink(path) or getattr(stat, "st_file_attributes", 0) & 0x400:
                 continue
             yield path
-            if os.path.isdir(path):
+            if recursive and os.path.isdir(path):
                 with os.scandir(path) as entries:
                     pending.extend(entry.path for entry in entries)
         except FileNotFoundError:
+            required = strict(path) if callable(strict) else strict
+            if required and path == root:
+                raise
             # node_modules / caches may delete entries while we walk them.
             continue
         except OSError as exc:
-            # A sandbox-owned child can deny FILE_LIST_DIRECTORY. Skipping it
-            # keeps sibling ACL work; aborting would roll back the whole root.
+            required = strict(path) if callable(strict) else strict
+            if required:
+                raise
+            # Optional read-only subtrees may deny enumeration. Keep required
+            # sibling work, but never treat required writes/denials as optional.
             logger.warning("[ACL] skip unlistable path=%s reason=%s", path, exc)
             continue
 
@@ -928,6 +936,11 @@ def _acl_rule_covers(rule: str, key: str) -> bool:
     return key == rule or key.startswith(rule + os.sep)
 
 
+def _acl_subtree_contains_rule(key: str, rules: list[str]) -> bool:
+    """True when enumeration must reach an explicit policy target in this subtree."""
+    return any(rule == key or rule.startswith(key + os.sep) for rule in rules)
+
+
 def _acl_entries(acl) -> "list[tuple[int, int, int, str]] | None":
     if acl is None:
         return None
@@ -938,11 +951,74 @@ def _acl_entries(acl) -> "list[tuple[int, int, int, str]] | None":
     return entries
 
 
-def _apply_bounded_acl(root: str, sid_objs: list, policy: dict) -> list[str]:
+def _effective_acl_rights(key: str, allow: dict, deny: dict) -> tuple[int, int]:
+    rights = 0
+    if any(_acl_rule_covers(rule, key) for rule in allow["read"]):
+        rights |= const.FILE_GENERIC_READ
+    if any(_acl_rule_covers(rule, key) for rule in allow["write"]):
+        rights |= const.ALLOW_WRITE_RIGHTS | const.FILE_GENERIC_READ
+    denied = 0
+    for axis, mask in (("read", const.DENY_READ_RIGHTS), ("write", const.DENY_WRITE_RIGHTS)):
+        allow_rules = allow[axis] + (allow["write"] if axis == "read" else [])
+        matches = [(len(rule), False) for rule in allow_rules if _acl_rule_covers(rule, key)]
+        matches += [(len(rule), True) for rule in deny[axis] if _acl_rule_covers(rule, key)]
+        if matches and max(matches)[1]:
+            denied |= mask
+    return rights, denied
+
+
+def _acl_object_identity(path: str) -> tuple[int, int]:
+    info = os.stat(path, follow_symlinks=False)
+    if os.path.islink(path) or getattr(info, "st_file_attributes", 0) & 0x400:
+        raise ValueError(f"Refusing ACL rollback journal on reparse point: {path}")
+    return info.st_dev, info.st_ino
+
+
+@dataclass
+class _AclChange:
+    path: str
+    identity: tuple[int, int]
+    before_acl: object
+    before_entries: list | None
+    after_entries: list | None
+    protected: int
+
+
+def _rollback_acl_changes(changes: list[_AclChange]) -> None:
+    """Restore this call's actual writes, never purge a shared SID or whole root."""
+    api, _, _ = _ensure_pywin32()
+    for change in reversed(changes):
+        try:
+            if _acl_object_identity(change.path) != change.identity:
+                logger.warning("[ACL] rollback conflict: object changed path=%s", change.path)
+                continue
+            sd = api.GetFileSecurity(change.path, api.DACL_SECURITY_INFORMATION)
+            entries = _acl_entries(sd.GetSecurityDescriptorDacl())
+            protected = sd.GetSecurityDescriptorControl()[0] & const.SE_DACL_PROTECTED
+            if entries == change.before_entries and protected == change.protected:
+                continue
+            if entries != change.after_entries or protected != change.protected:
+                logger.warning("[ACL] rollback conflict: descriptor changed path=%s", change.path)
+                continue
+            _write_file_dacl(change.path, change.before_acl, sd=sd)
+            restored = api.GetFileSecurity(change.path, api.DACL_SECURITY_INFORMATION)
+            if (_acl_entries(restored.GetSecurityDescriptorDacl()) != change.before_entries
+                    or restored.GetSecurityDescriptorControl()[0] & const.SE_DACL_PROTECTED != change.protected):
+                logger.warning("[ACL] rollback readback failed path=%s", change.path)
+        except FileNotFoundError:
+            continue
+        except Exception:
+            logger.warning("[ACL] rollback failed path=%s", change.path, exc_info=True)
+
+
+def _apply_bounded_acl(
+    root: str, sid_objs: list, policy: dict, *, require_write: bool = False,
+    changes: list[_AclChange] | None = None, recursive: bool = True,
+) -> list[str]:
     """Apply final policy per object; never ask Windows to propagate a whole tree.
 
-    Objects that need a Deny ACE fail closed; Allow-only objects degrade with a
-    warning, matching the non-bounded segments.
+    Deny objects and required writable objects fail closed. Other Allow-only
+    objects keep their existing best-effort behavior.
     """
     win32security, _, _ = _ensure_pywin32()
     sid_keys = {_sid_dedup_key(sid) for sid in sid_objs}
@@ -958,7 +1034,18 @@ def _apply_bounded_acl(root: str, sid_objs: list, policy: dict) -> list[str]:
     if _is_acl_forbidden_path(walk_root):
         raise ValueError(f"Refusing sandbox ACL on protected path: {walk_root}")
     logger.info("[ACL] tree start path=%s", walk_root)
-    for path in _walk_acl_objects(walk_root):
+    root_key = os.path.normcase(walk_root)
+
+    def required_subtree(path: str) -> bool:
+        key = os.path.normcase(path)
+        rights, denied = _effective_acl_rights(key, allow, deny)
+        # Required writes/denials include descendants covered by an ancestor
+        # rule, as well as routes to explicit policy targets below this path.
+        return bool(denied or rights & ~denied & const.FILE_WRITE_DATA) or (
+            _acl_subtree_contains_rule(key, allow["write"] + deny["read"] + deny["write"])
+        )
+
+    for path in _walk_acl_objects(walk_root, strict=required_subtree if require_write else False, recursive=recursive):
         visited += 1
         if visited % _ACL_PROGRESS_EVERY == 0:
             logger.info(
@@ -966,20 +1053,10 @@ def _apply_bounded_acl(root: str, sid_objs: list, policy: dict) -> list[str]:
                 walk_root, visited, written, failed, time.perf_counter() - t0, path,
             )
         key = os.path.normcase(path)
-        rights = 0
-        if any(_acl_rule_covers(rule, key) for rule in allow["read"]):
-            rights |= const.FILE_GENERIC_READ
-        if any(_acl_rule_covers(rule, key) for rule in allow["write"]):
-            rights |= const.ALLOW_WRITE_RIGHTS | const.FILE_GENERIC_READ
-        denied = 0
-        for axis, mask in (("read", const.DENY_READ_RIGHTS), ("write", const.DENY_WRITE_RIGHTS)):
-            allow_rules = allow[axis] + (allow["write"] if axis == "read" else [])
-            matches = [(len(rule), False) for rule in allow_rules if _acl_rule_covers(rule, key)]
-            matches += [(len(rule), True) for rule in deny[axis] if _acl_rule_covers(rule, key)]
-            if matches and max(matches)[1]:
-                denied |= mask
+        rights, denied = _effective_acl_rights(key, allow, deny)
+        required_write = require_write and bool(rights & ~denied & const.FILE_WRITE_DATA)
         try:
-            flags = const.RECURSIVE_ACE_FLAGS if os.path.isdir(path) else 0
+            flags = const.RECURSIVE_ACE_FLAGS if recursive and os.path.isdir(path) else 0
             aces = []
             for sid in sid_objs:
                 if denied:
@@ -991,15 +1068,22 @@ def _apply_bounded_acl(root: str, sid_objs: list, policy: dict) -> list[str]:
             existing = sd.GetSecurityDescriptorDacl()
             acl = _rebuild_acl_with_order(existing, aces, drop_sid_keys=sid_keys)
             if _acl_entries(existing) != _acl_entries(acl):
+                if changes is not None:
+                    changes.append(_AclChange(
+                        path, _acl_object_identity(path), existing, _acl_entries(existing), _acl_entries(acl),
+                        sd.GetSecurityDescriptorControl()[0] & const.SE_DACL_PROTECTED,
+                    ))
                 _write_file_dacl(path, acl, sd=sd)
                 written += 1
             elapsed = time.perf_counter() - t_obj
             if elapsed >= _ACL_SLOW_OBJECT_SECONDS:
                 logger.warning("[ACL] slow object path=%s elapsed=%.2fs", path, elapsed)
         except FileNotFoundError:
+            if key == root_key and required_write:
+                raise
             continue
         except Exception as exc:  # noqa: BLE001 - Deny objects re-raise below
-            if denied:
+            if denied or required_write:
                 raise
             failed += 1
             if failed <= _ACL_MAX_FAILURE_LOGS:
@@ -1046,9 +1130,24 @@ def apply_sandbox_acl(
     if sandbox_user_sid:
         purge_sids.append(_resolve_sid(sandbox_user_sid))
 
-    # Automatically mounted workspaces/projects can contain node_modules and
-    # protected DACLs. Apply their final rules explicitly, including old files.
-    roots = [os.path.abspath(os.path.expandvars(p)) for p in bounded_roots or [] if os.path.isdir(p)]
+    # Every explicit write target is required, including targets outside the
+    # automatic workspace/project roots. Read-only targets remain optional.
+    required_paths = list(allow_write) or [workspace]
+    original_roots = [os.path.abspath(os.path.expandvars(p)) for p in bounded_roots or [] if os.path.isdir(p)]
+    original_keys = {os.path.normcase(p) for p in original_roots}
+    write_keys = {os.path.normcase(os.path.abspath(os.path.expandvars(p))) for p in required_paths}
+
+    def recursive_root(path: str) -> bool:
+        return recursive or os.path.normcase(path) in original_keys
+
+    roots = []
+    for raw in [*(bounded_roots or []), *required_paths]:
+        path = os.path.abspath(os.path.expandvars(raw))
+        if os.path.normcase(path) in write_keys and not os.path.exists(path):
+            # Do this before granting any ACEs, so failure leaves no partial grants.
+            os.makedirs(path, exist_ok=True)
+        if os.path.exists(path):
+            roots.append(path)
     roots = list({os.path.normcase(p): p for p in roots}.values())
     kept_roots = []
     for path in roots:
@@ -1058,7 +1157,7 @@ def apply_sandbox_acl(
             if path == other:
                 continue
             other_prefix = os.path.normcase(other).rstrip(os.sep) + os.sep
-            if path_key.startswith(other_prefix):
+            if recursive_root(other) and path_key.startswith(other_prefix):
                 nested = True
                 break
         if not nested:
@@ -1067,7 +1166,9 @@ def apply_sandbox_acl(
 
     def _bounded(path: str) -> bool:
         key = os.path.normcase(os.path.abspath(os.path.expandvars(path)))
-        return any(key == os.path.normcase(root) or key.startswith(os.path.normcase(root) + os.sep) for root in roots)
+        return any(key == os.path.normcase(root) or (
+            recursive_root(root) and key.startswith(os.path.normcase(root) + os.sep)
+        ) for root in roots)
 
     write_targets = list(allow_write) or [workspace]
     read_targets = allow_read or [workspace]
@@ -1080,12 +1181,24 @@ def apply_sandbox_acl(
             expanded = os.path.expandvars(raw)
             if _bounded(expanded) and not os.path.exists(expanded):
                 os.makedirs(expanded, exist_ok=True)
-    for root in roots:
-        try:
-            applied.extend(_apply_bounded_acl(root, purge_sids, bounded_policy))
-        except Exception:
-            revoke_sandbox_acl(roots, sandbox_user_sid=sandbox_user_sid)
-            raise
+    changes: list[_AclChange] = []
+    try:
+        for root in roots:
+            applied.extend(_apply_bounded_acl(
+                root, purge_sids, bounded_policy, require_write=True, changes=changes, recursive=recursive_root(root),
+            ))
+    except Exception:
+        _rollback_acl_changes(changes)
+        raise
+    for path in required_paths:
+        expanded = os.path.abspath(os.path.expandvars(path))
+        key = os.path.normcase(expanded)
+        if not any(_acl_rule_covers(os.path.normcase(root), key) for root in original_roots):
+            # Preserve the old optional host-management grant for explicit roots.
+            try:
+                grant_current_user_write_dac(expanded, inheritable=True)
+            except Exception:
+                logger.warning("allow_write WRITE_DAC 预授失败 path=%s", expanded, exc_info=True)
     write_targets = [p for p in write_targets if not _bounded(p)]
     read_targets = [p for p in read_targets if not _bounded(p)]
     deny_write = [p for p in deny_write if not _bounded(p)]
@@ -1116,52 +1229,7 @@ def apply_sandbox_acl(
     def _seg_end(seg: str, t0: float, n: int) -> None:
         seg_stats[seg] = [time.perf_counter() - t0, n]
 
-    # --- 写控制 ---
-    _t_seg = _seg_begin()
-    _n_seg = 0
-    for path in write_targets:
-        expanded = os.path.expandvars(path)
-        if not os.path.exists(expanded):
-            try:
-                os.makedirs(expanded, exist_ok=True)
-                logger.info("allow_write 路径不存在, 已预创建: %s", expanded)
-            except OSError as exc:
-                logger.warning(
-                    "allow_write 路径不存在且预创建失败, 跳过 ACL: %s (%s)",
-                    expanded, exc,
-                )
-                continue
-        try:
-            _purge_before_grant(expanded)
-            grant_ace(
-                expanded, sid,
-                rights=const.ALLOW_WRITE_RIGHTS | const.FILE_GENERIC_READ,
-                mode="ALLOW",
-                recursive=recursive,
-            )
-            if sandbox_user_sid:
-                grant_ace(
-                    expanded, sandbox_user_sid,
-                    rights=const.ALLOW_WRITE_RIGHTS | const.FILE_GENERIC_READ,
-                    mode="ALLOW",
-                    recursive=recursive,
-                )
-        except Exception as exc:
-            logger.warning(
-                "allow_write grant_ace 失败, 跳过该路径 (隔离降级): path=%s mode=ALLOW "
-                "原因=%s; 沙箱内该路径写权限不受控",
-                expanded, exc,
-            )
-            continue
-        try:
-            grant_current_user_write_dac(expanded, inheritable=True)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "allow_write WRITE_DAC 预授失败 path=%s: %s", expanded, exc,
-            )
-        applied.append(expanded)
-        _n_seg += 1
-    _seg_end("allow_write", _t_seg, _n_seg)
+    # --- 根外的既有拒绝规则与可选只读授权 ---
     _t_seg = _seg_begin()
     _n_seg = 0
     for path in deny_write:
