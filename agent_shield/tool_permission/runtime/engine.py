@@ -234,6 +234,9 @@ class PermissionEngine:
             cache.revoke()
         self._native_caches.clear()
 
+    def register_native_cache(self, cache):
+        return self._register_native_cache(cache)
+
     def _register_native_cache(self, cache):
         with self._native_cache_lock:
             if self._active is not None or not self.permission_checks_enabled:
@@ -291,6 +294,14 @@ class PermissionEngine:
         self._network_decision = lru_cache(maxsize=512)(
             partial(_network_rule, self._dns, self._network)
         )
+
+    @property
+    def uniform_native_reads(self) -> bool:
+        return self._uniform_native_reads
+
+    def detach_native_cache(self, cache) -> None:
+        with self._native_cache_lock:
+            self._native_caches.discard(cache)
 
     @property
     def permission_checks_enabled(self):
