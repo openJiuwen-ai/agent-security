@@ -17,6 +17,7 @@ from ..config_access import (
     runtime_workspace_root,
 )
 from .file_guard import FileGuardChecker, build_file_guard_checker
+from .native_context import native_accesses
 from .immutable_control_plane import ImmutableControlPlaneGuard
 from .sensitive_paths import merge_builtin_sensitive_paths
 from ..models import PermissionResult
@@ -90,6 +91,11 @@ class FileGuardComponent:
         *,
         route: RouteContext | None = None,
     ) -> PermissionResult | None:
+        accesses = native_accesses()
+        if accesses is not None:
+            if route is not None and route.kind is not CandidateKind.ORIGINAL:
+                return None
+            return self._checker.evaluate_accesses(accesses) if self._checker is not None else None
         # Standard extraction follows nested shell scopes itself. An unwrapped
         # permission view flattens those scopes and can invent resource paths.
         # Keep the legacy read_deny_only dispatch contract unchanged.
@@ -155,6 +161,9 @@ class ImmutableControlPlaneComponent:
             return None
         if self._guard is None or not self._guard.enabled:
             return None
+        accesses = native_accesses()
+        if accesses is not None:
+            return self._guard.evaluate_accesses(accesses)
         return self._guard.evaluate(tool_name, tool_args)
 
 
