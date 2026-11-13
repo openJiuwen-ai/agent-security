@@ -12,6 +12,11 @@ license = {text = "Apache-2.0"}
 dependencies = ["PyYAML>=6"]
 
 [project.optional-dependencies]
+dll-guard = [
+    "tld>=0.13,<0.14",
+    "tree-sitter>=0.25.0,<0.26.0",
+    "tree-sitter-bash>=0.25.0,<0.26.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
@@ -21,6 +26,10 @@ dev = [
     "tree-sitter>=0.25.0,<0.26.0",
     "tree-sitter-bash>=0.25.0,<0.26.0",
     "jsonschema>=4",
+    # Runtime approval scopes and native HTTP/TLS regressions.
+    "tld>=0.13,<0.14",
+    "requests>=2.32",
+    "cryptography>=43",
 ]
 
 [project.scripts]
@@ -39,6 +48,7 @@ packages = [
     "agent_shield.tool_permission.hostguard",
     "agent_shield.tool_permission.netguard",
     "agent_shield.tool_permission.toolguard",
+    "agent_shield.tool_permission.runtime",
     "agent_shield.policy_engine",
     "agent_shield.policy_engine.matchers",
     "agent_shield.policy_engine.models",
@@ -51,6 +61,7 @@ packages = [
     "agent_shield.intercepts.tool_call.adapters",
     "agent_shield.intercepts.tool_call.adapters.jiuwenswarm",
     "agent_shield.intercepts.native_call",
+    "agent_shield.intercepts.native_call.dll_guard",
     "agent_shield.intercepts.tool_output",
     "agent_shield.intercepts.tool_output.adapters",
     "agent_shield.intercepts.tool_output.adapters.jiuwenswarm",
@@ -58,6 +69,7 @@ packages = [
 
 [tool.setuptools.package-data]
 agent_shield = ["py.typed"]
+"agent_shield.tool_permission.runtime" = ["defaults.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -8,6 +8,9 @@
 
 沙箱（F2）是独立交付件，见同仓 `../jiuwenbox/`。
 
+SDK 可选的 [Windows DLL 用户态防护层](native/windows-dll-guard/README.md) 在 Windows x64 上检查受保护进程的文件、程序启动和网络访问。
+宿主通过 `dll_guard.RuntimeGuardManager` 管理会话内的前台及后台进程树。SDK 通过 `emit` 交付运行中的审批请求，宿主渲染事件并通过 `manager.approvals.resolve` 交回用户的决定。运行时、策略回调类型和审批回执均从 `agent_shield.intercepts.native_call.dll_guard` 导入。
+
 文档在仓库根目录，中文从 [../docs/zh/SUMMARY.md](../docs/zh/SUMMARY.md) 进入，英文在 [../docs/en/SUMMARY.md](../docs/en/SUMMARY.md)。
 
 ## 目录 ↔ 工作项对照
@@ -24,7 +27,7 @@
 | 工具调用接入 | `intercepts/tool_call/` |
 | 工具结果接入 | `intercepts/tool_output/` |
 | W1b 宿主进程守卫 | `intercepts/native_call/` |
-| W7 调用方迁移 | 不在本仓（jiuwenswarm / agent-core 侧） |
+| W7 宿主接入 | 不在本仓（jiuwenswarm / agent-core 侧） |
 | W5 沙箱接线 | 服务端在 `../jiuwenbox/`，SDK 侧接线随 W6 定 |
 
 `schema/` 是决策与 native record 的 JSON Schema，`native/windows-process-guard/` 是进程守卫的 C/C++ 实现（Microsoft Detours 为**构建期外置依赖**，见 `native/windows-process-guard/third_party/NOTICE.md`；安装/导入 Python 包无需拉取 Detours）。三方规则经规则集接口注册。PDP 设计见 [docs/agent_shield-design.md](docs/agent_shield-design.md)。

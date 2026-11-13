@@ -740,7 +740,7 @@ agent-pdp serve --host 127.0.0.1 --port 0 --unmatched none
 
 `preflight()` 依次检查平台 win32、架构 amd64/x86_64、三件二进制齐备，返回 `PreflightResult(ok, reason, intercept)`。`wrap()` 校验顺序：`tool_call_id`/`tool_name` 成对（非空、无控制字符、UTF-8 长度 ≤127/≤255，违反 `invalid_tool_cause`）→ 可用性 → `decide` 必须提供（`decide_required`）→ `delete_mode ∈ {trash, permanent}` → 超时 > 0 → argv 非空 → 二进制齐全。任一不满足抛 `ProcessGuardUnavailable`，**不启动裸进程**。
 
-二进制定位：优先 `bin_dir` 参数，否则 `importlib.resources` 在 `agent_security_windows_process_guard` 包内找 `bin/win_amd64/`（`process_guard.exe`、`process_guard_hook_x64.dll`、`process_guard_hook_x86.dll`）。
+显式传入 `bin_dir` 时优先使用该目录。默认通过两套 Guard 共用的定位入口，从 `agent_security_dll.binary_directory()` 查找 `process_guard.exe` 和 x64、x86 两个 Hook DLL。源码检出也可使用本地构建产物。
 
 随后创建 `DecidePipe(decide)` 并启动监听线程，`subprocess.run` 执行：
 
@@ -856,7 +856,7 @@ native 侧失败语义：Decide 管道 5 秒等待失败 → 83；注入/架构/
 
 `probe.exe`：集成测试靶，子命令 `read|write|mkdir|delete|copy|move|replace|symlink|hardlink|open|connect|exec`；退出码 0 成功、2 用法错、3/6 其它失败、4 连接成功（网络探针特意非 0）、5 `ACCESS_DENIED`。Python 集成测试把它放进守卫内跑，验证拦截真实生效。
 
-Python 分发子包 `agent-security-windows-process-guard`（0.1.0，依赖 `agent-security==0.1.0`）只作为二进制载体打包 `bin/win_amd64/*`；真正 API 在核心包 `agent_shield.process_guard`。
+Windows 分发包 `agent-security-dll` 可独立安装，通过 `agent_security_dll.binary_directory()` 提供两套 Guard 的原生文件。执行入口位于 SDK 的 `agent_shield.intercepts.native_call` 和 `dll_guard` 子包。
 
 ---
 
@@ -1044,7 +1044,7 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 | `native/.../src/record_json.c` | 记录构造与回包严格解析 |
 | `native/.../src/path_classification.c` | 设备/管道/裸盘分类 |
 | `native/.../src/probe.cpp` | 集成测试靶 |
-| `native/.../python/` | 二进制分发包 `agent-security-windows-process-guard`（依赖旧名 `agent-security`，见 C） |
+| `native/.../python/` | 两套 Guard 的公共二进制分发包 `agent-security-dll` |
 | `schema/` | 7 个 JSON Schema |
 
 ### B. 错误码总表
@@ -1071,6 +1071,6 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 | 包 | 内容 |
 |---|---|
 | `agent-shield` 0.1.0（根 `pyproject.toml`） | Python ≥3.11；flat 布局（`package-dir` 把本目录映射为 `agent_shield`）；描述为「behavior policy, intercepts, tool permission, and content detection」；依赖 `PyYAML>=6`；dev extras：`pytest>=8.0`、`pytest-asyncio>=0.24`、`pytest-cov>=5.0`、`ruff>=0.6`、`jsonschema>=4`、`tree-sitter`（tool_permission shell_ast 的可选解析后端，范围外；缺省时回退保守扫描器）；入口点 `agent-pdp = agent_shield.policy_engine.server.cli:main`；package-data 含 `py.typed`。包清单同时列出范围外子包 `detection` 与 `tool_permission.*`（见 12） |
-| `agent-security-windows-process-guard` 0.1.0 | 二进制载体：`bin/win_amd64/{process_guard.exe, process_guard_hook_x64.dll, process_guard_hook_x86.dll}`；依赖 `agent-security==0.1.0`——旧包名，与主包 `agent-shield` 名不匹配，版本同步时需一并改名对齐 |
+| `agent-security-dll` 0.1.0 | 独立的 Windows x64 wheel，交付进程守卫 EXE、x64/x86 Hook DLL 和运行时防护 DLL 及其 manifest，无 Python 运行时依赖 |
 
 `jiuwenbox` 为独立包（自带 `pyproject.toml`、FastAPI 服务、bubblewrap 沙箱），与 `agent_shield` 分开安装与测试；`execution.plane=sandbox` 不代表调用运行在其中，也不降低风险档。

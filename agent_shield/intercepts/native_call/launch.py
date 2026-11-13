@@ -12,6 +12,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from ._binary_location import guard_binary_directory
+
 
 class ProcessGuardUnavailable(RuntimeError):
     def __init__(self, reason: str) -> None:
@@ -130,17 +132,7 @@ def _availability(bin_dir: str | None) -> str:
 
 
 def _binaries(bin_dir: str | None = None) -> dict[str, str] | None:
-    if bin_dir is not None:
-        root = Path(bin_dir)
-        if not all((root / name).is_file() for name in _BINARIES):
-            return None
-        return {name: str(root / name) for name in _BINARIES}
-    try:
-        from importlib.resources import files
-
-        packaged = files("agent_security_windows_process_guard").joinpath("bin", "win_amd64")
-    except (ModuleNotFoundError, TypeError):
+    root = Path(bin_dir) if bin_dir is not None else guard_binary_directory()
+    if not all((root / name).is_file() for name in _BINARIES):
         return None
-    if not all(packaged.joinpath(name).is_file() for name in _BINARIES):
-        return None
-    return {name: str(packaged.joinpath(name)) for name in _BINARIES}
+    return {name: str(root / name) for name in _BINARIES}
