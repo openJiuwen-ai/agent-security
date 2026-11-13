@@ -224,6 +224,7 @@ def test_a_second_node_without_a_trusted_identity_is_refused(vault, tmp_path, na
         finally:
             reader.close()
 
+
 def test_a_rotation_in_the_etcd_mode_moves_the_generation(vault):
     """The etcd mode's rotation moves the authority's generation.
 
