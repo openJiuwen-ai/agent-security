@@ -49,18 +49,20 @@ class ShellStructureFlags:
     operators: tuple[str, ...] = field(default_factory=tuple)
 
     def has_risky_structure(self) -> bool:
-        return any((
-            self.has_compound_operators,
-            self.has_pipeline,
-            self.has_subshell,
-            self.has_command_group,
-            self.has_command_substitution,
-            self.has_process_substitution,
-            self.has_parameter_expansion,
-            self.has_heredoc,
-            self.has_input_redirection,
-            self.has_output_redirection,
-        ))
+        return any(
+            (
+                self.has_compound_operators,
+                self.has_pipeline,
+                self.has_subshell,
+                self.has_command_group,
+                self.has_command_substitution,
+                self.has_process_substitution,
+                self.has_parameter_expansion,
+                self.has_heredoc,
+                self.has_input_redirection,
+                self.has_output_redirection,
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -81,7 +83,9 @@ class ShellAstParseResult:
     backend: str = "fallback"
 
 
-def parse_shell_for_permission(command: str) -> ShellAstParseResult:
+def parse_shell_for_permission(
+    command: str, *, preserve_redirects: bool = False
+) -> ShellAstParseResult:
     """Parse shell command for permission checks.
 
     Returns:
@@ -98,11 +102,44 @@ def parse_shell_for_permission(command: str) -> ShellAstParseResult:
     parser = _get_tree_sitter_bash_parser()
     if parser is not None:
         try:
-            return _parse_with_tree_sitter(text, parser)
+            return _parse_with_tree_sitter(text, parser, preserve_redirects=preserve_redirects)
         except Exception:  # pragma: no cover - defensive logging path
             logger.warning("permission.shell_ast.parse_failed fallback=true", exc_info=True)
 
     return _parse_with_conservative_fallback(text)
+
+
+def split_shell_for_grants(command: str) -> tuple[str, ...]:
+    """Return literal reusable children only when the AST covers the whole input."""
+    text = command.strip()
+    # Unwrapping a launcher would lose its interpreter and execution semantics.
+    if not text or canonicalize_shell_command_for_permission(text) != text:
+        return ()
+    parsed = parse_shell_for_permission(text, preserve_redirects=True)
+    if parsed.backend != "tree-sitter" or parsed.kind != "simple" or not parsed.subcommands:
+        # The fallback scanner cannot prove complete shell syntax coverage
+        # (e.g. comments/background lists). Exact approval is still available.
+        return ()
+    source, cursor = text.encode("utf-8"), 0
+    commands = []
+    for subcommand in parsed.subcommands:
+        if not subcommand.text or subcommand.source_span is None:
+            return ()
+        start, end = subcommand.source_span
+        if start < cursor or end <= start or end > len(source):
+            return ()
+        try:
+            gap = source[cursor:start].decode("utf-8")
+            literal = source[start:end].decode("utf-8")
+        except UnicodeDecodeError:
+            return ()
+        if not re.fullmatch(r"\s*(?:(?:&&|\|\||;|\|)\s*)*", gap) or literal != subcommand.text:
+            return ()
+        commands.append(subcommand.text)
+        cursor = end
+    if source[cursor:].strip():
+        return ()
+    return tuple(dict.fromkeys(commands))
 
 
 def _get_tree_sitter_bash_parser() -> Any | None:
@@ -112,8 +149,8 @@ def _get_tree_sitter_bash_parser() -> Any | None:
     if _TREE_SITTER_PARSER is not None:
         return _TREE_SITTER_PARSER
     try:
-        from tree_sitter import Language, Parser
         import tree_sitter_bash
+        from tree_sitter import Language, Parser
 
         language = Language(tree_sitter_bash.language())
         try:
@@ -124,10 +161,22 @@ def _get_tree_sitter_bash_parser() -> Any | None:
         _TREE_SITTER_PARSER = parser
         _TREE_SITTER_BASH_READY = True
         return _TREE_SITTER_PARSER
-    except Exception:
+    except Exception:  # noqa: BLE001 - optional backend initialization must allow fallback
         _TREE_SITTER_BASH_READY = False
         logger.info("permission.shell_ast.backend_unavailable fallback=fallback_scanner")
         return None
+
+
+def parse_literal_bash_root(source: bytes) -> Any | None:
+    """Return an AST for the exact input, or None when it cannot support a grant."""
+    parser = _get_tree_sitter_bash_parser()
+    if parser is None:
+        return None
+    try:
+        root = parser.parse(source).root_node
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return None
+    return None if root.has_error else root
 
 
 def _parse_with_conservative_fallback(command: str) -> ShellAstParseResult:
@@ -148,7 +197,9 @@ def _parse_with_conservative_fallback(command: str) -> ShellAstParseResult:
             reason="fallback lexer failed to tokenize command safely",
             backend="fallback",
         )
-    subcommand = ShellSubcommand(text=command, argv=argv, source_span=(0, len(command)))
+    subcommand = ShellSubcommand(
+        text=command, argv=argv, source_span=(0, len(command.encode("utf-8")))
+    )
     return ShellAstParseResult(
         kind="simple",
         subcommands=(subcommand,),
@@ -189,7 +240,9 @@ def _collect_operator_markers(command: str) -> tuple[str, ...]:
     return tuple(markers)
 
 
-def _parse_with_tree_sitter(command: str, parser: Any) -> ShellAstParseResult:
+def _parse_with_tree_sitter(
+    command: str, parser: Any, *, preserve_redirects=False
+) -> ShellAstParseResult:
     source = command.encode("utf-8")
     tree = parser.parse(source)
     root = getattr(tree, "root_node", None)
@@ -207,14 +260,16 @@ def _parse_with_tree_sitter(command: str, parser: Any) -> ShellAstParseResult:
         )
 
     flags = _downgrade_fd_only_redirect_flags(_collect_tree_sitter_flags(root), command)
-    if any((
-        flags.has_command_substitution,
-        flags.has_process_substitution,
-        flags.has_parameter_expansion,
-        flags.has_heredoc,
-        flags.has_subshell,
-        flags.has_command_group,
-    )):
+    if any(
+        (
+            flags.has_command_substitution,
+            flags.has_process_substitution,
+            flags.has_parameter_expansion,
+            flags.has_heredoc,
+            flags.has_subshell,
+            flags.has_command_group,
+        )
+    ):
         return ShellAstParseResult(
             kind="too_complex",
             flags=flags,
@@ -222,7 +277,7 @@ def _parse_with_tree_sitter(command: str, parser: Any) -> ShellAstParseResult:
             backend="tree-sitter",
         )
 
-    command_nodes = _collect_command_nodes(root)
+    command_nodes = _collect_command_nodes(root, preserve_redirects=preserve_redirects)
     if not command_nodes:
         return ShellAstParseResult(
             kind="too_complex",
@@ -272,8 +327,8 @@ def _parse_with_tree_sitter(command: str, parser: Any) -> ShellAstParseResult:
 
 
 def _downgrade_fd_only_redirect_flags(
-        flags: ShellStructureFlags,
-        command: str,
+    flags: ShellStructureFlags,
+    command: str,
 ) -> ShellStructureFlags:
     if not (flags.has_input_redirection or flags.has_output_redirection):
         return flags
@@ -356,11 +411,29 @@ def _collect_tree_sitter_flags(root: Any) -> ShellStructureFlags:
     return ShellStructureFlags(operators=tuple(operators), **flags)
 
 
-def _collect_command_nodes(root: Any) -> list[Any]:
+def _collect_command_nodes(root: Any, *, preserve_redirects=False) -> list[Any]:
     command_nodes: list[Any] = []
     stack = [root]
     while stack:
         node = stack.pop()
+        if preserve_redirects and str(getattr(node, "type", "")) == "redirected_statement":
+            from types import SimpleNamespace
+
+            body = node.child_by_field_name("body")
+            if body is not None and body.type in {"list", "pipeline"}:
+                nodes = _collect_command_nodes(body, preserve_redirects=True)
+                redirects = [child for child in node.named_children if child != body]
+                if nodes and all(child.start_byte >= body.end_byte for child in redirects):
+                    last = nodes[-1]
+                    nodes[-1] = SimpleNamespace(
+                        start_byte=last.start_byte,
+                        end_byte=node.end_byte,
+                        children=[*last.children, *redirects],
+                    )
+                    command_nodes.extend(nodes)
+                    continue
+            command_nodes.append(node)
+            continue
         if str(getattr(node, "type", "")) == "command":
             command_nodes.append(node)
             continue

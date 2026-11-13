@@ -112,6 +112,8 @@ def _merge_paths(
             floor = by_key[path]
             used.add(path)
             combined = dict(item)
+            if floor.get("ignore_case") is True:
+                combined["ignore_case"] = True
             for axis in ("read", "write", "exec"):
                 overlay_val = str(item.get(axis) or "").strip().lower()
                 floor_val = str(floor.get(axis) or "ask").strip().lower()

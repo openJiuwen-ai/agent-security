@@ -27,7 +27,6 @@ from .path_extract import (
     ShellPathUnresolvedCwdError,
     ShellPathUnresolvedShellError,
 )
-from .path_matchers import contains_path
 from .path_policy import (
     _PATH_TOOLS,
     _iter_path_strings,
@@ -80,6 +79,16 @@ class FileGuardPathRule:
     match: FileGuardMatch = "prefix"
     source: str = ""
     explicit_axes: frozenset[str] = frozenset()
+    ignore_case: bool = False
+
+    def matches(self, path: str) -> bool:
+        pattern = self.path.replace("\\", "/")
+        if self.ignore_case:
+            pattern, path = pattern.lower(), path.lower()
+        if self.match == "glob":
+            return _match_glob(pattern, path)
+        prefix = pattern.rstrip("/")
+        return path == prefix or path.startswith(prefix + "/")
 
 
 @dataclass(frozen=True)
@@ -161,6 +170,7 @@ def _compile_path_entry(
     default_level: PermissionLevel = PermissionLevel.ASK,
     source: str = "",
     explicit_axes: frozenset[str] = frozenset(),
+    ignore_case: bool = False,
     read_deny_only: bool = False,
 ) -> FileGuardPathRule | None:
     path_s = str(path_raw).strip()
@@ -184,6 +194,7 @@ def _compile_path_entry(
     return FileGuardPathRule(
         path=path_s, read=r, write=w, exec=e, match=match,
         source=source, explicit_axes=explicit_axes,
+        ignore_case=ignore_case,
     )
 
 
@@ -465,6 +476,7 @@ def _normalize_native(
                 default_level=PermissionLevel.ASK,
                 source=str(item.get("layer") or "") if composed else "",
                 explicit_axes=explicit_axes,
+                ignore_case=item.get("ignore_case") is True,
                 read_deny_only=use_read_deny_only,
             )
             if rule is not None:
@@ -691,6 +703,13 @@ class FileGuardChecker:
         return self._effective.enabled
 
     @property
+    def all_reads_allowed(self) -> bool:
+        """True only when no change of resolved target could change a read decision."""
+        return self._effective.defaults.read == PermissionLevel.ALLOW and all(
+            rule.read == PermissionLevel.ALLOW for rule in self._effective.paths
+        )
+
+    @property
     def mode(self) -> FileGuardMode:
         return self._effective.mode
 
@@ -775,7 +794,11 @@ class FileGuardChecker:
                 reason=str(exc),
             )
 
-        if not accesses:
+        return self.evaluate_accesses(accesses)
+
+    def evaluate_accesses(self, accesses: Sequence[tuple[Path, FileGuardAction]]) -> PermissionResult | None:
+        """Evaluate already-resolved native accesses through the same path rules."""
+        if not self._effective.enabled or not accesses:
             return None
 
         overall = PermissionLevel.ALLOW
@@ -865,18 +888,14 @@ class FileGuardChecker:
         glob_hits: list[PermissionLevel] = []
 
         for rule in self._effective.paths:
-            if rule.match == "glob":
-                if _match_glob(rule.path.replace("\\", "/"), path_posix):
-                    glob_hits.append(_level_for_action(rule, action))
+            if not rule.matches(path_posix):
                 continue
-            # prefix
-            prefix = rule.path.rstrip("/")
-            if path_posix == prefix or path_posix.startswith(prefix + "/"):
-                # also accept contains_path for Windows drive quirks
-                if contains_path(prefix, path) or path_posix == prefix or path_posix.startswith(prefix + "/"):
-                    ln = len(prefix)
-                    if best_prefix is None or ln > best_prefix[0]:
-                        best_prefix = (ln, rule)
+            if rule.match == "glob":
+                glob_hits.append(_level_for_action(rule, action))
+                continue
+            length = len(rule.path.rstrip("/"))
+            if best_prefix is None or length > best_prefix[0]:
+                best_prefix = (length, rule)
 
         candidates: list[PermissionLevel] = []
         rule_id: str | None = None
@@ -910,13 +929,9 @@ class FileGuardChecker:
         for rule in self._effective.paths:
             if rule.source not in hits or action not in rule.explicit_axes:
                 continue
-            if rule.match == "glob":
-                if _match_glob(rule.path.replace("\\", "/"), path_posix):
-                    hits[rule.source].append((0, _level_for_action(rule, action), rule))
-                continue
-            prefix = rule.path.rstrip("/")
-            if path_posix == prefix or path_posix.startswith(prefix + "/"):
-                hits[rule.source].append((len(prefix), _level_for_action(rule, action), rule))
+            if rule.matches(path_posix):
+                length = len(rule.path.rstrip("/")) if rule.match == "prefix" else 0
+                hits[rule.source].append((length, _level_for_action(rule, action), rule))
 
         for source in self._effective.source_order:
             for _length, level, rule in hits[source]:

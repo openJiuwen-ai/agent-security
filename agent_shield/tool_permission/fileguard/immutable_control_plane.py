@@ -137,7 +137,13 @@ class ImmutableControlPlaneGuard:
                 matched_rule="file_guard:unresolved_shell",
                 reason=str(exc),
             )
-        for path, action, _source in accesses:
+        return self.evaluate_accesses([(path, action) for path, action, _source in accesses])
+
+    def evaluate_accesses(self, accesses) -> PermissionResult | None:
+        """Apply the same control-plane checks to authenticated native paths."""
+        if not self.enabled:
+            return None
+        for path, action in accesses:
             if action not in {"write", "exec"}:
                 continue
             canonical = _canonical(path)
