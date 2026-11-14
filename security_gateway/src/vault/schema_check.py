@@ -15,7 +15,7 @@ into the fields it carries, and names the record it cannot parse.
 from __future__ import annotations
 
 from .codec import ContainerField, decode_container
-from .errors import InvalidRecordError, SchemaMismatchError, VaultError
+from .errors import InvalidRecordError, SchemaMismatchError
 from .schema import FieldDef, Schema
 from .store import RecordRow
 

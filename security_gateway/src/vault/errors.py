@@ -136,6 +136,13 @@ class KeyMismatchError(VaultError):
     default = "vault: key material does not match this store"
 
 
+class StoreNotReadyError(VaultError):
+    """The store has not been initialised by the host leader yet."""
+
+    code = "not_ready"
+    default = "vault: store is not ready"
+
+
 class RotationInProgressError(VaultError):
     """A key rotation is already running."""
 
@@ -172,6 +179,7 @@ __all__ = [
     "RotationInProgressError",
     "SchemaMismatchError",
     "StaleGenerationError",
+    "StoreNotReadyError",
     "UndecryptableError",
     "UnsupportedError",
     "VaultError",

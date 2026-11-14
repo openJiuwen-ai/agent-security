@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS vault_key_metadata (
     file_shard_version     INTEGER NOT NULL DEFAULT 1,
     file_shard_rotated_at  INTEGER NOT NULL DEFAULT 0,
     last_rotate_at         INTEGER NOT NULL DEFAULT 0,
+    rotation_period        REAL    NOT NULL DEFAULT -1,
     wrapped_dek            BLOB    NOT NULL,
     pending_wrapped_dek    BLOB    NOT NULL DEFAULT x'',
     superseded_dek_version INTEGER NOT NULL DEFAULT 0,
@@ -99,6 +100,8 @@ BUSY_RETRY_DELAY_SECONDS = 0.01
 #: The delay stops growing here and the wait continues at this length until
 #: the budget runs out.
 BUSY_RETRY_DELAY_MAX_SECONDS = 1.0
+
+_BATCH_QUERY_LIMIT = 900
 
 
 def is_busy(exc: sqlite3.OperationalError) -> bool:
@@ -212,11 +215,7 @@ class Database:
             else:
                 if self._rolled_back:
                     return
-                try:
-                    self._conn.execute("COMMIT")
-                except sqlite3.Error:
-                    self._safe_rollback()
-                    raise
+                self._conn.execute("COMMIT")
 
     def _safe_rollback(self) -> None:
         """Roll the transaction back, whatever the database thinks."""
@@ -257,22 +256,12 @@ def bootstrap_schema(db: Database) -> None:
         "VALUES (?, 0, 0)",
         (MIRROR_SYNC_STATE_ID,),
     )
-    ensure_mirror_columns(db)
 
 
 def table_columns(db: Database, table: str) -> set[str]:
     """The column names of a table."""
     rows = db.query_all(f"PRAGMA table_info({table})")
     return {str(row[1]) for row in rows}
-
-
-def ensure_mirror_columns(db: Database) -> None:
-    """Add the mirror columns to a table created before they existed."""
-    if "source_revision" not in table_columns(db, "vault_record"):
-        db.execute(
-            "ALTER TABLE vault_record ADD COLUMN "
-            "source_revision INTEGER NOT NULL DEFAULT 0"
-        )
 
 
 @dataclass
@@ -316,7 +305,7 @@ def _row_to_record(row: tuple) -> RecordRow:
 
 
 def get_record(db: Database, record_id: str) -> RecordRow | None:
-    """Load one record by its id.
+    """Load one record by id.
 
     It returns None when the id is unknown, so the caller distinguishes
     "absent" from "failed" without inspecting an error string.
@@ -363,9 +352,42 @@ def put_record(db: Database, row: RecordRow) -> None:
         raise ConflictError(f'writing record "{row.id}" affected no rows')
 
 
+def put_record_cas(db: Database, row: RecordRow, expected_row_version: int) -> bool:
+    """Replace a record only if it is still at ``expected_row_version``.
+
+    Unlike :func:`put_record` this never inserts: a conditional write
+    against a missing row is a not-found, not a create.
+    """
+    cur = db.execute(
+        """
+        UPDATE vault_record
+        SET schema_version = ?, data = ?, dek_version = ?,
+            row_version = row_version + 1, updated_at = ?
+        WHERE id = ? AND row_version = ?""",
+        (
+            row.schema_version,
+            row.data,
+            row.dek_version,
+            int(time.time()),
+            row.id,
+            expected_row_version,
+        ),
+    )
+    return cur.rowcount > 0
+
+
 def delete_record(db: Database, record_id: str) -> bool:
     """Remove a record."""
     cur = db.execute("DELETE FROM vault_record WHERE id = ?", (record_id,))
+    return cur.rowcount > 0
+
+
+def delete_record_cas(db: Database, record_id: str, expected_row_version: int) -> bool:
+    """Remove a record only if it is still at ``expected_row_version``."""
+    cur = db.execute(
+        "DELETE FROM vault_record WHERE id = ? AND row_version = ?",
+        (record_id, expected_row_version),
+    )
     return cur.rowcount > 0
 
 
@@ -440,9 +462,7 @@ def read_schema_entries(db: Database) -> list[SchemaEntry]:
     rows = db.query_all(
         "SELECT version, hash, definition FROM vault_schema ORDER BY version"
     )
-    return [
-        SchemaEntry(version=int(r[0]), hash=r[1], definition=r[2]) for r in rows
-    ]
+    return [SchemaEntry(version=int(r[0]), hash=r[1], definition=r[2]) for r in rows]
 
 
 def insert_schema_entry(db: Database, entry: SchemaEntry) -> None:
@@ -453,6 +473,38 @@ def insert_schema_entry(db: Database, entry: SchemaEntry) -> None:
         VALUES (?, ?, ?, ?)""",
         (entry.version, entry.hash, entry.definition, int(time.time())),
     )
+
+
+def _chunks(items: Sequence[str]) -> Iterator[Sequence[str]]:
+    for start in range(0, len(items), _BATCH_QUERY_LIMIT):
+        yield items[start:start + _BATCH_QUERY_LIMIT]
+
+
+def get_records(db: Database, ids: Sequence[str]) -> dict[str, RecordRow]:
+    """Load the records whose ids are in ``ids``, in one query per chunk."""
+    result: dict[str, RecordRow] = {}
+    for chunk in _chunks(list(dict.fromkeys(ids))):
+        marks = ", ".join("?" for _ in chunk)
+        rows = db.query_all(
+            f"SELECT {_RECORD_COLUMNS} FROM vault_record WHERE id IN ({marks})",
+            tuple(chunk),
+        )
+        for row in rows:
+            result[str(row[0])] = _row_to_record(row)
+    return result
+
+
+def delete_records(db: Database, ids: Sequence[str]) -> set[str]:
+    """Delete the records whose ids are in ``ids`` and return those found."""
+    deleted: set[str] = set()
+    for chunk in _chunks(list(dict.fromkeys(ids))):
+        marks = ", ".join("?" for _ in chunk)
+        rows = db.query_all(
+            f"DELETE FROM vault_record WHERE id IN ({marks}) RETURNING id",
+            tuple(chunk),
+        )
+        deleted.update(str(row[0]) for row in rows)
+    return deleted
 
 
 __all__ = [
@@ -472,8 +524,9 @@ __all__ = [
     "count_records",
     "count_stragglers",
     "delete_record",
-    "ensure_mirror_columns",
+    "delete_records",
     "get_record",
+    "get_records",
     "insert_schema_entry",
     "is_busy",
     "list_records",

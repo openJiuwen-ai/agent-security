@@ -89,11 +89,72 @@ __all__ = [
     "load",
     "load_for_store",
     "parse_duration",
-    "Code",
-    "ServiceError",
 ]
 
 
+__all__ = [
+    "AdminConfig",
+    "AuthRule",
+    "BackupConfig",
+    "CacheConfig",
+    "ClusterConfig",
+    "Code",
+    "Config",
+    "ConfigError",
+    "DEFAULT_ADMIN_ADDR",
+    "DEFAULT_ADMIN_API_KEY_MAX_LEN",
+    "DEFAULT_ADMIN_AUTH_TYPE_MAX_LEN",
+    "DEFAULT_ADMIN_KEY_TAG_MAX_LEN",
+    "DEFAULT_ADMIN_REAL_URL_MAX_LEN",
+    "DEFAULT_ADMIN_USER_ID_MAX_LEN",
+    "DEFAULT_BACKUP_DIR",
+    "DEFAULT_BACKUP_FILENAME_TPL",
+    "DEFAULT_BACKUP_KEEP",
+    "DEFAULT_CACHE_ENTRY_TTL",
+    "DEFAULT_CACHE_MAX_ENTRIES",
+    "DEFAULT_CACHE_TOMBSTONE_TTL",
+    "DEFAULT_CLUSTER_FETCH_TIMEOUT",
+    "DEFAULT_CRYPTO_MODE",
+    "DEFAULT_DATA_DIR",
+    "DEFAULT_ETCD_DIAL_TIMEOUT",
+    "DEFAULT_ETCD_NAMESPACE",
+    "DEFAULT_ETCD_OPERATION_TIMEOUT",
+    "DEFAULT_ETCD_WATCH_LIVENESS_TIMEOUT",
+    "DEFAULT_KEY_SNAPSHOT_FILENAME_TPL",
+    "DEFAULT_KEY_SNAPSHOT_KEEP",
+    "DEFAULT_RECOVERY_MAX_WAIT",
+    "DEFAULT_ROTATION_BARRIER_QUORUM_RATIO",
+    "DEFAULT_ROTATION_COMPLETE_DRAIN_TIMEOUT",
+    "DEFAULT_ROTATION_DRAIN_TIMEOUT",
+    "DEFAULT_ROTATION_MAX_PHASE_A_LOOPS",
+    "DEFAULT_ROTATION_PERIOD",
+    "DEFAULT_SERVER_BIND_ADDRESS",
+    "DEFAULT_SERVER_IDLE_CONN_TIMEOUT",
+    "DEFAULT_SERVER_MAX_REQUEST_BYTES",
+    "DEFAULT_SERVER_MAX_RESPONSE_BYTES",
+    "DEFAULT_SERVER_READ_HEADER_TIMEOUT",
+    "DEFAULT_SERVER_SHUTDOWN_TIMEOUT",
+    "DEFAULT_SERVER_SHUTDOWN_ZERO_BUDGET",
+    "DEFAULT_SSRF_CACHE_TTL",
+    "DEFAULT_SSRF_TIMEOUT",
+    "DEFAULT_UPSTREAM_TIMEOUT_MS",
+    "EtcdConfig",
+    "EtcdTLSConfig",
+    "RecoveryConfig",
+    "RotationConfig",
+    "SSRFConfig",
+    "ServerConfig",
+    "ServiceError",
+    "VaultConfig",
+    "_as_dict",
+    "_as_int",
+    "_as_str",
+    "_get",
+    "format_duration",
+    "load",
+    "load_for_store",
+    "parse_duration",
+]
 
 from .config_sections import (
     DEFAULT_UPSTREAM_TIMEOUT_MS,
@@ -164,43 +225,43 @@ from .config_sections import (
     VaultConfig,
 )
 
+# --- defaults ---------------------------------------------------------------
 
-def _format_frac(value: int, digits: int) -> str:
-    """A whole part and a fraction with no trailing zeros."""
-    whole, rest = divmod(value, 10 ** digits)
-    if rest == 0:
-        return str(whole)
-    return f"{whole}.{rest:0{digits}d}".rstrip("0")
+# --- durations --------------------------------------------------------------
 
 
 def format_duration(value: timedelta) -> str:
     """Render a duration the way Go's ``time.Duration.String`` does."""
-    total_ns = (
-        (value.days * 86_400 + value.seconds) * 1_000_000_000
-        + value.microseconds * 1_000
-    )
+    total_ns = int(value.total_seconds() * 1_000_000_000)
     if total_ns == 0:
         return "0s"
     sign = "-" if total_ns < 0 else ""
     total_ns = abs(total_ns)
+    if total_ns < 1_000:
+        return f"{sign}{total_ns}ns"
+    if total_ns < 1_000_000:
+        return f"{sign}{total_ns / 1_000:.0f}µs"
     if total_ns < 1_000_000_000:
-        if total_ns < 1_000_000:
-            return f"{sign}{_format_frac(total_ns, 3)}µs"
-        return f"{sign}{_format_frac(total_ns, 6)}ms"
-    whole_seconds, nanos = divmod(total_ns, 1_000_000_000)
-    seconds = str(whole_seconds % 60)
-    if nanos:
-        seconds += f".{nanos:09d}".rstrip("0")
-    minutes = whole_seconds // 60
-    if minutes == 0:
-        return f"{sign}{seconds}s"
+        return f"{sign}{total_ns / 1_000_000:.0f}ms"
+    seconds = total_ns / 1_000_000_000
+    if seconds < 60:
+        return f"{sign}{seconds:.0f}s"
+    minutes, second = divmod(seconds, 60)
     if minutes < 60:
-        return f"{sign}{minutes}m{seconds}s"
-    hours, minute = divmod(minutes, 60)
-    return f"{sign}{hours}h{minute}m{seconds}s"
+        return f"{sign}{int(minutes)}m{int(second)}s"
+    hours, minute = divmod(int(minutes), 60)
+    return f"{sign}{hours}h{minute}m{int(second)}s"
+
+
+# --- section helpers --------------------------------------------------------
+
+
+# --- the sections -----------------------------------------------------------
 
 
 # --- the whole configuration ------------------------------------------------
+
+
 @dataclass
 class Config:
     upstream_timeout_ms: int = DEFAULT_UPSTREAM_TIMEOUT_MS
@@ -225,13 +286,15 @@ class Config:
         return cls(
             upstream_timeout_ms=_as_int(
                 _get(raw, "upstream_timeout_ms", DEFAULT_UPSTREAM_TIMEOUT_MS),
-                "upstream_timeout_ms"),
-            data_dir=_as_str(_get(raw, "data_dir", DEFAULT_DATA_DIR),
-                             "data_dir"),
-            backup_dir=_as_str(_get(raw, "backup_dir", DEFAULT_BACKUP_DIR),
-                               "backup_dir"),
-            crypto_mode=_as_str(_get(raw, "crypto_mode", DEFAULT_CRYPTO_MODE),
-                                "crypto_mode"),
+                "upstream_timeout_ms",
+            ),
+            data_dir=_as_str(_get(raw, "data_dir", DEFAULT_DATA_DIR), "data_dir"),
+            backup_dir=_as_str(
+                _get(raw, "backup_dir", DEFAULT_BACKUP_DIR), "backup_dir"
+            ),
+            crypto_mode=_as_str(
+                _get(raw, "crypto_mode", DEFAULT_CRYPTO_MODE), "crypto_mode"
+            ),
             rotation=RotationConfig.from_dict(_get(raw, "rotation", {})),
             cache=CacheConfig.from_dict(_get(raw, "cache", {})),
             admin=AdminConfig.from_dict(_get(raw, "admin", {})),
@@ -277,14 +340,17 @@ class Config:
         # two spellings and normalizes them the same way.
         if self.crypto_mode.strip().lower() not in ("aes", "sm", "sm4"):
             raise ConfigError(
-                "crypto_mode must be aes or sm, got "
-                f"{self.crypto_mode!r}")
+                f"crypto_mode must be aes or sm, got {self.crypto_mode!r}"
+            )
 
-        if self.rotation.barrier_quorum_ratio <= 0 or \
-                self.rotation.barrier_quorum_ratio > 1:
+        if (
+            self.rotation.barrier_quorum_ratio <= 0
+            or self.rotation.barrier_quorum_ratio > 1
+        ):
             raise ConfigError(
                 "rotation.barrier_quorum_ratio must be greater than zero "
-                "and at most one")
+                "and at most one"
+            )
         if self.rotation.max_phase_a_loops <= 0:
             raise ConfigError("rotation.max_phase_a_loops must be positive")
 
@@ -305,18 +371,29 @@ class Config:
         if "/" in node_id or " " in node_id or node_id in (".", ".."):
             raise ConfigError(
                 f"cluster.node_id {node_id!r} must not contain '/' or spaces; "
-                "it forms an etcd key")
+                "it forms an etcd key"
+            )
         if not self.etcd.enabled():
             raise ConfigError(
                 "cluster.node_id is set but etcd.endpoints is empty; the peer "
-                "roster lives in etcd")
-        if not self.etcd.tls.cert_file.strip() or \
-                not self.etcd.tls.key_file.strip():
+                "roster lives in etcd"
+            )
+        if not self.etcd.tls.cert_file.strip() or not self.etcd.tls.key_file.strip():
             raise ConfigError(
                 "cluster.node_id is set but etcd.tls.cert_file or "
                 "etcd.tls.key_file is empty; the wrapping key is this node's "
                 "own etcd client certificate, so there would be nothing to "
-                "wrap with")
+                "wrap with"
+            )
+        if (
+            not self.cluster.identity_ca_file.strip()
+            and not self.cluster.trusted_cert_sha256
+        ):
+            raise ConfigError(
+                "cluster.node_id is set but neither cluster.identity_ca_file "
+                "nor cluster.trusted_cert_sha256 is configured; the handover "
+                "must know which node certificates it may trust"
+            )
 
     def _validate_admin_addr(self) -> None:
         """The admin API has no authentication of its own."""
@@ -330,7 +407,8 @@ class Config:
             raise ConfigError(
                 f"admin.addr {addr!r} binds every interface; the admin API "
                 "has no authentication, so it must not be reachable from "
-                "the network")
+                "the network"
+            )
         if host.startswith("[") and host.endswith("]"):
             host = host[1:-1]
         try:
@@ -342,29 +420,28 @@ class Config:
             raise ConfigError(
                 f"admin.addr {addr!r} binds every interface; the admin API "
                 "has no authentication, so it must not be reachable from "
-                "the network")
+                "the network"
+            )
 
     def _validate_server(self) -> None:
         bind = self.server.bind_address.strip()
         if not bind:
             raise ConfigError("server.bind_address is empty")
         host, _, _ = bind.rpartition(":")
-        candidate = host.strip("[]")
-        try:
-            wildcard = not candidate or \
-                ipaddress.ip_address(candidate).is_unspecified
-        except ValueError:
-            wildcard = host in ("", "0", "0.0.0.0", "::", "[::]")
+        wildcard = host in ("", "0.0.0.0", "::", "[::]")
         if wildcard and not self.server.external_address.strip():
             raise ConfigError(
                 "server.external_address is required when "
-                "server.bind_address is a wildcard address")
+                "server.bind_address is a wildcard address"
+            )
         external = self.server.external_address.strip()
         if external:
-            if not external.startswith("http://") and \
-                    not external.startswith("https://"):
+            if not external.startswith("http://") and not external.startswith(
+                "https://"
+            ):
                 raise ConfigError(
-                    "server.external_address must be an http or https URL")
+                    "server.external_address must be an http or https URL"
+                )
         if self.server.max_response_bytes <= 0:
             raise ConfigError("server.max_response_bytes must be positive")
         if self.server.max_request_bytes <= 0:
@@ -375,22 +452,22 @@ class Config:
             return
         namespace = self.etcd.namespace
         if "/" in namespace or any(ch.isspace() for ch in namespace):
-            raise ConfigError(
-                "etcd.namespace must not contain a slash or whitespace")
+            raise ConfigError("etcd.namespace must not contain a slash or whitespace")
         tls = self.etcd.tls
         if tls.any_set() and not tls.all_set():
             raise ConfigError(
                 "etcd.tls needs all three of ca_file, cert_file and "
                 "key_file; a partial set is refused rather than silently "
-                "downgraded")
+                "downgraded"
+            )
         if self.etcd.list_limit < 0:
             raise ConfigError("etcd.list_limit must not be negative")
         for index, endpoint in enumerate(self.etcd.endpoints):
             parsed = urlparse(endpoint)
             if parsed.scheme not in ("http", "https") or not parsed.netloc:
                 raise ConfigError(
-                    f"etcd.endpoints[{index}] {endpoint!r} must be an "
-                    "http(s) URL")
+                    f"etcd.endpoints[{index}] {endpoint!r} must be an http(s) URL"
+                )
         for name, value in (
             ("etcd.operation_timeout", self.etcd.operation_timeout),
             ("etcd.dial_timeout", self.etcd.dial_timeout),
@@ -398,6 +475,11 @@ class Config:
         ):
             if value <= timedelta(0):
                 raise ConfigError(f"{name} must be positive")
+        if not self.cluster.node_id.strip():
+            raise ConfigError(
+                "etcd.endpoints is set but cluster.node_id is empty; an etcd "
+                "authority needs a stable node identity to share the DEK"
+            )
 
     def _validate_vault(self, *, serving: bool = True) -> None:
         vault = self.vault
@@ -412,18 +494,24 @@ class Config:
             raise ConfigError("vault.rotation.period must not be negative")
         if not vault.enabled():
             return
-        if serving and not vault.rpc.unix_path.strip() and \
-                not vault.rpc.tcp_addr.strip():
+        if (
+            serving
+            and not vault.rpc.unix_path.strip()
+            and not vault.rpc.tcp_addr.strip()
+        ):
             raise ConfigError(
                 "vault.data_dir is set but neither vault.rpc.unix_path nor "
                 "vault.rpc.tcp_addr is; the store would be on with nothing "
-                "answering it")
-        if vault.rpc.unix_path.strip() and \
-                not os.path.isabs(vault.rpc.unix_path.strip()):
+                "answering it"
+            )
+        if vault.rpc.unix_path.strip() and not os.path.isabs(
+            vault.rpc.unix_path.strip()
+        ):
             raise ConfigError(
                 "vault.rpc.unix_path must be an absolute path: the socket is "
                 "shared across processes and a relative path would resolve "
-                "against each process's working directory")
+                "against each process's working directory"
+            )
         if vault.rpc.tcp_addr.strip():
             # A client that brings a secret of its own has no use for the
             # shared one, and the other way round: the two are ways of
@@ -433,56 +521,60 @@ class Config:
                 raise ConfigError(
                     "vault.rpc.tcp_addr is set with both token_file and "
                     "clients; a client has a secret of its own, so the "
-                    "shared one has no place")
+                    "shared one has no place"
+                )
             if not vault.rpc.clients and not vault.rpc.token_file.strip():
                 raise ConfigError(
                     "vault.rpc.tcp_addr is set but vault.rpc.token_file is "
-                    "empty; the tcp listener has no way to authenticate a client")
+                    "empty; the tcp listener has no way to authenticate a client"
+                )
         if vault.rpc.socket_mode:
             try:
                 mode = int(vault.rpc.socket_mode, 8)
             except ValueError:
                 raise ConfigError(
                     f"vault.rpc.socket_mode {vault.rpc.socket_mode!r} is not "
-                    "an octal mode") from None
+                    "an octal mode"
+                ) from None
             # The Go checks the low nine bits only: setuid, setgid and
             # sticky are not permission bits there, so a mode that carries
             # them is refused.
             if mode & ~0o777:
                 raise ConfigError(
                     f"vault.rpc.socket_mode {vault.rpc.socket_mode!r} has "
-                    "bits outside the permission bits")
+                    "bits outside the permission bits"
+                )
         seen_clients: set[str] = set()
         for client in vault.rpc.clients:
             name = client.name.strip()
             if not name:
                 raise ConfigError("vault.rpc.clients has a client with no name")
             if name in seen_clients:
-                raise ConfigError(
-                    f"vault.rpc.clients has two clients named {name!r}")
+                raise ConfigError(f"vault.rpc.clients has two clients named {name!r}")
             seen_clients.add(name)
             if not client.token_file.strip():
                 raise ConfigError(
-                    f"vault.rpc.clients has a client {name!r} with no "
-                    "token_file")
+                    f"vault.rpc.clients has a client {name!r} with no token_file"
+                )
         seen_uids: set[int] = set()
         for scope in vault.rpc.uid_scopes:
             if scope.uid < 0:
                 raise ConfigError("vault.rpc.uid_scopes.uid must not be negative")
             if scope.uid in seen_uids:
                 raise ConfigError(
-                    f"vault.rpc.uid_scopes has two entries for uid "
-                    f"{scope.uid}")
+                    f"vault.rpc.uid_scopes has two entries for uid {scope.uid}"
+                )
             seen_uids.add(scope.uid)
             if not scope.prefixes:
                 raise ConfigError(
                     f"vault.rpc.uid_scopes has a scope for uid {scope.uid} "
-                    "with no prefixes; it would deny that user every record")
+                    "with no prefixes; it would deny that user every record"
+                )
             for prefix in scope.prefixes:
                 if not prefix.strip():
                     raise ConfigError(
-                        "vault.rpc.uid_scopes has an empty prefix for uid "
-                        f"{scope.uid}")
+                        f"vault.rpc.uid_scopes has an empty prefix for uid {scope.uid}"
+                    )
         self._validate_vault_schema(vault)
 
     @staticmethod
@@ -499,23 +591,22 @@ class Config:
         if not schema.fields:
             raise ConfigError(
                 "vault.schema.fields is empty; the store would hold records "
-                "with no fields")
+                "with no fields"
+            )
         seen: set[str] = set()
         for field_config in schema.fields:
             name = field_config.name.strip()
             if not name:
-                raise ConfigError(
-                    "vault.schema.fields has a field with no name")
+                raise ConfigError("vault.schema.fields has a field with no name")
             if name in seen:
-                raise ConfigError(
-                    f"vault.schema.fields declares {name!r} twice")
+                raise ConfigError(f"vault.schema.fields declares {name!r} twice")
             seen.add(name)
-            if field_config.type.strip() not in ("string", "bytes", "int64",
-                                                 "bool"):
+            if field_config.type.strip() not in ("string", "bytes", "int64", "bool"):
                 raise ConfigError(
                     f"vault.schema.fields[{name!r}] has type "
                     f"{field_config.type!r}; it must be one of string, bytes, "
-                    "int64, bool")
+                    "int64, bool"
+                )
 
 
 # --- loading ----------------------------------------------------------------
@@ -581,11 +672,9 @@ def _apply_load_defaults(config: Config) -> None:
     if config.rotation.drain_timeout <= timedelta(0):
         config.rotation.drain_timeout = DEFAULT_ROTATION_DRAIN_TIMEOUT
     if config.rotation.complete_drain_timeout <= timedelta(0):
-        config.rotation.complete_drain_timeout = \
-            DEFAULT_ROTATION_COMPLETE_DRAIN_TIMEOUT
+        config.rotation.complete_drain_timeout = DEFAULT_ROTATION_COMPLETE_DRAIN_TIMEOUT
     if config.rotation.barrier_quorum_ratio <= 0:
-        config.rotation.barrier_quorum_ratio = \
-            DEFAULT_ROTATION_BARRIER_QUORUM_RATIO
+        config.rotation.barrier_quorum_ratio = DEFAULT_ROTATION_BARRIER_QUORUM_RATIO
 
     if config.cache.max_entries <= 0:
         config.cache.max_entries = DEFAULT_CACHE_MAX_ENTRIES
@@ -597,31 +686,24 @@ def _apply_load_defaults(config: Config) -> None:
     if not config.admin.addr:
         config.admin.addr = DEFAULT_ADMIN_ADDR
     if config.admin.validation.user_id_max_len <= 0:
-        config.admin.validation.user_id_max_len = \
-            DEFAULT_ADMIN_USER_ID_MAX_LEN
+        config.admin.validation.user_id_max_len = DEFAULT_ADMIN_USER_ID_MAX_LEN
     if config.admin.validation.real_url_max_len <= 0:
-        config.admin.validation.real_url_max_len = \
-            DEFAULT_ADMIN_REAL_URL_MAX_LEN
+        config.admin.validation.real_url_max_len = DEFAULT_ADMIN_REAL_URL_MAX_LEN
     if config.admin.validation.key_tag_max_len <= 0:
-        config.admin.validation.key_tag_max_len = \
-            DEFAULT_ADMIN_KEY_TAG_MAX_LEN
+        config.admin.validation.key_tag_max_len = DEFAULT_ADMIN_KEY_TAG_MAX_LEN
     if config.admin.validation.api_key_max_len <= 0:
-        config.admin.validation.api_key_max_len = \
-            DEFAULT_ADMIN_API_KEY_MAX_LEN
+        config.admin.validation.api_key_max_len = DEFAULT_ADMIN_API_KEY_MAX_LEN
     if config.admin.validation.auth_type_max_len <= 0:
-        config.admin.validation.auth_type_max_len = \
-            DEFAULT_ADMIN_AUTH_TYPE_MAX_LEN
+        config.admin.validation.auth_type_max_len = DEFAULT_ADMIN_AUTH_TYPE_MAX_LEN
 
     if config.server.max_response_bytes <= 0:
         config.server.max_response_bytes = DEFAULT_SERVER_MAX_RESPONSE_BYTES
     if config.server.max_request_bytes <= 0:
         config.server.max_request_bytes = DEFAULT_SERVER_MAX_REQUEST_BYTES
     if config.server.shutdown_zero_budget <= timedelta(0):
-        config.server.shutdown_zero_budget = \
-            DEFAULT_SERVER_SHUTDOWN_ZERO_BUDGET
+        config.server.shutdown_zero_budget = DEFAULT_SERVER_SHUTDOWN_ZERO_BUDGET
     if config.server.read_header_timeout <= timedelta(0):
-        config.server.read_header_timeout = \
-            DEFAULT_SERVER_READ_HEADER_TIMEOUT
+        config.server.read_header_timeout = DEFAULT_SERVER_READ_HEADER_TIMEOUT
     if config.server.shutdown_timeout <= timedelta(0):
         config.server.shutdown_timeout = DEFAULT_SERVER_SHUTDOWN_TIMEOUT
     if config.server.idle_conn_timeout <= timedelta(0):
@@ -637,8 +719,7 @@ def _apply_load_defaults(config: Config) -> None:
     if not config.backup.filename_template:
         config.backup.filename_template = DEFAULT_BACKUP_FILENAME_TPL
     if not config.backup.key_snapshot.filename_template:
-        config.backup.key_snapshot.filename_template = \
-            DEFAULT_KEY_SNAPSHOT_FILENAME_TPL
+        config.backup.key_snapshot.filename_template = DEFAULT_KEY_SNAPSHOT_FILENAME_TPL
     if config.backup.key_snapshot.keep <= 0:
         config.backup.key_snapshot.keep = DEFAULT_KEY_SNAPSHOT_KEEP
 
@@ -654,8 +735,7 @@ def _apply_load_defaults(config: Config) -> None:
     if config.etcd.dial_timeout <= timedelta(0):
         config.etcd.dial_timeout = DEFAULT_ETCD_DIAL_TIMEOUT
     if config.etcd.watch_liveness_timeout <= timedelta(0):
-        config.etcd.watch_liveness_timeout = \
-            DEFAULT_ETCD_WATCH_LIVENESS_TIMEOUT
+        config.etcd.watch_liveness_timeout = DEFAULT_ETCD_WATCH_LIVENESS_TIMEOUT
     # list_limit keeps its zero: it is a guard rail to opt into, not
     # something to have silently imposed at the 100k design target.
 

@@ -16,16 +16,13 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from .errors import InvalidError
-from .store import MIRROR_SYNC_STATE_ID, Database, ensure_mirror_columns
+from .store import MIRROR_SYNC_STATE_ID, Database
 
 if TYPE_CHECKING:
-    # The etcd side of the mirror needs two names from the credential
-    # manager, and both are needed for annotations only, so they are
-    # imported for the type checker rather than at run time: importing
-    # the credential manager here would close a cycle.
-    from security_gateway.credmgr.etcdstore.entry import RecordEntry
-    from security_gateway.credmgr.etcdsync.etcdsync import Listed, Listing
-    from security_gateway.credmgr.etcdstore.watch import Watcher
+    # The etcd side of the mirror is imported for annotations only.
+    from security_gateway.vault.etcdstore.entry import RecordEntry
+    from security_gateway.vault.etcdstore.watch import Watcher
+    from security_gateway.vault.sync import Listed, Listing
 
 __all__ = [
     "PURGE_ALL_REVISIONS",
@@ -35,7 +32,6 @@ __all__ = [
     "serve_mirror",
     "apply_mirrored_record",
     "delete_mirrored_record",
-    "ensure_mirror_columns",
     "list_mirrored_record_ids",
     "read_sync_state",
     "write_sync_state",
@@ -63,9 +59,8 @@ def apply_mirrored_record(
     now = int(time.time())
     db.execute(
         """
-        INSERT INTO vault_record (id, schema_version, data, dek_version,
-                                  row_version, source_revision, created_at,
-                                  updated_at)
+        INSERT INTO vault_record (id, schema_version, data, dek_version, row_version,
+            source_revision, created_at, updated_at)
         VALUES (?, ?, ?, ?, 1, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             schema_version  = excluded.schema_version,
@@ -147,9 +142,11 @@ class MirrorApplier:
         self,
         db: Database,
         local_dek_version: Callable[[], int],
+        on_change: Callable[[], None] | None = None,
     ) -> None:
         self._db = db
         self._local_dek_version = local_dek_version
+        self._on_change = on_change
 
     def reconcile(self, listed: Sequence[Listed[RecordEntry]]) -> None:
         """Make the local mirror match the authority's contents.
@@ -179,6 +176,7 @@ class MirrorApplier:
         local = list_mirrored_record_ids(self._db)
         for record_id in local - present:
             delete_mirrored_record(self._db, record_id, PURGE_ALL_REVISIONS)
+        self._changed()
 
     def apply_upsert(self, key: str, item: RecordEntry) -> None:
         """Materialise one record."""
@@ -194,10 +192,17 @@ class MirrorApplier:
             item.dek_version,
             item.mod_revision,
         )
+        self._changed()
 
     def apply_delete(self, key: str, mod_revision: int) -> None:
         """Remove the local materialisation of a record."""
         delete_mirrored_record(self._db, key, mod_revision)
+        self._changed()
+
+    def _changed(self) -> None:
+        """Tell the owner that a row may have changed."""
+        if self._on_change is not None:
+            self._on_change()
 
     def _can_decrypt(self, dek_version: int) -> bool:
         """Whether this node can open a record written under that key."""
@@ -244,13 +249,12 @@ class RecordSource:
 
     def list_entries(self, limit: int = 0) -> "Listing[RecordEntry]":
         """Every record in the namespace, plus the snapshot revision."""
-        from security_gateway.credmgr.etcdsync.etcdsync import Listed, Listing
+        from security_gateway.vault.sync import Listed, Listing
 
         listed, revision = self._store.list_records(limit)
         return Listing(
             items=tuple(
-                Listed(key=item.record_id, value=item.entry)
-                for item in listed
+                Listed(key=item.record_id, value=item.entry) for item in listed
             ),
             revision=revision,
         )
@@ -258,10 +262,10 @@ class RecordSource:
     def watch(self, rev: int) -> "Watcher":
         """Stream changes after ``rev``.
 
-        Raises :class:`~security_gateway.credmgr.etcdstore.watch.ErrNoWatch`
+        Raises :class:`~security_gateway.vault.etcdstore.watch.ErrNoWatch`
         when the source was built without a watch capability.
         """
-        from security_gateway.credmgr.etcdstore.watch import ErrNoWatch
+        from security_gateway.vault.etcdstore.watch import ErrNoWatch
 
         if self._watch_source is None:
             raise ErrNoWatch()
@@ -269,14 +273,14 @@ class RecordSource:
 
     def key_of(self, key: str) -> str:
         """Turn a watch event's key back into the record's id."""
-        from security_gateway.credmgr.etcdstore.keys import record_id_from_key
+        from security_gateway.vault.etcdstore.keys import record_id_from_key
 
         return record_id_from_key(self.namespace(), key)
 
     @staticmethod
     def decode(value: bytes, mod_revision: int) -> "RecordEntry":
         """Parse a value the authority wrote."""
-        from security_gateway.credmgr.etcdstore.entry import unmarshal_record
+        from security_gateway.vault.etcdstore.entry import unmarshal_record
 
         entry = unmarshal_record(value)
         if entry.mod_revision:
@@ -294,13 +298,14 @@ def serve_mirror(
     local_dek_version: Callable[[], int],
     watch_source: Any | None = None,
     cfg: Any = None,
+    on_change: Callable[[], None] | None = None,
 ) -> None:
     """Keep the local database in step with the authority."""
-    from security_gateway.credmgr.etcdsync import Config as SyncConfig
-    from security_gateway.credmgr.etcdsync import Syncer
+    from security_gateway.vault.sync.loop import Config as SyncConfig
+    from security_gateway.vault.sync.loop import Syncer
 
     source = RecordSource(store, watch_source=watch_source)
-    applier = MirrorApplier(db, local_dek_version)
+    applier = MirrorApplier(db, local_dek_version, on_change)
     revisions = MirrorRevisionStore(db)
     syncer = Syncer(source, applier, revisions, cfg or SyncConfig())
     syncer.run(stop)
