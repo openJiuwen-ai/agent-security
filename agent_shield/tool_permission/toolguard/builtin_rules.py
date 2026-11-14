@@ -241,7 +241,6 @@ _RULES: tuple[dict[str, Any], ...] = (
         "severity": "HIGH",
         "action": "ask",
     },
-    # shell_compound_chain moved to shell_structure (needs parse; not a Tiered rule).
 )
 
 

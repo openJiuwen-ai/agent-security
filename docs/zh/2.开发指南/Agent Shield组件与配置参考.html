@@ -556,7 +556,7 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
     </div>
 
     <div class="box hi-green" style="margin-bottom:12px">
-      <div class="n">两张表 + 按方言拆（已落地 Phase 1）</div>
+      <div class="n">两张表 + 按方言拆</div>
       <div class="d">
         <table class="ref" style="margin:8px 0 0">
           <thead><tr><th>表</th><th>代码</th><th>职责</th></tr></thead>
@@ -566,7 +566,7 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
           </tbody>
         </table>
         <p style="margin:8px 0 0">流程：① 入口表判定 → ② 保留 ORIGINAL → ③ 剥壳（有则 UNWRAPPED）→ ④ 对权限视图<strong>按方言</strong>拆子命令（<strong>无</strong> <code>SHELL_TOOLS</code> 五元组门禁）→ ⑤ 组件取最严。<br>
-          Phase 1 拆分后端：仅 <code>posix_shell</code> / <code>unknown</code> 走 bash AST；PowerShell / CMD 拆分属 Phase 2。</p>
+          拆分后端：<code>posix_shell</code> / <code>unknown</code> → tree-sitter bash；<code>powershell</code> → pwsh；<code>cmd</code> → batch。硬依赖对应 grammar，无字符级 fallback。</p>
       </div>
     </div>
 
@@ -650,38 +650,33 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
       <strong>不以</strong>「是否剥成功」、也<strong>不以</strong> <code>SHELL_TOOLS</code> 五元组为拆分资格。
     </div>
     <ul style="margin:0 0 10px;padding-left:18px;font-size:13px;line-height:1.55">
-      <li><b>输入：</b>canonical（剥壳后；无外壳则原文）。</li>
-      <li><b>Phase 1 方言门控：</b><code>supports_posix_subcommand_split</code> — 仅 <code>posix_shell</code> / <code>unknown</code> 调用 bash AST（tree-sitter bash + 保守 fallback）。</li>
-      <li><b>Phase 2（未做）：</b>PowerShell / CMD 专用拆分后端。</li>
+      <li><b>输入：</b>原文与（若有）剥壳后的串分别解析；子命令叶子只从 <strong>canonical</strong>（剥壳后；无外壳则原文）追加，避免与 original/unwrapped 重复。</li>
+      <li><b>方言门控：</b><code>supports_ast_subcommand_split</code> — <code>posix_shell</code> / <code>unknown</code> → bash；<code>powershell</code> → pwsh；<code>cmd</code> → batch。</li>
       <li><b>对象：</b>payload 叶子（<code>ls</code> / <code>rm</code>…），不是再识别解析器。</li>
+      <li><b>注意：</b><code>parse_shell_for_permission</code> <strong>不再</strong>内部剥壳；剥壳只发生在引擎的 UNWRAPPED 视图。否则管道中段的 <code>bash -c</code> 会被剥掉，结构层看不到真实 RHS。</li>
     </ul>
 
     <table class="ref" style="margin-top:8px">
       <thead><tr><th>解析结果</th><th>引擎行为</th><th>含义</th></tr></thead>
       <tbody>
         <tr>
-          <td class="k">simple + 多条叶子<br>（或一条叶子 ≠ 整串）</td>
+          <td class="k">ok + 多条叶子<br>（或一条叶子 ≠ 整串）</td>
           <td>追加 <code>subcommand</code>×N</td>
-          <td>如 <code>ls; rm x</code> → <code>ls</code>、<code>rm x</code></td>
+          <td>如 <code>ls; rm x</code> → <code>ls</code>、<code>rm x</code>；穿过子 shell / 命令组拍平</td>
         </tr>
         <tr>
-          <td class="k">simple + 仅一条且 = 整串</td>
+          <td class="k">ok + 仅一条且 = 整串</td>
           <td><strong>不追加</strong></td>
           <td>与 original/unwrapped 重复</td>
         </tr>
         <tr>
-          <td class="k">too_complex</td>
+          <td class="k">failed</td>
           <td>不追加</td>
-          <td><code>$(…)</code> / 子 shell / heredoc / 命令组等；结构底线可另抬等级</td>
-        </tr>
-        <tr>
-          <td class="k">parse_unavailable</td>
-          <td>不追加</td>
-          <td>后端不可用或无法安全分析</td>
+          <td>tree-sitter 不可用 / 语法错 / 无叶子；结构底线 <code>parse_failed</code> 默认 ASK（看不清就抬档）</td>
         </tr>
       </tbody>
     </table>
-    <p class="note-line" style="margin-top:8px">剥壳未覆盖：<code>ksh -c</code> / <code>fish -c</code>（入口可有其名，表 B 不剥）。fallback <strong>不会</strong>按 <code>;</code> 切开。</p>
+    <p class="note-line" style="margin-top:8px">剥壳未覆盖：<code>ksh -c</code> / <code>fish -c</code>（入口可有其名，表 B 不剥）。硬依赖 tree-sitter bash / pwsh / batch，无字符级 fallback 拆分。</p>
 
     <h3>5. 候选组合速查</h3>
     <table class="ref">
@@ -692,7 +687,7 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
         <tr><td>POSIX / unknown · <code>ls; rm x</code></td><td>original + subcommand×N（AST 成功时）</td></tr>
         <tr><td><code>sh</code> + <code>ls; rm x</code></td><td>同上（不再被五元组挡住）</td></tr>
         <tr><td><code>bash -c "ls; rm x"</code></td><td>original + unwrapped + 内层 subcommand×N</td></tr>
-        <tr><td>PowerShell / CMD 入口 · 复合命令</td><td>original（±unwrapped）；<strong>Phase 1 不拆</strong> subcommand</td></tr>
+        <tr><td>PowerShell / CMD 入口 · 复合命令</td><td>original（±unwrapped）+ 方言 AST 拆出的 subcommand×N</td></tr>
         <tr><td><code>echo bash -c 'rm'</code></td><td>仅 original（不剥）</td></tr>
       </tbody>
     </table>
@@ -706,7 +701,7 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
       <div class="box hi-orange"><div class="n">③ 表 A：命令入口？</div><div class="d"><code>_COMMAND_ENTRY_TOOLS</code>。<b>否</b> → 仅 ORIGINAL，跳到 ⑦。<b>是</b> → 继续（不改写 tool_name）。</div></div>
       <div class="box"><div class="n">④ ORIGINAL</div><div class="d">原文 + 方言</div></div>
       <div class="box hi-green"><div class="n">⑤ 表 B：剥壳</div><div class="d"><code>canonicalize</code> 扫串内启动器；有则追加 UNWRAPPED</div></div>
-      <div class="box hi-orange"><div class="n">⑥ 同一次解析：拆叶 + 结构底线</div><div class="d"><code>posix_shell</code> / <code>unknown</code> → 解析；simple 才追加 SUBCOMMAND；kind+flags 算五键底线（原文/剥壳）。PowerShell / CMD Phase 1 不拆叶，底线延迟到求值。</div></div>
+      <div class="box hi-orange"><div class="n">⑥ 同一次解析：拆叶 + 结构底线</div><div class="d">按方言 tree-sitter（bash / pwsh / batch）；ok 才追加 SUBCOMMAND；对原文与剥壳分别跑 parse_failed / complex / interpreter_sink。</div></div>
       <div class="box"><div class="n">⑦ approval 短路</div><div class="d">ORIGINAL / UNWRAPPED 命中 approval → 整次 ALLOW（结构底线亦不跑）</div></div>
       <div class="box"><div class="n">⑧ 逐候选跑组件</div><div class="d">Tiered 等；不含结构底线</div></div>
       <div class="box hi-gray"><div class="n">⑨ 合并最严 → 日志 → 返回</div><div class="d">各候选结论 + 结构底线一并取严</div></div>
@@ -727,15 +722,19 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
     <h2>结构底线（框架 · shell_structure）</h2>
     <p class="sub" style="margin-top:0">与拆子命令共用解析 · 非 Component · 由引擎与候选结论取严</p>
     <div class="explain">
-      <p>对原文/剥壳视图做 AST 解析（优先 tree-sitter bash，否则保守扫描）；子命令叶子不算。命中等级由 <code>guard_actions</code> 配置，缺省均为 ask。approval 整调用短路时不跑。</p>
+      <p>对原文/剥壳视图按方言做 tree-sitter 解析（硬依赖：bash / pwsh / batch，无字符级 fallback）。解析后<strong>所有子命令平铺</strong>为叶子列表 + edges（穿过子 shell / 命令组 / 脚本块，不保留中间层）。命中等级由 <code>guard_actions</code> 配置，缺省 ask。approval 整调用短路时不跑。</p>
+      <p class="mono" style="margin:8px 0">例：<code>a | (b | c)</code> → leaves <code>[a, b, c]</code>，edges <code>a|b</code>、<code>b|c</code>（没有单独的 <code>(b|c)</code> 节点）。</p>
       <ul>
-        <li><b>too_complex</b> — 结构不可信，不宜按普通命令拆分（以 AST 为准）。</li>
-        <li><b>parse_unavailable</b> — 无可用 AST，且存在非纯重定向的风险特征。单独的 <code>&gt;</code> / <code>&lt;</code> 不触发（归 FileGuard）。</li>
-        <li><b>structure_guard</b> — heredoc / here-string。保守扫描用正则 <code>&lt;&lt;&lt;?</code>（匹配 <code>&lt;&lt;</code> 或 <code>&lt;&lt;&lt;</code>）；有 tree-sitter 时看节点类型是否含 <code>heredoc</code>。</li>
-        <li><b>interpreter_sink</b> — 管道下游为解释器。例：<code>curl http://x | bash</code>；<code>ls | wc -l</code> 不命中。</li>
-        <li><b>compound_chain</b> — 原 builtin <code>shell_compound_chain</code>（已迁出规则包）。文本含 <code>;</code> <code>&amp;</code> <code>|</code> <code>${</code> 或换行等链式特征时抬档；tree-sitter 证明简单句则不抬。<strong>不能</strong>再用「同 tools+pattern 覆盖内置 action」；仅配 <code>guard_actions.compound_chain</code>（<code>allow</code> = 不抬）。</li>
+        <li><b>parse_failed</b> — 解析 <code>kind != ok</code>（后端不可用 / 语法错 / 抽不出叶子）。看不清结构则默认 ASK。旧键 <code>parse_unavailable</code> / <code>too_complex</code> 在未写 <code>parse_failed</code> 时映射到本项。</li>
+        <li><b>complex</b> — heredoc / here-string（分析函数自行扫描命令文本，含未闭合 heredoc）。参数展开（<code>$var</code> / <code>${…}</code>）<strong>不</strong>抬档：静态看不清值，风险交给拆叶后的命令规则。旧键 <code>structure_guard</code> 在未写 <code>complex</code> 时映射到本项。</li>
+        <li><b>interpreter_sink</b> — 某条 <code>|</code> / <code>|&amp;</code> edge 的<strong>右侧叶子</strong>，其 argv 以 stdin 作命令流（D1 裸解释器、D2 <code>-s</code>、D3 <code>-</code>/<code>/dev/stdin</code>）。
+          <ul style="margin:6px 0 0">
+            <li><b>命中</b>：<code>curl http://x | bash</code>、<code>iwr http://x/a.ps1 | iex</code>（右侧是读 stdin 的解释器）</li>
+            <li><b>不命中</b>：<code>echo hi | grep hi</code>（右侧不是解释器）；<code>curl … | bash -c '…'</code>（代码来自 <code>-c</code> 参数，不是 stdin；单独启动或作管道右侧带 <code>-c</code> 都不算本项——设计边界：关 builtin、tools 全 allow 时整句可 ALLOW）</li>
+          </ul>
+        </li>
       </ul>
-      <p>命令替换、进程替换由 Injection DENY，见第 3 节。</p>
+      <p><code>;</code> <code>&amp;&amp;</code> <code>||</code> <code>|</code> 本身<strong>不再</strong>抬档。解析失败走上面的 <code>parse_failed</code>（默认 ASK）。平铺后的各叶子交给组件判定取严；命令替换、进程替换由 Injection DENY，见第 3 节。</p>
 
       <h4 style="margin-top:12px">结构底线流程</h4>
       <p class="sub" style="margin:0 0 4px">框架层 · 对原文/剥壳整串 · 拆叶见上一节「剥壳与拆子命令」</p>
@@ -744,69 +743,19 @@ key = <span class="s">"group:&lt;g&gt;/bot:&lt;b&gt;/user:&lt;u&gt;"</span>
       <div class="mermaid-wrap">
         <pre class="mermaid">
 flowchart TD
-  Start([开始]) -->|输入：剥壳后 command<br/>或原文| Gate{跑结构底线？}
-  Gate -->|否：SUBCOMMAND 叶子| Skip[不算结构底线]
-  Skip --> End1([继续组件判定])
-  Gate -->|是：is_shell · 原文/剥壳 · 非空| TS{tree-sitter 可用？}
-  TS -->|否：正常行为| FB[兜底扫描<br/>见 图 2]
-  TS -->|是| AST[AST 扫描<br/>见 图 3]
-  AST -->|解析抛错| FB
-  AST -->|输出：kind + flags| G0
-  FB -->|输出：kind + flags| G0
-  G0["五键并列 · guard_actions 缺省 ask · 可叠加"]
-  G0 --> G1["too_complex<br/>条件：kind = too_complex"]
-  G0 --> G2["parse_unavailable<br/>条件：kind = parse_unavailable<br/>且不只是 &gt; / &lt; 重定向<br/>（仅重定向交给 FileGuard）"]
-  G0 --> G3["structure_guard<br/>条件：has_heredoc"]
-  G0 --> G4["interpreter_sink<br/>条件：kind = simple<br/>且管道下游是 bash / sh / python / node 等解释器"]
-  G0 --> G5["compound_chain<br/>条件：文本含 ; &amp; | ${ 换行等<br/>且非 tree-sitter 已证简单句"]
+  Start([开始]) -->|输入：剥壳后 command<br/>或原文| Gate{is_shell 且非空？}
+  Gate -->|否| End1([继续组件判定])
+  Gate -->|是| AST["tree-sitter 按方言<br/>平铺叶子 + edges<br/>例 a|(b|c) → a,b,c"]
+  AST -->|kind=ok/failed<br/>leaves + edges| G0
+  G0["三分析 · guard_actions 缺省 ask · 可叠加"]
+  G0 --> G0a["parse_failed<br/>kind != ok"]
+  G0 --> G1["complex<br/>heredoc / here-string"]
+  G0 --> G2["interpreter_sink<br/>某条 |/|&amp; 右侧叶子<br/>stdin-as-commands D1–D3"]
+  G0a --> Merge
   G1 --> Merge
   G2 --> Merge
-  G3 --> Merge
-  G4 --> Merge
-  G5 --> Merge
-  Merge["与各候选组件结论取最严<br/>只抬不降"]
+  Merge["叶子组件结论 + 结构结论取最严<br/>只抬不降"]
   Merge -->|输出：写入最终 PermissionResult| End2([结束])
-        </pre>
-      </div>
-
-      <div class="mermaid-title">图 2 · 兜底扫描</div>
-      <div class="mermaid-wrap">
-        <pre class="mermaid">
-flowchart TD
-  In([输入：command]) --> Scan["保守扫描<br/>子串：| , &amp;&amp; , || , ; , 换行 , 回车 , &lt; , &gt;<br/>正则：命令替换 , 进程替换 , heredoc , 参数展开"]
-  Scan -->|输出：flags| Risk{"flags 任一为真？<br/>链式 / 管道<br/>命令替换 / 进程替换<br/>参数展开 / heredoc<br/>输入重定向 / 输出重定向"}
-  Risk -->|是：含命令替换、进程替换| PU1["输出：kind = parse_unavailable<br/>flags = 扫描结果"]
-  Risk -->|否：flags 全假| Shlex{按引号规则拆成参数列表}
-  Shlex -->|成功：正常| S["输出：kind = simple<br/>flags = 全假"]
-  Shlex -->|失败| PU2["输出：kind = parse_unavailable<br/>flags = 全假"]
-  PU1 --> Out([回到图 1 · 五键])
-  S --> Out
-  PU2 --> Out
-        </pre>
-      </div>
-
-      <div class="mermaid-title">图 3 · AST 扫描</div>
-      <div class="mermaid-wrap">
-        <pre class="mermaid">
-flowchart TD
-  In([输入：command]) --> AST[AST 解析]
-  AST --> A0{解析抛错？}
-  A0 -->|是| FB([改走图 2 · 兜底扫描])
-  A0 -->|否| A1{有根节点？}
-  A1 -->|否| PU["输出：kind = parse_unavailable<br/>flags = 空"]
-  A1 -->|是| A2{语法错误？}
-  A2 -->|是| TC1["输出：kind = too_complex<br/>flags = 空"]
-  A2 -->|否| A3["收集 flags<br/>管道 / 链式 / 子shell / 命令组<br/>命令替换 / 进程替换<br/>参数展开 / heredoc / 重定向"]
-  A3 --> A4{"flags 含：命令替换 / 进程替换<br/>参数展开 / heredoc<br/>子shell / 命令组？"}
-  A4 -->|是| TC2["输出：kind = too_complex<br/>flags = 已收集"]
-  A4 -->|否| A5{抽到有效命令文本？}
-  A5 -->|否：无节点或全空| TC3["输出：kind = too_complex<br/>flags = 已收集"]
-  A5 -->|是：正常| S["输出：kind = simple<br/>flags = 已收集<br/>可含管道 / 链式 / 重定向"]
-  PU --> Out([回到图 1 · 五键])
-  TC1 --> Out
-  TC2 --> Out
-  TC3 --> Out
-  S --> Out
         </pre>
       </div>
     </div>
@@ -818,11 +767,11 @@ flowchart TD
         <tr>
           <td class="k">guard_actions</td>
           <td>object</td>
-          <td>五键 → allow/ask/deny</td>
+          <td>三键 → allow/ask/deny</td>
           <td>键缺省 ask</td>
           <td>
-            too_complex / parse_unavailable / structure_guard / interpreter_sink / <b>compound_chain</b>。<br>
-            <code>structure_guard</code> 仅 heredoc；<code>compound_chain: allow</code> 只放宽链式抬档。
+            <b>parse_failed</b> / <b>complex</b> / <b>interpreter_sink</b>。<br>
+            旧键 <code>structure_guard</code> → complex；<code>parse_unavailable</code> / <code>too_complex</code> → parse_failed。
           </td>
         </tr>
         <tr>
@@ -831,19 +780,16 @@ flowchart TD
           <td>旧版布尔</td>
           <td>见右</td>
           <td>
-            <code>unknown_structure: false</code> → too_complex、parse_unavailable 为 allow；
             <code>interpreter_sink: false</code> → 该键 allow。与 guard_actions 并存时以 guard_actions 为准。
           </td>
         </tr>
       </tbody>
     </table>
-    <pre class="ex" style="margin-top:10px"><span class="c"># 框架读取。不写整段 = 五键均为 ask</span>
+    <pre class="ex" style="margin-top:10px"><span class="c"># 框架读取。不写整段 = 三键均为 ask</span>
 <span class="k">guard_actions</span>:
-  <span class="k">too_complex</span>: <span class="s">ask</span>
-  <span class="k">parse_unavailable</span>: <span class="s">ask</span>
-  <span class="k">structure_guard</span>: <span class="s">ask</span>       <span class="c"># heredoc</span>
-  <span class="k">interpreter_sink</span>: <span class="s">ask</span>
-  <span class="k">compound_chain</span>: <span class="s">ask</span>         <span class="c"># 原 shell_compound_chain；allow=不抬链式</span>
+  <span class="k">parse_failed</span>: <span class="s">ask</span>        <span class="c"># 解析失败 / 看不清</span>
+  <span class="k">complex</span>: <span class="s">ask</span>              <span class="c"># heredoc / here-string</span>
+  <span class="k">interpreter_sink</span>: <span class="s">ask</span>   <span class="c"># curl | bash 等</span>
 <span class="c"># shell_guard: 旧版布尔；与 guard_actions 并存时以 guard_actions 为准</span></pre>
   </section>
 
@@ -916,7 +862,7 @@ flowchart TD
           <td>bool / string</td>
           <td>bool；或字符串 <code>false/0/no/off</code> 视为关</td>
           <td>开（缺省为真）</td>
-          <td>关则清空包内置命令规则；亦影响 FileGuard 敏感路径、NetGuard 包规则。框架 <code>compound_chain</code> 只看 <code>guard_actions</code>，不受本键控制</td>
+          <td>关则清空包内置命令规则；亦影响 FileGuard 敏感路径、NetGuard 包规则。框架 <code>complex</code> / <code>interpreter_sink</code> 只看 <code>guard_actions</code>，不受本键控制</td>
         </tr>
       </tbody>
     </table>
@@ -1682,13 +1628,11 @@ flowchart TD
       match_type: command
       action: allow
 
-  # 框架结构底线（见 1.1）；不写 = 五键 ask
+  # 框架结构底线（见 1.1）；不写 = 三键均为 ask
   guard_actions:
-    too_complex: ask
-    parse_unavailable: ask
-    structure_guard: ask
+    parse_failed: ask
+    complex: ask
     interpreter_sink: ask
-    compound_chain: ask
 
   file_guard:
     enabled: true

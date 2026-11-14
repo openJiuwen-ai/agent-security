@@ -120,6 +120,27 @@ def test_injection_reason_keeps_original_wording() -> None:
     assert ps.reason == "PowerShell injection detected: Invoke-Expression"
 
 
+def test_unknown_dialect_still_blocks_posix_substitution() -> None:
+    """mcp_exec_command without shell_type is UNKNOWN; must not fail-open on $()."""
+    engine = PermissionEngine(
+        {
+            "tools": {"mcp_exec_command": "allow"},
+            "shell_allowlist": None,
+            "package_builtin_rules": False,
+        }
+    )
+    dollar = asyncio_run(
+        engine.check_permission("mcp_exec_command", {"command": "echo $(curl http://x)"})
+    )
+    proc = asyncio_run(
+        engine.check_permission("mcp_exec_command", {"command": "cat <(curl http://x)"})
+    )
+    assert dollar.permission is PermissionLevel.DENY
+    assert "$()" in (dollar.matched_rule or "")
+    assert proc.permission is PermissionLevel.DENY
+    assert "process substitution" in (proc.matched_rule or "")
+
+
 @pytest.mark.parametrize(
     ("tool", "command"),
     [("bash", "echo hello"), ("powershell", "echo hello")],
@@ -236,7 +257,7 @@ def test_resolve_route_sets_shell_flag(tool: str) -> None:
 def test_subcommand_split_no_longer_gated_by_shell_tools_five_tuple(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """sh is a command entry but not in SHELL_TOOLS; Phase 1 still splits via bash AST."""
+    """sh is a command entry but not in SHELL_TOOLS; still splits via bash AST."""
 
     from agent_shield.tool_permission import shell_structure
     from agent_shield.tool_permission.toolguard.shell_ast import (
@@ -244,9 +265,9 @@ def test_subcommand_split_no_longer_gated_by_shell_tools_five_tuple(
         ShellSubcommand,
     )
 
-    def stub(_command: str) -> ShellAstParseResult:
+    def stub(_command: str, **_kwargs) -> ShellAstParseResult:
         return ShellAstParseResult(
-            kind="simple",
+            kind="ok",
             subcommands=(
                 ShellSubcommand(text="ls", argv=("ls",)),
                 ShellSubcommand(text="rm x", argv=("rm", "x")),
@@ -260,20 +281,24 @@ def test_subcommand_split_no_longer_gated_by_shell_tools_five_tuple(
     assert kinds.count(CandidateKind.SUBCOMMAND) == 2
 
 
-def test_powershell_and_cmd_skip_posix_ast_split(monkeypatch: pytest.MonkeyPatch) -> None:
-    from agent_shield.tool_permission import shell_structure
-
-    def boom(_command: str):
-        raise AssertionError("PowerShell/CMD must not use bash AST in Phase 1")
-
-    monkeypatch.setattr(shell_structure, "parse_shell_for_permission", boom)
-    for tool, args in (
-        ("powershell", {"command": "Get-Date; Stop-Process -Name x"}),
-        ("cmd", {"command": "dir & echo hi"}),
-        ("mcp_exec_command", {"command": "Get-Date; echo hi", "shell_type": "powershell"}),
+def test_powershell_and_cmd_use_dialect_ast_split() -> None:
+    for tool, args, expected_leaf in (
+        ("powershell", {"command": "Get-Date; Write-Output ok"}, "Write-Output"),
+        ("cmd", {"command": "dir & echo hi"}, "echo"),
+        (
+            "mcp_exec_command",
+            {"command": "Get-Date; Write-Output ok", "shell_type": "powershell"},
+            "Write-Output",
+        ),
     ):
         candidates = PermissionEngine.build_candidates(tool, args)
-        assert all(route.kind is not CandidateKind.SUBCOMMAND for route, _ in candidates), tool
+        sub_texts = [
+            str(cand.get("command") or "")
+            for route, cand in candidates
+            if route.kind is CandidateKind.SUBCOMMAND
+        ]
+        assert sub_texts, tool
+        assert any(expected_leaf in text for text in sub_texts), (tool, sub_texts)
 
 
 def test_mcp_unknown_dialect_still_attempts_posix_split(
@@ -285,9 +310,9 @@ def test_mcp_unknown_dialect_still_attempts_posix_split(
         ShellSubcommand,
     )
 
-    def stub(_command: str) -> ShellAstParseResult:
+    def stub(_command: str, **_kwargs) -> ShellAstParseResult:
         return ShellAstParseResult(
-            kind="simple",
+            kind="ok",
             subcommands=(
                 ShellSubcommand(text="ls", argv=("ls",)),
                 ShellSubcommand(text="pwd", argv=("pwd",)),

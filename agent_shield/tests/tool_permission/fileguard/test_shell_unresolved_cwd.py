@@ -16,7 +16,7 @@ def _config(root, level="allow"):
         "package_builtin_rules": False, "shell_allowlist": None,
         "tools": {"bash": "allow"}, "runtime": {"workspace_root": str(root)},
         "guard_actions": {
-            "compound_chain": "allow", "too_complex": "allow", "parse_unavailable": "allow",
+            "too_complex": "allow", "parse_unavailable": "allow",
         },
         "file_guard": {
             "enabled": True,

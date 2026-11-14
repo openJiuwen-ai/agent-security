@@ -50,7 +50,7 @@ def test_whole_approval_overrides_file_guard_only_when_matched(tmp_path, action,
         "enabled": True,
         "defaults": {"read": "allow", "write": "allow", "exec": "allow"},
         "paths": [{"path": str(tmp_path / "secret"), "read": action, "write": action, "exec": action}],
-    }, guard_actions={"compound_chain": "allow"}, tools={"bash": "allow"})
+    }, tools={"bash": "allow"})
     result = _check(config, command, shell_type="bash")
     assert result.permission is (L.ALLOW if approved else L(action))
     if approved:
@@ -158,7 +158,7 @@ def test_one_off_approval_does_not_mutate_registered_config(tmp_path, key):
 def test_approved_leaf_does_not_duplicate_the_whole_command_warning():
     command = "echo ok && git reset --hard HEAD"
     config = _config("git reset --hard HEAD", tools={"bash": "allow"},
-                     guard_actions={"compound_chain": "allow", "parse_unavailable": "allow"})
+                     guard_actions={"parse_unavailable": "allow"})
     result = _check(config, command)
     assert result.permission is L.ALLOW
     assert result.warnings == ["May discard uncommitted changes"]

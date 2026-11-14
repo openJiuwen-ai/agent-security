@@ -145,7 +145,7 @@ def test_unwrapped_view_cannot_invent_child_directory_access(tmp_path, child, fo
         "command": f"{child} && {following}", "shell_type": "bash",
     }, config={
         "package_builtin_rules": False, "shell_allowlist": None,
-        "guard_actions": {"compound_chain": "allow", "parse_unavailable": "allow"},
+        "guard_actions": {"parse_unavailable": "allow"},
         "host_guard": {"enabled": False},
         "tools": {"bash": "allow"}, "runtime": {"workspace_root": str(tmp_path)},
         "file_guard": {"enabled": True,
@@ -162,7 +162,7 @@ def test_unwrapped_view_cannot_invent_control_plane_write(tmp_path):
         "shell_type": "bash",
     }, config={
         "package_builtin_rules": False, "shell_allowlist": None,
-        "guard_actions": {"compound_chain": "allow", "parse_unavailable": "allow"},
+        "guard_actions": {"parse_unavailable": "allow"},
         "tools": {"bash": "allow"},
         "runtime": {"workspace_root": str(tmp_path),
                     "immutable_control_roots": [str(tmp_path / "child/outside")]},

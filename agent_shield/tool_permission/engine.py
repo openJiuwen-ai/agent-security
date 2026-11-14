@@ -22,7 +22,7 @@ from .routing import (
     RouteContext,
     is_shell_tool,
     resolve_dialect,
-    supports_posix_subcommand_split,
+    supports_ast_subcommand_split,
 )
 from .shell_structure import (
     ShellStructureOutcome,
@@ -315,9 +315,8 @@ class PermissionEngine:
             )
 
         structure_verdicts: list[PermissionResult] = []
-        # Phase 1: only posix/unknown call analyze during expand (leaves + verdict).
-        # PowerShell/CMD: no bash AST here; verdicts collected lazily in _evaluate.
-        if supports_posix_subcommand_split(dialect) and analyze is not None:
+        # tree-sitter per dialect: bash / pwsh / batch → leaves + structure verdict.
+        if supports_ast_subcommand_split(dialect) and analyze is not None:
             seen_text: set[str] = set()
             for route, cand_args in list(candidates):
                 if route.kind not in (CandidateKind.ORIGINAL, CandidateKind.UNWRAPPED):
@@ -341,7 +340,7 @@ class PermissionEngine:
                                 _with_command(tool_args, leaf),
                             )
                         )
-        elif supports_posix_subcommand_split(dialect) and analyze is None:
+        elif supports_ast_subcommand_split(dialect) and analyze is None:
             # Class-level build_candidates: leaves only, default structure config.
             outcome = analyze_shell_for_permission(
                 tool_name,
@@ -393,22 +392,6 @@ class PermissionEngine:
                         tool_args,
                     )
                     return approval
-
-        # PowerShell/CMD: structure verdicts not collected during expand.
-        if not structure_verdicts:
-            dialect = resolve_dialect(tool_name, tool_args) or CommandDialect.UNKNOWN
-            if not supports_posix_subcommand_split(dialect):
-                for route, cand_args in candidates:
-                    if route.kind not in (CandidateKind.ORIGINAL, CandidateKind.UNWRAPPED):
-                        continue
-                    outcome = self._analyze(
-                        tool_name,
-                        _command_text(cand_args),
-                        dialect=route.command_dialect,
-                        is_shell=route.is_shell,
-                    )
-                    if outcome.verdict is not None:
-                        structure_verdicts.append(outcome.verdict)
 
         candidate_verdicts: list[PermissionResult] = []
         all_subscribed: list[tuple[str, PermissionResult | None]] = []
