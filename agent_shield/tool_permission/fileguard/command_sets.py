@@ -59,6 +59,10 @@ PS_PATH_FLAGS = frozenset({
     "-destination", "-destinationpath", "-newname",
 })
 
+# Named-parameter roles for transfer cmdlets (do not infer by appearance order).
+PS_SOURCE_FLAGS = frozenset({"-path", "-literalpath", "-filepath"})
+PS_DEST_FLAGS = frozenset({"-destination", "-destinationpath", "-newname"})
+
 # Last path-shaped operand is the destination (cp/mv/ln style).
 TRANSFER_CMDS = frozenset({
     "cp", "copy", "mv", "move", "install", "rsync", "replace", "ln", "link",
@@ -93,6 +97,8 @@ __all__ = [
     "WRITE_CMDS",
     "DELETE_CMDS",
     "PS_PATH_FLAGS",
+    "PS_SOURCE_FLAGS",
+    "PS_DEST_FLAGS",
     "TRANSFER_CMDS",
     "MOVE_CMDS",
     "SYNC_CMDS",

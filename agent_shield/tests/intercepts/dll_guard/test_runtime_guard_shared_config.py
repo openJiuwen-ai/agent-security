@@ -278,7 +278,10 @@ async def test_native_program_arguments_are_literal_but_tool_text_keeps_structur
     subject = {
         "kind": "program",
         "exe": str(tmp_path / "bash.exe"),
-        "argv": ["-c", "cd child && echo literal"],
+        # Heredoc is a structure-floor ASK on the tool-text path. Native binding
+        # skips structure analysis, so the same argv stays allow for evaluate_resource.
+        # (``echo $(...)`` is a hard DENY via injection rules, not an ASK.)
+        "argv": ["-c", "cat <<EOF\nhello\nEOF"],
         "cwd": str(tmp_path),
     }
     assert (await engine.check_permission("bash", program_policy_args(subject))).needs_approval

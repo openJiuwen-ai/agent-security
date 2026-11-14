@@ -26,8 +26,10 @@ from .command_sets import (
     MOVE_CMDS as _MOVE_CMDS,
     NT_CMD_SWITCH_COMMANDS as _NT_CMD_SWITCH_COMMANDS,
     PATH_AWARE_COMMANDS as _PATH_AWARE_COMMANDS,
+    PS_DEST_FLAGS as _PS_DEST_FLAGS,
     PS_NAMED_PATH_CMDS as _PS_NAMED_PATH_CMDS,
     PS_PATH_FLAGS as _PS_PATH_FLAGS,
+    PS_SOURCE_FLAGS as _PS_SOURCE_FLAGS,
     READ_CMDS as _READ_CMDS,
     SYNC_CMDS as _SYNC_CMDS,
     TRANSFER_CMDS as _TRANSFER_CMDS,
@@ -157,6 +159,24 @@ def _collect_ps_path_tokens(tokens: list[str]) -> list[str]:
             first_positional = False
         idx += 1
     return out
+
+
+def _collect_ps_named_path_roles(tokens: list[str]) -> dict[str, list[str]]:
+    """Map PowerShell path flags to source/dest roles (order-independent)."""
+    roles: dict[str, list[str]] = {"source": [], "dest": []}
+    idx = 1
+    while idx < len(tokens):
+        bare = tokens[idx].strip().strip('"').strip("'").lower().split(":")[0]
+        if bare in _PS_SOURCE_FLAGS and idx + 1 < len(tokens):
+            roles["source"].append(tokens[idx + 1].strip())
+            idx += 2
+            continue
+        if bare in _PS_DEST_FLAGS and idx + 1 < len(tokens):
+            roles["dest"].append(tokens[idx + 1].strip())
+            idx += 2
+            continue
+        idx += 1
+    return roles
 
 
 def _is_shell_flag_token(tok: str, *, cmd0: str = "", shell_type: str = "auto") -> bool:
@@ -663,6 +683,33 @@ def _path_aware_one_segment(
             results.append((path_tokens[0][0], "write"))
         # /MIR and /PURGE also mutate the destination tree; dest stays write.
         results.append((path_tokens[1][0], "write"))
+    elif cmd0 in _TRANSFER_CMDS and cmd0 in _PS_NAMED_PATH_CMDS:
+        roles = _collect_ps_named_path_roles(tokens)
+        if roles["source"] or roles["dest"]:
+            def _resolve_role_token(tok: str) -> Path | None:
+                for piece in split_shell_operands(tok, shell_type=shell_type, cmd0=cmd0):
+                    if _is_shell_flag_token(piece, cmd0=cmd0, shell_type=shell_type):
+                        continue
+                    return _resolve_shell_operand(piece, base, shell_type, bare=True)
+                return None
+
+            for tok in roles["source"]:
+                path = _resolve_role_token(tok)
+                if path is None:
+                    continue
+                results.append((path, "read"))
+                if cmd0 in _MOVE_CMDS:
+                    results.append((path, "write"))
+            for tok in roles["dest"]:
+                path = _resolve_role_token(tok)
+                if path is not None:
+                    results.append((path, "write"))
+        elif len(path_tokens) >= 2:
+            for p, _ in path_tokens[:-1]:
+                results.append((p, "read"))
+                if cmd0 in _MOVE_CMDS:
+                    results.append((p, "write"))
+            results.append((path_tokens[-1][0], "write"))
     elif cmd0 in _TRANSFER_CMDS and len(path_tokens) >= 2:
         for p, _ in path_tokens[:-1]:
             results.append((p, "read"))

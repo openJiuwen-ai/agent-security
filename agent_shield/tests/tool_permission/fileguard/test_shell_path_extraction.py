@@ -256,6 +256,11 @@ def test_powershell_file_guard_paths_distinguish_lists_from_literal_commas(tmp_p
         {(r"C:\tmp\a.txt", "read"), (r"C:\tmp\a.txt", "write"), (r"C:\outside\b.txt", "write")},
     ),
     (
+        # Named flags must bind by role, not appearance order (A3).
+        r"Copy-Item -Destination C:\outside\b.txt -Path C:\tmp\a.txt",
+        {(r"C:\tmp\a.txt", "read"), (r"C:\outside\b.txt", "write")},
+    ),
+    (
         r"Copy-Item C:\tmp\a.txt C:\outside\b.txt",
         {(r"C:\tmp\a.txt", "read"), (r"C:\outside\b.txt", "write")},
     ),
@@ -319,12 +324,18 @@ def test_posix_extra_file_commands_are_path_aware(tmp_path, command, expected):
         {(r"C:\outside\out.txt", "write")},
     ),
     (
+        # Copy marks source as read (A4).
         r'[System.IO.File]::Copy("C:\tmp\a.txt", "C:\outside\b.txt")',
-        {(r"C:\outside\b.txt", "write")},
+        {(r"C:\tmp\a.txt", "read"), (r"C:\outside\b.txt", "write")},
     ),
     (
         r'[System.IO.File]::Move("C:\tmp\a.txt", "C:\outside\b.txt")',
         {(r"C:\tmp\a.txt", "write"), (r"C:\outside\b.txt", "write")},
+    ),
+    (
+        # Nested parentheses around a literal path still bind (A1).
+        r'[System.IO.File]::Delete(("C:\tmp\a.txt"))',
+        {(r"C:\tmp\a.txt", "write")},
     ),
     (
         r'cipher /w:C:\outside\wipe',
@@ -364,16 +375,29 @@ def test_dotnet_filesystem_literals_extract_as_writes(tmp_path, command, expecte
     "$item.InvokeVerb('delete')",
     "$f.Delete()",
     "[System.IO.File]::Delete($path)",
+    # Non-path second arg must not be treated as the wipe target (A1).
+    r'[System.IO.File]::WriteAllText($path, "data")',
     "New-Object -ComObject Shell.Application; $s.Namespace('C:\\tmp').ParseName('a.txt').InvokeVerb('delete')",
     "Add-Type -TypeDefinition 'DllImport(\"kernel32\") public static extern bool DeleteFile(string p);'",
     "SHFileOperation($op)",
+    # Drive-root cipher wipe has no bindable file path (A6).
+    r"cipher /w:C:",
     # Peer analyzers run per segment: a recoverable literal must not mask opaque Delete.
     r'[System.IO.File]::Delete("C:\tmp\a.txt"); $f.Delete()',
     r'Remove-Item C:\tmp\a.txt; $f.Delete()',
 ])
 def test_opaque_windows_destruction_fail_closes(tmp_path, command):
+    shell = "cmd" if command.strip().lower().startswith("cipher") else "powershell"
     with pytest.raises(paths.ShellPathUnresolvedShellError):
-        paths.extract_shell_path_accesses(command, tmp_path, shell_type="powershell")
+        paths.extract_shell_path_accesses(command, tmp_path, shell_type=shell)
+
+
+def test_quoted_shfileoperation_text_is_not_opaque(tmp_path):
+    """String literals mentioning wipe APIs must not fail-closed (A5)."""
+    accesses = paths.extract_shell_path_accesses(
+        'echo SHA1 "SHFileOperation("', tmp_path, shell_type="bash",
+    )
+    assert accesses == []
 
 
 @pytest.mark.parametrize("command,expected", [
