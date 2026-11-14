@@ -1,5 +1,7 @@
 """The SQLite layer of the vault.
 
+It is the only module that writes SQL.
+
 The vault owns four tables::
 
     vault_record        the records
