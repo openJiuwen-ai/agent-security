@@ -5,7 +5,7 @@ It is **not** a git submodule and is **not** required to install or import
 `agent-shield` / `jiuwenbox` (Python packages).
 
 Pin: [Microsoft Detours](https://github.com/microsoft/Detours) **v4.0.1** (MIT),
-historically `1dbd4ea281d73d478aa8d09a8b83fbd265f715f7`.
+commit `e4bfd6b03e50de46b47abfbd1e46b384f0c5f833`.
 
 ```powershell
 # Default location used by build.ps1 (gitignored):

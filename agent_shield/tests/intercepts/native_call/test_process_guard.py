@@ -6,7 +6,7 @@ import pytest
 
 from agent_shield.policy_engine.server import Decide
 from agent_shield.policy_engine.server.registry import RulesetRegistry
-from agent_shield.intercepts.native_call import wrap
+from agent_shield.intercepts.native_call import preflight, wrap
 from agent_shield.intercepts.native_call import settle_native_record
 from agent_shield.tests.net_addrs import METADATA
 
@@ -66,7 +66,10 @@ class RecordingDecide(Decide):
         return settle_native_record(self, record, binding=binding)
 
 
-@pytest.mark.skipif(not _binaries_ready(), reason="windows process guard binaries are not built")
+@pytest.mark.skipif(
+    not (_BIN / "probe.exe").is_file() or not preflight().ok,
+    reason="Windows process guard bundle and test probe required",
+)
 def test_process_guard_allows_workspace_read_and_denies_a_ruled_metadata_connect(tmp_path):
     target = tmp_path / "note.txt"
     target.write_text("hello", encoding="utf-8")
@@ -95,8 +98,8 @@ def test_process_guard_allows_workspace_read_and_denies_a_ruled_metadata_connect
         task_id="task-a",
     )
     probe = str(_BIN / "probe.exe")
-    assert wrap([probe, "read", str(target)], decide=decide, bin_dir=str(_BIN), process_timeout_s=60) == 0
-    assert wrap([probe, "connect", "metadata"], decide=decide, bin_dir=str(_BIN), process_timeout_s=60) == 5
+    assert wrap([probe, "read", str(target)], decide=decide, process_timeout_s=60) == 0
+    assert wrap([probe, "connect", "metadata"], decide=decide, process_timeout_s=60) == 5
 
 
 @pytest.mark.skipif(not _binaries_ready(), reason="windows process guard binaries are not built")

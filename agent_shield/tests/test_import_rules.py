@@ -75,6 +75,17 @@ def test_tool_permission_facade_names_resolve() -> None:
         assert hasattr(tool_permission, name), name
 
 
+def test_tool_permission_loads_native_runtime_on_demand() -> None:
+    code = """
+import sys
+import agent_shield.tool_permission as permissions
+assert 'agent_shield.tool_permission.runtime_policy' not in sys.modules
+assert 'agent_shield.tool_permission.runtime.engine' not in sys.modules
+assert permissions.runtime_policy.engine.PermissionEngine
+"""
+    subprocess.run([sys.executable, "-c", code], cwd=REPO_ROOT, check=True)
+
+
 def test_guard_components_are_not_public() -> None:
     internal = {"NetGuardComponent", "FileGuardComponent", "HostGuardComponent",
                 "TieredPolicyComponent", "InjectionComponent"}

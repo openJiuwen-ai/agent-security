@@ -1,0 +1,16 @@
+Agent Security DLL
+Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+The prebuilt jiuwen_runtime_guard.dll statically links Microsoft Research
+Detours v4.0.1, commit e4bfd6b03e50de46b47abfbd1e46b384f0c5f833.
+Detours is Copyright (c) Microsoft Corporation and is licensed under the
+MIT License. The full notice is in LICENSE.Detours.txt beside the DLL and
+in the distribution's license metadata.
+
+The DLL uses the project's import-table child injection and IPC protocol 4.
+Binary and source hashes are recorded in
+jiuwen_runtime_guard.manifest.json.
+
+The existing process_guard.exe and process_guard_hook_x64/x86.dll retain the
+separate legacy native_call protocol and link the same pinned Detours version.
