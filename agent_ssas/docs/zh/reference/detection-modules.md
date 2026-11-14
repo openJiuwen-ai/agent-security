@@ -54,7 +54,7 @@ plugins:                          # 必需,须同时包含以下两类插件
 | `event_version` | 否 | 事件格式版本号，默认 `"1.0"` |
 | `subscribed_events` | 否 | 订阅事件列表，默认 `["*"]` |
 | `analytic_type_id` | 否 | 分析类型 ID，用于 OCSF 报告的 `analytic.type` 映射：1=Rule、2=Behavior，默认 0 |
-| `auth_timeout_policy` | 否 | auth 模式订阅者超时后的默认策略，默认 `allow` |
+| `auth_timeout_policy` | 否 | auth 模式订阅者超时后的默认策略：`allow`（默认，超时视为无风险并放行）或 `reject`（超时视为 high 风险并建议 block），与流水线的超时报告一致 |
 | `report_only_risks` | 否 | 为 `true` 时仍分析所有事件，但只将 `has_risk=true` 的报告写入模块结果库并生成 OCSF 日志，默认 `false` |
 | `plugins` | 是 | 插件列表，必须同时包含一个 `data_modeling` 与一个 `threat_analysis` 插件 |
 
@@ -184,7 +184,9 @@ plugins:
 行为说明：
 
 - 订阅 `permission_interrupt_tool` 安全检测衍生事件（notify 模式），消费事件 payload 中的 `risk_source`、`risk_type`、`risk_level`、`deny_reason`、`decision`、`evidence` 字段。
-- 数据建模插件为 `BlankDataModeler`（空白建模，不产生模型内容），威胁分析插件为 `SecurityRailAnalyzer`（位于模块目录 `security_rail_analyzer.py`），将其他安全 Rail 的拦截决策聚合为风险评估结果并写入自身 result.db 与威胁日志。报告 evidence 承载 decision 与明细字段（`tool_name` / `tool_call_id` / `reason`，取自 `risk_assessment.evidence`，缺失回退 `event_node` 的 `action_name`/`tool_call_id`）；`recommended_actions` 按拒绝场景产出：策略 deny / 未知 → `["log", "alert"]`，用户拒绝 → `["log"]`。
+- 数据建模插件为 `BlankDataModeler`（空白建模，不产生模型内容），威胁分析插件为 `SecurityRailAnalyzer`（位于模块目录 `security_rail_analyzer.py`），将其他安全 Rail 的拦截决策聚合为风险评估结果并写入自身 result.db 与威胁日志。报告 `evidence` 承载 decision 与明细字段：`decision` 取自 `risk_assessment.decision`（缺失时回退事件顶层的 `decision`），`evidence` 明细（`tool_name` / `tool_call_id` / `reason`）取自 `risk_assessment.evidence`，缺失回退 `event_node` 的 `action_name`/`tool_call_id`；`recommended_actions` 按拒绝场景产出：策略 deny / 未知 → `["log", "alert"]`，用户拒绝 → `["log"]`。
+- `confidence` 由 `deny_reason` 推导，表示「拒绝场景分类」的确定性：`policy_deny` → 0.9，`user_reject` → 0.75，缺失或未知 → 0.6。
+- `analytic_name` / `description` 按场景定制：`policy_deny` 为 `Tool Permission Denied`，描述为 `PermissionInterruptRail denied the tool call to <tool> (policy deny)`；`user_reject` 为 `Tool Permission Rejected`，描述为 `User rejected the tool call to <tool>`；缺失或未知场景回退到策略拒绝的文案。
 - `analytic_type_id: 1` 在 OCSF 报告中映射为 `analytic.type = "Rule"`。
 
 ### test_detection

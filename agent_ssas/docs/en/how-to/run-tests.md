@@ -7,7 +7,7 @@ This guide explains how to run AgentSSAS unit tests, integration tests, lint too
 Change into the AgentSSAS repository root and install the dependencies:
 
 ```bash
-cd AgentSecurity/AgentSSAS
+cd agent-security/agent_ssas
 uv pip install -e .
 ```
 
@@ -38,7 +38,7 @@ uv run --extra http python examples/http_server_demo/start_server.py
 ## Running pytest Directly
 
 ```bash
-cd AgentSecurity/AgentSSAS
+cd agent-security/agent_ssas
 python -m pytest tests/ --tb=short -q
 ```
 
@@ -97,7 +97,7 @@ On Windows, if make is not installed, run the corresponding commands from the `M
 `tests/agent_ssas/core/integration/test_verify_phase3.py` provides standalone, executable end-to-end verification commands covering three scenarios: inprocess mode, HTTP service mode, and disabled configuration:
 
 ```bash
-cd AgentSecurity/AgentSSAS
+cd agent-security/agent_ssas
 python -m tests.verify_phase3 all
 ```
 
@@ -118,7 +118,7 @@ Notes:
 
 ## Troubleshooting
 
-- **0 cases collected**: make sure the current directory is `AgentSecurity/AgentSSAS` (the directory containing `pyproject.toml`); pytest collects tests based on its `testpaths` setting.
+- **0 cases collected**: make sure the current directory is `agent-security/agent_ssas` (the directory containing `pyproject.toml`); pytest collects tests based on its `testpaths` setting.
 - **HTTP tests fail with `ModuleNotFoundError: fastapi` (or uvicorn/httpx)**: install the `http` extra; see Prerequisites above.
 - **Async tests fail or get skipped**: make sure `pytest-asyncio` is installed; `asyncio_mode = "auto"` is already enabled in the configuration.
 - **Cleanup fails on Windows due to file locking**: the verification script has a built-in fallback (renaming the locked directory); if it still fails, close the processes holding the SQLite files and retry.

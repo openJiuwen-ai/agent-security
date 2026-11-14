@@ -13,7 +13,7 @@ AgentSSAS 的配置由 `AgentSSASConfig`（定义于 `src/agent_ssas/core/framew
 加载顺序为：
 
 1. **默认值**：`AgentSSASConfig` 各字段的 dataclass 默认值。
-2. **config.yaml 的 `ssas` 段**：`AgentSSASConfig.from_dict(data)` 读取 `ssas` 段内容，仅识别已知字段（未知字段被忽略）；`from_dict(None)` 时直接使用默认值。`AgentSSASConfig.from_yaml(path)` 读取整个 config.yaml 并提取 `ssas` 段；文件中没有 `ssas` 段时等同默认配置。
+2. **config.yaml 的 `ssas` 段**：`AgentSSASConfig.from_dict(data)` 读取 `ssas` 段内容，仅识别已知字段（未知字段被忽略）；`from_dict(None)` 时直接使用字段默认值，但仍会应用 `SSAS_` 环境变量覆盖。`AgentSSASConfig.from_yaml(path)` 读取整个 config.yaml 并提取 `ssas` 段；文件中没有 `ssas` 段时等同默认配置，同样会应用 `SSAS_` 环境变量覆盖。
 3. **`SSAS_` 前缀环境变量**：在上述结果上覆盖，优先级最高。
 
 即：`SSAS_` 环境变量 > config.yaml `ssas` 段 > 字段默认值。
@@ -44,7 +44,7 @@ AgentSSAS 的配置由 `AgentSSASConfig`（定义于 `src/agent_ssas/core/framew
 | `cleanup_interval_hours` | int | `24` | `SSAS_CLEANUP_INTERVAL_HOURS` | 周期性 TTL 后台清理间隔（小时，`<= 0` 禁用周期清理） |
 | `rail_priority` | int | `80` | `SSAS_RAIL_PRIORITY` | Rail 执行优先级（预留字段，当前版本未生效） |
 | `enable_exception_hooks` | bool | `true` | `SSAS_ENABLE_EXCEPTION_HOOKS` | 异常钩子开关（预留字段，当前版本未生效） |
-| `risk_report_threshold` | str | `low` | `SSAS_RISK_REPORT_THRESHOLD` | 风险上报门限（safe/low/medium/high/critical） |
+| `risk_report_threshold` | str | `low` | `SSAS_RISK_REPORT_THRESHOLD` | 风险上报门限（预留字段，当前版本未生效，不影响上报内容） |
 | `auth_timeout` | float | `2.0` | `SSAS_AUTH_TIMEOUT` | auth 模式订阅者超时秒数 |
 | `decision_policy` | str | `observe_only` | `SSAS_DECISION_POLICY` | 决策策略模式名 |
 | `modules` | dict | `{}` | — | 各检测模块专属配置 |
@@ -52,7 +52,7 @@ AgentSSAS 的配置由 `AgentSSASConfig`（定义于 `src/agent_ssas/core/framew
 说明：
 
 - `mode` 对应 `AgentSSASMode` 枚举：`inprocess`（进程内库模式，零网络延迟）与 `http`（独立 HTTP 服务模式，支持多 Agent 共享）。
-- `risk_report_threshold` 取值为五级风险等级之一（`safe` / `low` / `medium` / `high` / `critical`），低于门限的风险不上报。
+- `risk_report_threshold` 取值为五级风险等级之一（`safe` / `low` / `medium` / `high` / `critical`）；该字段目前仅被 settings 读取并保存，**不会过滤实际上报的风险**，属于预留字段。
 - `auth_timeout`：auth 模式订阅者超过此时间未返回时，按模块默认策略处理。
 - `modules` 无对应环境变量，只能通过 config.yaml 配置。
 - `storage_backend`、`rail_priority`、`enable_exception_hooks`、`risk_report_threshold` 为预留字段，当前版本未生效。其中 `storage_backend` 当前仅支持 `sqlite`，传入其他值时 `from_dict` 记 warning（不抛错），实际后端固定为 SQLiteStore。
@@ -90,10 +90,10 @@ ssas:
   report_file_ttl_days: 90    # reports/threat_log/ 威胁报告 JSON 文件保留天数
   cleanup_interval_hours: 24  # 周期性 TTL 后台清理间隔(小时,<= 0 禁用)
 
-  # Rail 配置
-  rail_priority: 80
-  enable_exception_hooks: true
-  risk_report_threshold: low
+  # Rail 配置(以下三项均为预留字段,当前版本未生效)
+  rail_priority: 80              # 预留,当前版本未生效
+  enable_exception_hooks: true   # 预留,当前版本未生效
+  risk_report_threshold: low     # 预留,当前版本未生效,不影响实际上报
 
   # 决策策略: observe_only(默认) / active_protection / 自定义策略名
   decision_policy: observe_only
@@ -177,6 +177,7 @@ SSAS_HTTP_PORT=8443
 SSAS_HOME=/path/to/home
 SSAS_EVENT_TTL_DAYS=30
 SSAS_ALERT_TTL_DAYS=90
+SSAS_REPORT_FILE_TTL_DAYS=90
 SSAS_CLEANUP_INTERVAL_HOURS=24
 SSAS_RAIL_PRIORITY=80
 SSAS_ENABLE_EXCEPTION_HOOKS=true

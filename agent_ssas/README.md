@@ -13,7 +13,7 @@
   ·
   <a href="CHANGELOG.md">Changelog</a>
   ·
-  <a href="https://atomgit.com/yieux1/AgentSecurity">AtomGit</a>
+  <a href="https://gitcode.com/openJiuwen/agent-security">GitCode</a>
 </p>
 
 <p align="center">
@@ -51,7 +51,7 @@ Core capabilities:
 - **Pluggable detection modules**: modules register declaratively via `module.yaml` and are organized as a "data modeling plugin + threat analysis plugin" pair; new detection capabilities require zero framework changes
 - **3 built-in detection modules**: `agent_moss` (rule + behavior-chain + Agent Behavior Graph (ABG) data-leakage analysis), `security_rail_detection` (derivative analysis of other security rails' findings), `test_detection` (pipeline verification, disabled by default)
 - **notify / auth subscription modes**: notify runs detection asynchronously in the background without blocking; auth participates synchronously in security decisions with timeout fallback policies
-- **Decision policies**: `observe_only` (default, observation-only, allows everything) and `active_protection` (critical blocked, others alerted), switchable via a single config entry
+- **Decision policies**: `observe_only` (default, observation-only, allows everything) and `active_protection` (critical rejected, high/medium/low alerted, safe allowed), switchable via a single config entry
 - **fail-open design**: any SSAS failure (initialization error, malformed event, detection timeout) never blocks the JiuwenSwarm main flow
 - **OCSF threat logs**: detection results are persisted as OCSF-formatted JSON logs; events and alerts are stored in SQLite
 
@@ -65,13 +65,13 @@ Core capabilities:
 | [examples/](examples/README.md) | 3 runnable examples: in-process quickstart, HTTP server demo, JiuwenSwarm integration |
 | [design/](design/README.md) | Development design documents: overall architecture and subsystem designs, test reports |
 | [patches/](patches/) | JiuwenSwarm integration patches: local-dependency / online-dependency, pick one |
-| [CHANGELOG.md](CHANGELOG.md) | Release history ([Releases](https://atomgit.com/yieux1/AgentSecurity/releases)) |
+| [CHANGELOG.md](CHANGELOG.md) | Release history ([Releases](https://gitcode.com/openJiuwen/agent-security/releases)) |
 | [SECURITY.md](SECURITY.md) | Security policy and vulnerability reporting |
 
 Repository layout:
 
 ```
-AgentSSAS/
+agent_ssas/
 ├── README.md / README.zh.md     # Bilingual README
 ├── LICENSE / CHANGELOG.md / SECURITY.md
 ├── docs/                          # Bilingual user docs (zh / en)
@@ -95,13 +95,13 @@ AgentSSAS/
 ### Remote (recommended)
 
 ```bash
-uv pip install "agent-ssas @ git+https://atomgit.com/yieux1/AgentSecurity.git@develop#subdirectory=AgentSSAS"
+uv pip install "agent-ssas @ git+https://gitcode.com/openJiuwen/agent-security.git@develop#subdirectory=agent_ssas"
 ```
 
 ### Local (development)
 
 ```bash
-cd AgentSecurity/AgentSSAS
+cd agent-security/agent_ssas
 uv venv
 uv pip install -e .
 
@@ -139,9 +139,9 @@ After the run, inspect the stored data under `~/.jiuwenswarm/ssas/`: `ssas_core.
 ```bash
 cd <jiuwenswarm repo root>
 # Local dependency (editable, for developing alongside AgentSSAS sources)
-git apply <AgentSecurity repo path>/AgentSSAS/patches/jiuwenswarm_ssas_local.patch
-# Or online dependency (remote git dependency from AtomGit, for production use)
-git apply <AgentSecurity repo path>/AgentSSAS/patches/jiuwenswarm_ssas_online.patch
+git apply <agent-security repo path>/agent_ssas/patches/jiuwenswarm_ssas_local.patch
+# Or online dependency (remote git dependency from GitCode, for production use)
+git apply <agent-security repo path>/agent_ssas/patches/jiuwenswarm_ssas_online.patch
 ```
 
 2. Install dependencies and configure: add an `ssas` section (`enabled: true`) to `~/.jiuwenswarm/config/config.yaml`
@@ -164,6 +164,6 @@ This project is open source under the [Apache License 2.0](LICENSE).
 
 Contributions are welcome:
 
-- Report bugs and suggest features: [Issues](https://atomgit.com/yieux1/AgentSecurity/issues)
-- Submit code and documentation: [Pull Requests](https://atomgit.com/yieux1/AgentSecurity/pulls)
+- Report bugs and suggest features: [Issues](https://gitcode.com/openJiuwen/agent-security/issues)
+- Submit code and documentation: [Pull Requests](https://gitcode.com/openJiuwen/agent-security/pulls)
 - For security vulnerabilities, follow the private reporting process in [SECURITY.md](SECURITY.md) instead of opening a public issue

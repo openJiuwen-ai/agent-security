@@ -1,14 +1,15 @@
 # security_gateway
 
-A Python implementation of `credential_router`: a generic encrypted field
-store and credential router. It is a port of the Go service in
-`../credential_router`, and the two are **interoperable** — they read and
-write the same files, so a store created by one is readable by the other
-and a deployment can move from one to the other without migrating data.
+English | [简体中文](./README_CN.md)
 
-The client and the LLM-gateway integration live in the consuming
-application; this package only provides the cryptographic primitives, the
-platform layer and the vault.
+A Python implementation of the `credential_router` storage layer: an encrypted
+field store built on a schema declared in code. It ports the Go service's
+`crypto`, `platform`, and `vault` packages; the Go service itself is an external
+reference and is not vendored in this repository.
+
+The client and the LLM-gateway integration live in the consuming application;
+this package provides the cryptographic primitives, the platform layer, and the
+vault.
 
 ## Layout
 
@@ -19,14 +20,38 @@ src/                  the security_gateway package (package-dir maps src -> secu
   vault/              the generic encrypted field store (schema, records, keys, rotation)
 tests/
   unit/               one directory per package
-  integration/        the whole stack on one machine
-  interop/            the checks that only make sense against the Go implementation
 ```
 
-Each package mirrors a Go package one for one. When you need to know what a
-Python module is supposed to do, read the Go file it came from — the Go
-code is the specification, and its comments explain the reasoning behind
-each rule.
+Each package mirrors a Go package one for one. The upstream Go implementation
+is a behavioral reference and is not in this repository; each Python module's
+docstring records the rules and reasoning it ports, so use the docstrings and
+this README as the primary reference.
+
+## What it does
+
+- Records are addressed by an indexed id and carry fields described by a
+  `Schema` the host declares in code.
+- A field is either stored as-is or encrypted under the store's data encryption
+  key (DEK). The schema is authoritative; the stored bytes carry a flag that is
+  cross-checked on read.
+- The DEK is wrapped by a key encryption key (KEK) derived with PBKDF2 from the
+  XOR of three shards: a file, SQLite, and a built-in constant. The built-in
+  shard ships with the package and must be treated as public. The security
+  boundary is that an attacker who obtains only the file shard or only the
+  SQLite shard cannot recover the KEK; that protects against offline data
+  theft, not a local privilege escalation that can read both.
+- A record's fields are encoded into a `VREC` container and stored in the
+  `vault_record.data` column. The schema, key metadata, and sync state live in
+  `vault_schema`, `vault_key_metadata`, and `vault_sync_state`.
+- DEK rotation, automatic rotation, and takeover of an interrupted rotation are
+  supported. A newer schema is accepted only when the change is additive: every
+  existing field keeps its type and encryption state. Renames, removals, type
+  changes, or encryption changes are refused and need an explicit migration.
+  The store keeps the earlier schema versions it has seen so old records stay
+  readable.
+- Records are keyed by id. The only bulk read is `Vault.list(prefix)`, which
+  lists the records whose id starts with the prefix; there is no query-by-field
+  API and no secondary index.
 
 ## Installing
 
@@ -44,45 +69,47 @@ pip install -e '.[dev]'
 pytest tests -q
 ```
 
-The Go service's tests are the specification. Port them rather than
-inventing new ones: the Go suite is 114 files and 36k lines, and it encodes
-the failure modes that matter.
-
-`tests/interop/` holds the checks that only make sense against the other
-implementation: the vault's files and the vault's socket protocol. They
-drive the prebuilt Go binary — the Go toolchain is not needed, and the
-binary is treated as the reference.
-
-### The end-to-end harness
-
-The sibling `e2e/` harness (outside this repository) runs the whole thing
-the way it is deployed: a real litellm, a real postgres, a fake upstream,
-and the vault. It takes an implementation switch:
-
-```sh
-CRED_ROUTER_IMPL=python /tmp/opencode/litellm-venv/bin/python test_vault_integration.py
-CRED_ROUTER_IMPL=go     /tmp/opencode/litellm-venv/bin/python test_vault_integration.py
-```
-
-The two runs exercise the same scenarios against the same contract, which
-is the point: the harness is what says the Python service is a **drop-in**
-for the Go one, not merely a similar one.
+The current suite is under `tests/unit/` and covers `crypto`, `platform`, and
+`vault`. The Go service's tests remain the reference for behavior that has not
+been ported yet.
 
 ## Reading and writing records
 
 ```python
-from security_gateway.vault.schema import FieldDef, Schema, Type
-from security_gateway.vault.vault import Config as VaultConfig
-from security_gateway.vault.vault import Vault
+from security_gateway.vault import (
+    Config as VaultConfig,
+    FieldDef,
+    Record,
+    Schema,
+    Type,
+    Value,
+    Vault,
+)
 
 schema = Schema(version=1, fields=[
     FieldDef(name="kind", type=Type.STRING),
     FieldDef(name="secret", type=Type.BYTES, encrypted=True),
 ])
 vault = Vault.open(VaultConfig(data_dir="/var/lib/credential-router/vault"), schema)
-vault.put(...)
-secret = vault.get("some/record/id")
+
+record = Record(id="some/record/id")
+record.set("kind", Value.new_string("api_key"))
+record.set("secret", Value.new_bytes(b"..."))
+vault.put(record)
+secret = vault.get("some/record/id").get_bytes("secret")
 ```
+
+## Current scope
+
+- The package does not open a port and does not implement a UDS server. HTTP
+  APIs, credential routing, and the LLM-gateway integration belong to the
+  consuming application.
+- etcd and cluster sync are port skeletons and currently cannot be imported:
+  they reference a `security_gateway.credmgr` subpackage that is not shipped.
+  These modules are not usable yet; only the single-machine vault works today.
+- The on-disk VREC container, the wrapped DEK, the key snapshot file, the SQLite
+  DDL, and the key derivation parameters are compatibility contracts. Changing
+  one requires a migration on both sides.
 
 ## Compatibility rules
 
@@ -99,4 +126,6 @@ reading data written by the other implementation.
 4. **The etcd keyspace does not change.** Same prefixes, same value
    encodings, same generation fence.
 5. **The UDS frame format does not change.** Same length prefix, same JSON
-   shape, same error codes.
+   shape, same error codes. This package implements neither a UDS listener nor
+   the frame codec; the frame format belongs to the external service wrapper and
+   the upstream implementation, and nothing here encodes or decodes it.

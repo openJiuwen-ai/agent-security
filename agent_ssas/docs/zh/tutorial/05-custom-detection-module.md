@@ -51,7 +51,7 @@ plugins:
 | `event_version` | 否 | `"1.0"` | 事件格式版本 |
 | `subscribed_events` | 否 | `["*"]` | 订阅的事件规格列表，写法见[下文](#订阅事件的写法) |
 | `analytic_type_id` | 否 | `0` | 分析类型标识 |
-| `plugins` | 是 | — | 插件声明列表，必须恰好包含一个 `type: data_modeling` 和一个 `type: threat_analysis` |
+| `plugins` | 是 | — | 插件声明列表，至少各包含一个 `type: data_modeling` 与一个 `type: threat_analysis`；同一类型重复声明时，当前实现取最后一个 |
 
 `plugins` 列表中每个条目的字段：
 
@@ -70,7 +70,7 @@ plugins:
 ### 第 1 步：创建模块目录
 
 ```bash
-cd AgentSecurity/AgentSSAS
+cd agent-security/agent_ssas
 mkdir src/agent_ssas/core/detection_modules/my_detection
 touch src/agent_ssas/core/detection_modules/my_detection/__init__.py
 ```

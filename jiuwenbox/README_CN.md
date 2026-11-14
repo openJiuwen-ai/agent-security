@@ -1,22 +1,43 @@
 # jiuwenbox
 
-`jiuwenbox` 是一个轻量级 Linux 沙箱服务，用于在分层隔离环境中运行
-agent 工具和代码片段。
+[English](./README.md) | 简体中文
 
-它提供一个 FastAPI 服务，用于管理沙箱生命周期、文件传输、文件
-列表/搜索以及命令执行。服务在自身进程内直接调用 `bubblewrap` 启动
-沙箱进程（每个沙箱一个长寿命 daemon，再加上按需的后台命令），由
-预先解析的策略决定隔离细节。
+`jiuwenbox` 是一个轻量级沙箱服务，用于在分层隔离环境中运行 agent 工具和代码片段，支持 Linux 与 Windows。
+
+它提供一个 FastAPI 服务，用于管理沙箱生命周期、文件传输、文件列表/搜索以及命令执行。服务把预先解析的策略交给对应平台的运行时：Linux 上由 `bubblewrap` 启动沙箱进程（每个沙箱一个长寿命 daemon，再加上按需的后台命令），Windows 上由受限令牌、Job Object、WFP 和 NTFS ACL 共同落实隔离。
+
+## 核心概念
+
+- **沙箱（sandbox）**：服务端创建的一个隔离执行环境，由 `sandbox_id` 标识，拥有独立的进程树。
+- **策略（policy）**：服务启动时加载的静态 YAML 文档，提供文件系统、进程、网络和资源的基线规则，创建请求可覆盖或追加。
+- **运行时（runtime）**：把策略翻译成隔离原语的平台适配层（Linux 为 `bubblewrap`，Windows 为 `windows`）。
+- **WFP**（Windows Filtering Platform）：Windows 数据包过滤器，用于阻断沙箱出站流量，只放行出站代理端口。
+- **NTFS ACL**：授予或拒绝沙箱用户访问的 Windows 文件系统权限，相当于 Linux 挂载权限在 Windows 上的对应物。
+- **file-snapshot**：一种 API 操作，无需启动命令即可读取或条件替换沙箱内的单个文件。
+- **仅代理模式（proxy-only mode）**：启动时策略只配置 `inference_privacy_proxies` 且 `listen_port > 0`，因此跳过沙箱子系统的运行模式。
+- **出站代理（egress proxy）**：Windows 上的回环代理，沙箱进程的所有出站流量都必须经过它；WFP 阻断其它出站流量。
+- **推理隐私代理（inference privacy proxy）**：独立的 HTTP 代理，负责路由 LLM API 请求并注入上游 API 密钥。
+
+运行时选择：
+
+| 优先级 | 来源 | 说明 |
+| --- | --- | --- |
+| 1 | 创建请求中的 `sandbox_runtime` | 显式指定单个沙箱的运行时 |
+| 2 | `JIUWENBOX_RUNTIME_PROFILE` | 服务级默认值 |
+| 3 | 平台默认值 | Windows 为 `windows`，Linux 为 `bubblewrap` |
+
+`process` 是 `bubblewrap` 的旧版别名。`conch` 在当前仓库没有实现，显式请求会直接失败，不会回退。
 
 ## 功能特性
 
-- 基于 `bubblewrap` 的进程隔离
-- 基于静态 policy 的文件系统访问控制
+- Linux 上基于 `bubblewrap` 的进程隔离，Windows 上基于受限令牌与 Job Object 的进程树约束
+- 基于静态 policy 的文件系统访问控制，Windows 使用 NTFS ACL
 - 服务端管理的沙箱后端存储（`~/.jiuwenbox/workspace`）
-- 可选的 Linux 网络命名空间和防火墙网络隔离
+- 可选的 Linux 网络命名空间和防火墙网络隔离；Windows 使用 WFP + 出站代理
 - 命名空间和 Linux capability 控制
 - 在内核支持时启用 Landlock 文件系统约束
 - Seccomp 系统调用过滤
+- Windows 软删除：删除先进回收站，失败时转到同卷归档目录
 - 在运行时存在时支持 Python 和 JavaScript 代码执行
 - 审计日志和持久化的沙箱生命周期状态
 - 推理隐私代理，用于 LLM API 请求路由和自动 API 密钥注入
@@ -26,16 +47,14 @@ agent 工具和代码片段。
 - `server`
   - FastAPI 应用，负责沙箱生命周期管理、policy 加载、审计日志和 API 路由。
 - `server/runtime`
-  - 进程内运行时适配层，将沙箱 policy 翻译成 `bubblewrap` 命令行后由
-    server 进程直接 spawn（每个沙箱一个长寿命 daemon，再加上按需的
-    后台命令）。
-- `server/proxy_manager`
-  - 管理推理隐私代理，用于 LLM API 路由和 API 密钥注入。
-- `server/policy_reader`
-  - 共享 policy 文件读取器，供沙箱和代理管理器使用。
+  - 运行时适配层，按 `sandbox_runtime`、`JIUWENBOX_RUNTIME_PROFILE` 或平台默认值选择实现。
+  - `bubblewrap`：把沙箱 policy 翻译成 `bubblewrap` 命令行后由 server 进程直接 spawn。
+  - `windows`：受限令牌两跳启动、Job Object、WFP 出站控制、出站代理和 NTFS ACL。
+  - `conch`：预留给 AgentOS 云端后端，当前未随仓库提供。
 - `supervisor`
-  - 策略到隔离的翻译辅助库（`bubblewrap` 命令构造、Landlock payload、
-    seccomp 过滤器、cgroup/网络配置），供运行时适配层调用。
+  - 策略到隔离的翻译辅助库（`bubblewrap` 命令构造、Landlock payload、seccomp 过滤器、cgroup/网络配置，以及 Windows 的 `win_*` 模块），供运行时适配层调用。
+- `native`
+  - Windows 原生组件，包括软删除 DLL。
 - `proxy`
   - HTTP 推理隐私代理，支持路径路由和 API 密钥注入（支持 OpenAI 和 Anthropic 格式）。
 - `models`
@@ -43,13 +62,14 @@ agent 工具和代码片段。
 
 ## 环境要求
 
-- Linux
-- Python 3.11+
-- `bubblewrap`
-- 使用 `network.mode: isolated` 时需要 `iproute2`、`iptables` 和 `nftables`
+| 平台 | 要求 |
+| --- | --- |
+| Linux | Python 3.11+、`bubblewrap`；`network.mode: isolated` 需要 `iproute2`、`iptables`、`nftables`；启用 Landlock / seccomp 需要内核支持 |
+| Windows | Windows x64；首次使用需要管理员完成账户、WFP 和 ACL 安装；需要 Python 3.11+ |
+
 - `isolated` 模式启用 uplink 出网时，宿主机需开启 IPv4 转发（`net.ipv4.ip_forward=1`），进程需具备 `NET_ADMIN` capability
-- 启用 Landlock 和 seccomp 时需要内核支持对应能力
 - 如果需要执行 JavaScript，则需要 `nodejs`
+- 并发创建沙箱时，jiuwenbox 会等待 xtables 锁，避免 iptables 竞争导致创建失败
 
 Ubuntu 安装示例：
 
@@ -58,10 +78,69 @@ sudo apt-get update
 sudo apt-get install -y bubblewrap iproute2 iptables nftables python3-pip python3-venv nodejs
 ```
 
+## 运行时选择与 Windows 部署
+
+运行时的选择方式见 [核心概念](#核心概念)。
+
+`GET /api/v1/capabilities` 返回每个运行时的可用性与能力集，包括本地 PID、后台任务、快速文件 IO、递归搜索、文件 ACL、进程树约束、出站过滤和软删除。
+
+首次使用 Windows 运行时，需要管理员先完成安装与校验：
+
+- 创建本地账户 `jbx-sandbox` 与组 `jbx-sandbox-users`。
+- 校验 WFP 与出站代理端口范围；环境不满足时服务启动失败，不会报告“启动成功但不可用”。
+- 为策略声明的每个 `allow_write` 路径准备 NTFS ACL；必需 ACL 缺失时沙箱创建失败并回滚，不静默降级。
+
+隔离分三步完成：
+
+1. 服务端在 `jbx-sandbox` 账户下用受限令牌两跳启动每个沙箱，沙箱进程不会继承服务端权限。
+2. WFP 按沙箱用户 SID 阻断所有出站流量，只放行配置的回环代理端口。
+3. 出站代理接收这些回环流量，只转发策略允许的域名、IP 和端口。
+
+需要一次性管理员安装的原因：创建本地账户与组、安装 WFP 过滤器、预置 NTFS ACL 都需要提权，缺失时服务会拒绝启动。
+
+Windows 上的隔离层次：
+
+| 层 | 作用 |
+| --- | --- |
+| 受限令牌 | 用 `jbx-sandbox` 账户两跳启动进程，沙箱进程不继承服务端权限 |
+| Job Object | 限制内存、CPU 速率和进程数，关闭 Job 时终止整棵进程树 |
+| WFP | 按沙箱用户 SID 阻断出站，只放行出站代理端口 |
+| 出站代理 | HTTP CONNECT / SOCKS5 代理，按策略过滤域名、IP 和端口 |
+| NTFS ACL | 为沙箱用户设置允许/拒绝读写；策略里的 `read_only` 转成 `deny_write` |
+| 软删除 | `JIUWENBOX_SOFT_DELETE=1` 时删除先进回收站，失败转到同卷归档目录 |
+
+`windows-policy.yaml` 使用独立的 `windows` 配置块：
+
+| 字段 | 说明 |
+| --- | --- |
+| `filesystem.allow_write` | 沙箱用户可写的路径；第一个条目作为 workspace 根，运行时替换 `{{ workspace }}` |
+| `filesystem.deny_write` | 在 `allow_write` 范围内精细拒绝写入的路径，如 `.git`、`.env` |
+| `filesystem.allow_read` | 显式授予读权限的路径 |
+| `filesystem.deny_read` | 显式拒绝读权限的路径 |
+| `filesystem.read_acl_preinstall` | 在管理员安装阶段一次性预装读 ACL 的路径 |
+| `filesystem.tool_paths` | 工具不在默认安装位置时使用的对象，含 `git_dir`、`node_dir`、`python_dir`、`bash_path` |
+| `proxy.port_range_start` / `proxy.port_range_end` | 出站代理保留的端口范围；WFP 只放行这些回环端口 |
+| `network.mode` | `wfp_loopback_proxy` 通过代理过滤出站；`disabled` 不安装 WFP 过滤器 |
+| `resource.memory_max` | Job Object 内存上限 |
+| `resource.cpu_rate` | CPU 速率，取 1-100 的整数百分比 |
+| `resource.max_processes` | Job 内最大进程数 |
+
+Linux 专有的 `process`、`namespace`、`capabilities`、`landlock`、`syscall`、`cgroup` 和 `network.uplink` 在 Windows 上会被忽略。
+
+> Linux 的 `filesystem_policy.read_only` 对应 Windows 的 `deny_write`，`read_write` 对应 ACL 允许。
+
+与运行时和网络相关的环境变量：
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `JIUWENBOX_RUNTIME_PROFILE` | 平台默认 | 服务级默认运行时：`bubblewrap` / `windows` / `conch` |
+| `JIUWENBOX_SOFT_DELETE` | 未设置 | 设为 `1` 时启用 Windows 软删除 |
+| `JIUWENBOX_IPTABLES_LOCK_WAIT_TIME` | `5` | Linux 上 `iptables -w` 的等待秒数 |
+
 ## 从源码安装
 
 ```bash
-cd jiuwenswarm/jiuwenbox
+cd jiuwenbox
 uv venv
 source .venv/bin/activate
 uv sync
@@ -98,7 +177,7 @@ sudo env \
 构建镜像：
 
 ```bash
-cd jiuwenswarm/jiuwenbox/scripts
+cd jiuwenbox/scripts
 sudo ./build_docker.sh
 ```
 
@@ -147,8 +226,10 @@ sudo env \
 ```
 
 `run_docker.sh` 在 UDS 模式下会自动跳过管理 API 的 TCP 端口映射、把宿主
-socket 目录挂进容器；**代理端口 `${JIUWENBOX_PROXY_PORT:-8322}` 仍按 TCP
-映射**——Inference Privacy Proxy 是独立 TCP listener，与管理 API 传输无关。
+socket 目录挂进容器；**推理隐私代理端口 `${JIUWENBOX_PROXY_PORT:-8322}`
+仍按 TCP 映射**——推理隐私代理是独立 TCP listener，与管理 API 传输无关。
+推理隐私代理只在策略设置 `listen_port > 0` 时监听；默认 `0` 表示禁用，
+此时不会打开代理端口。
 
 接入示例：
 
@@ -295,6 +376,8 @@ ls /tmp/jiuwenbox-logs
 | `bind_mounts` | 显式宿主机到沙箱的 bind mount，每项包含 `host_path`、`sandbox_path`、`mode`（`ro` / `rw`）。`host_path` 不能为字面量 `"*"`。 |
 | `bind_root_entries` | 将 `host_root` 下**第一层**子项逐个 bind 到 `sandbox_path/{name}`。支持 `mode`、`include_hidden`（默认排除 `.` 开头项）、`exclude`（fnmatch glob）。适合批量挂载 `/usr` 等目录的直接子项。 |
 | `device` | 通过 `bwrap --dev-bind` 暴露到沙箱内的设备节点，每项包含 `host_path` 和 `sandbox_path`。 |
+
+关于 `read_only`：在 Linux 上它是只读 bind mount（路径仍需通过 `bind_mounts` / `directories` 存在）；在 Windows 上会转成 NTFS `deny_write` ACL。`read_write` 在 Windows 上对应 ACL 允许。
 
 #### `process`
 
@@ -527,6 +610,34 @@ network:
       - 22
 ```
 
+## HTTP 接口
+
+完整字段与示例见 [`docs/jiuwenbox_server_api.md`](docs/jiuwenbox_server_api.md)。当前路由包括：
+
+| 路径 | 用途 |
+| --- | --- |
+| `GET /health`、`GET /api/v1/capabilities` | 存活检查；运行时可用性与能力探测 |
+| `POST/GET /api/v1/sandboxes`、`GET/DELETE /api/v1/sandboxes/{id}` | 创建、列出、查询、删除沙箱 |
+| `POST /api/v1/sandboxes/{id}/start`、`stop`、`restart` | 启停与重启 |
+| `POST /api/v1/sandboxes/{id}/exec`、`exec_background` | 同步与后台执行 |
+| `GET /api/v1/sandboxes/{id}/background*` | 后台任务查询、列表与终止 |
+| `GET /api/v1/sandboxes/{id}/logs` | 审计日志（默认返回空串，`--save-logs` 才落盘） |
+| `POST /api/v1/sandboxes/{id}/upload`、`GET .../download` | 文件传输 |
+| `GET /api/v1/sandboxes/{id}/files`、`search` | 列目录与 glob 搜索 |
+| `POST /api/v1/sandboxes/{id}/file-snapshot` | 沙箱内文件读取或条件替换 |
+| `GET /api/v1/policies/{id}`、`GET/PUT /api/v1/timeout` | 查询策略与空闲回收配置 |
+| `/api/v1/proxies/*` | 推理隐私代理管理 |
+| `/mcp` | MCP Streamable HTTP 端点 |
+
+`file-snapshot` 让调用方无需 exec 就能读取或安全替换沙箱内的文件，避免覆盖其它写入方。它有两种操作：
+
+| 操作 | 行为 |
+| --- | --- |
+| `read` | 返回文件是否存在、SHA-256 与大小；路由再附 `content_base64`。 |
+| `compare_replace` | 要求同时给出 `options.expected_exists` 与 `options.expected_content_sha256`，在同一把锁下比较后，用临时文件加原子替换发布。 |
+
+冲突返回 `conflict`，锁超时返回 `lock_timeout`，写入传输失败返回 `outcome_unknown` 且不应重放。路径必须是绝对路径，不能经过符号链接或重解析点；单文件上限 256 MiB。该能力目前由 bubblewrap 运行时实现，其它运行时返回 `unsupported`。
+
 ## 在 jiuwenswarm 中通过配置文件启用 jiuwenbox
 
 jiuwenswarm 通过 `config.yaml` 的 `sandbox` 段决定**是否启用沙箱、连接哪台 jiuwenbox、是否自己拉起 jiuwenbox 子进程、用哪个 policy**。一般用 TUI 的 `/sandbox` 命令操作时会自动落盘到这里，但也可以提前在 `config.yaml` 里手写。
@@ -540,7 +651,7 @@ sandbox:
   type: "jiuwenbox"                 # sandbox provider 名；当前固定为 jiuwenbox
 
   # —— 启动方式 & policy ——
-  startup_mode: "internal"          # internal=agent-server 自动拉起 jiuwenbox-server；external=用户自行启动
+  startup_mode: "internal"          # internal=jiuwenswarm 自动拉起 jiuwenbox-server；external=用户自行启动
   policy_file: "code-agent-policy.yaml"   # 仅文件名 → jiuwenbox/configs/<name>；含 / 或绝对路径 → 整路径
   preserve_file_sharing_mode: "mount"     # 仅支持 mount；写入其它值会被服务端拒绝
 
@@ -560,17 +671,17 @@ sandbox:
 | --- | --- | --- | --- |
 | `sandbox.url` | URL 字符串 | `http://127.0.0.1:8321` | jiuwenbox 管理 API 端点。TCP 用 `http://host:port`；UDS 用 `unix:///abs/socket/path`（与 `JIUWENBOX_LISTEN` 配置的形态一致） |
 | `sandbox.type` | 字符串 | `jiuwenbox` | sandbox provider 名。当前 jiuwenswarm 只接通了 `jiuwenbox` |
-| `sandbox.startup_mode` | `internal` / `external` | `internal` | `internal`：agent-server 启动时自动 spawn `jiuwenbox-server` 子进程并落盘最终生效的 `url`（端口被占用时自动换端口）；`external`：jiuwenswarm 完全不碰 jiuwenbox 进程，要求按本 README 顶部的方式提前自己启动 |
-| `sandbox.policy_file` | 文件名 / 路径 | `code-agent-policy.yaml` | 仅给文件名 → 自动定位到 `jiuwenbox/configs/<name>`；包含 `/` `\` 或 `~` 时按整路径解析。**仅在 `startup_mode=internal` 下生效**——`external` 模式下 policy 由用户自启动时的 `JIUWENBOX_DEFAULT_POLICY_PATH` 决定 |
-| `sandbox.preserve_file_sharing_mode` | `mount` | `mount` | intrinsic 文件（`AGENT.md` 等）与 `project_dir` 通过 bind mount 注入沙箱，`project_dir/config/config.yaml` 自动加进 `deny_write`。 写入其它值会被服务端拒绝 |
+| `sandbox.startup_mode` | `internal` / `external` | `internal` | `internal`：jiuwenswarm 启动时自动 spawn `jiuwenbox-server` 子进程并落盘最终生效的 `url`（端口被占用时自动换端口）；`external`：jiuwenswarm 完全不碰 jiuwenbox 进程，要求按本 README 顶部的方式提前自己启动 |
+| `sandbox.policy_file` | 文件名 / 路径 | `code-agent-policy.yaml` | 仅给文件名 → 自动定位到 `jiuwenbox/configs/<name>`；包含 `/` `\` 或 `~` 时按整路径解析。**仅在 `startup_mode=internal` 下生效**——`external` 模式下 policy 由用户自启动时的 `JIUWENBOX_POLICY_PATH` 决定 |
+| `sandbox.preserve_file_sharing_mode` | `mount` | `mount` | intrinsic 文件（`AGENT.md` 等）与 `project_dir` 通过 bind mount 注入沙箱，`project_dir/config/config.yaml` 自动加进 `deny_write`。写入其它值会被服务端拒绝 |
 | `sandbox.enabled` | bool | `false` | 启用后 agent 在重建时会切到 sandbox provider；可用 `/sandbox enable` 触发 |
 | `sandbox.excluded_commands` | list[str] | `[]` | shell glob 列表；按**整条命令字符串**匹配，命中后该次调用穿透到本地 |
 | `sandbox.fallback_on_failure` | bool | `false` | jiuwenbox exec 异常（连接失败、daemon 不可用等）时回退宿主机本地执行；沙箱内命令非零 exit 不回退 |
-| `sandbox.files.allow` / `sandbox.files.deny` | list | `[]` | 用户额外配置的写入策略；最终生效集合是 `auto_managed ∪ user_configured`，详见 [`/sandbox` 命令设计文档](../../agent-core/docs/zh/2.开发指南/沙箱与%20sandbox%20命令.md) |
+| `sandbox.files.allow` / `sandbox.files.deny` | list | `[]` | 用户额外配置的写入策略；最终生效集合是 `auto_managed ∪ user_configured`，详见 jiuwenswarm 仓库中的 `/sandbox` 设计文档 |
 
 ### 两种典型部署方式
 
-#### 方式 A: `startup_mode: internal`（agent-server 帮你拉起 jiuwenbox）
+#### 方式 A: `startup_mode: internal`（jiuwenswarm 帮你拉起 jiuwenbox）
 
 适合本机开发 / 单机部署。直接在 `config.yaml` 里加：
 
@@ -583,7 +694,7 @@ sandbox:
   enabled: true
 ```
 
-agent-server 启动时会：
+jiuwenswarm 启动时会：
 
 1. 把 `policy_file` 解析为宿主机绝对路径（仅文件名→`jiuwenbox/configs/<name>`；其它路径直接展开 `~` / `$VAR`）。
 2. 探测 `url` 里的端口是否可用；冲突就自动换端口，并把最终的 `url` 写回 `config.yaml`，TUI `/sandbox status` 看到的就是真实端口。
@@ -601,9 +712,9 @@ sandbox:
   enabled: true
 ```
 
-此模式下 agent-server **不会**尝试拉起 jiuwenbox，`sandbox.policy_file` 也**不生效**（policy 由你启动 jiuwenbox-server 时通过 `JIUWENBOX_DEFAULT_POLICY_PATH` 指定）。jiuwenbox-server 的启动方式见前文 [`启动服务`](#启动服务) 与 [`通过 Unix Domain Socket 部署`](#通过-unix-domain-socket-部署)。
+此模式下 jiuwenswarm **不会**尝试拉起 jiuwenbox，`sandbox.policy_file` 也**不生效**（policy 由你启动 jiuwenbox-server 时通过 `JIUWENBOX_POLICY_PATH` 指定）。jiuwenbox-server 的启动方式见前文 [`启动服务`](#启动服务) 与 [`通过 Unix Domain Socket 部署`](#通过-unix-domain-socket-部署)。
 
-跨机部署要求 jiuwenbox 主机能访问 jiuwenswarm 的固有 agent 文件路径——`preserve_file_sharing_mode` 现在只支持 `mount` jiuwenswarm 会把 intrinsic 文件（`AGENT.md` / `HEARTBEAT.md` / `IDENTITY.md` / `SOUL.md` / `USER.md` / `memory/daily_memory/`）和 `project_dir` 通过 bind mount 暴露给沙箱，因此目标主机必须能在同样的 host path 下看到这些文件（例如共享文件系统、容器 volume 等）。
+跨机部署要求 jiuwenbox 主机能访问 jiuwenswarm 的固有 agent 文件路径。`preserve_file_sharing_mode` 现在只支持 `mount`：jiuwenswarm 会把 intrinsic 文件（`AGENT.md` / `HEARTBEAT.md` / `IDENTITY.md` / `SOUL.md` / `USER.md` / `memory/daily_memory/`）和 `project_dir` 通过 bind mount 暴露给沙箱；因此目标主机必须能在同样的 host path 下看到这些文件（例如共享文件系统、容器 volume 等），并且 policy 必须允许写入这些路径（包内的 `jiuwenbox/configs/code-agent-policy.yaml` 已经允许）。
 
 ## 远程 MCP
 
@@ -657,8 +768,8 @@ python -m uvicorn jiuwenbox.server.app:app --host 0.0.0.0 --port 8321 --log-leve
 
 - 路径路由到不同 LLM 提供商（OpenAI、Anthropic、自定义）
 - 自动 API 密钥注入（OpenAI `Authorization: Bearer`、Anthropic `X-Api-Key`）
-- 通过 REST API 热插拔（创建/启动/停止/重启/更新/删除）
-- 通过 policy YAML 配置或REST API 管理
+- 可在运行时通过 REST API 管理（创建/启动/停止/更新/删除）
+- 通过 policy YAML 配置，或通过 REST API 动态管理
 
 **架构说明**：
 
@@ -666,7 +777,7 @@ python -m uvicorn jiuwenbox.server.app:app --host 0.0.0.0 --port 8321 --log-leve
 
 **隐私路由默认 `listen_port=0`（禁用）**，启用时需同时配置 `listen_host`（IP 地址）和 `listen_port`。
 
-通过 `path_prefix`区分路由（转发规则）。**每条路由有独立状态**（`running` = 启用转发流量；`stopped` = 禁用）。
+通过 `path_prefix` 区分路由（转发规则）。**每条路由有独立状态**（`running` = 启用转发流量；`stopped` = 禁用）。
 
 **通过 API 创建路由需 `listen_host` 有效且 `listen_port > 0`**，否则返回错误。
 
@@ -676,36 +787,45 @@ python -m uvicorn jiuwenbox.server.app:app --host 0.0.0.0 --port 8321 --log-leve
 
 - 跳过沙箱子系统的初始化（不创建 `ProcessRuntime`、不注册 zombie reaper、不启动 idle reaper）。
 - `GET /health` 仍可用，`sandboxes_active` 固定为 `0`。
-- 沙箱相关路由（`/api/v1/sandboxes/*`、`/api/v1/policy/*`）返回 `503 Service Unavailable`，提示需要在 policy 里补充沙箱配置才能启用。
-- `/api/v1/proxy/*` 路由及推理代理本身正常工作。
+- 沙箱相关路由（`/api/v1/sandboxes/*`、`/api/v1/policies/*`、`/api/v1/timeout`）返回 `503 Service Unavailable`，因为启动时加载的 policy 没有沙箱配置。
+- 推理隐私代理路由（`/api/v1/proxies/*`）及推理代理本身正常工作。
 
-启动日志会打印 `Proxy-only policy detected (no sandbox config); skipping sandbox subsystem startup`，随后再输出 `Inference privacy proxy listening on http://<host>:<port>`，便于运维快速确认监听地址。
+启动日志会打印 `Proxy-only policy detected (no sandbox config); skipping sandbox subsystem startup`，随后再输出 `Inference privacy proxy listening on http://<host>:<port>`，便于运维快速确认监听地址。policy 只在启动时加载，因此要退出仅代理模式，必须在 policy 文件中加入沙箱配置并重启服务。
 
 参考配置：[`src/jiuwenbox/configs/inference-policy.yaml`](src/jiuwenbox/configs/inference-policy.yaml)（安装后位于包内 `jiuwenbox/configs/`）。
 
 ### 代理配置
 
-配置文件yaml文件说明：
+可直接运行的 policy 文件（仅含该段时进入仅代理模式）：
 
 ```yaml
-inference_privacy_proxies:
-  listen_host: ipaddress，绑定的 IP 地址  # 必须
-  listen_port: number：监听端口号         # 必须，非 0 值启用代理
+version: 1
+name: "inference-policy"
 
-  # 选填，可在启动后通过RESTAPI管理
+inference_privacy_proxies:
+  listen_host: "127.0.0.1"   # 有效 IP 地址；listen_port > 0 时必填
+  listen_port: 8080          # 0 表示禁用
   routes:
-   - path_prefix: str，转发规则的路径名称
-      target_endpoint: URL，目标端点
-      api_key: str，转发时用于替换的api key
-      skip_cert_verify: boolean，仅当target_endpoint为https且证书为自签名时跳过证书校验，调试用
+    - path_prefix: "openai"
+      target_endpoint: "https://api.openai.com"
+      api_key: "sk_sandbox_managed_openai_key"
+      skip_cert_verify: false
 ```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `listen_host` | 字符串（IP 地址） | `listen_port > 0` 时必填 | 绑定的 IP 地址 |
+| `listen_port` | 整数 | 是 | `0` 表示禁用；非 0 端口启用代理 |
+| `routes[].path_prefix` | 字符串 | 是 | 单层路径前缀，如 `openai` 或 `/openai`；根路径 `/` 会被拒绝 |
+| `routes[].target_endpoint` | 字符串（URL） | 是 | `http` 或 `https` 上游基础 URL |
+| `routes[].api_key` | 字符串 | 否 | 转发时注入的 API 密钥 |
+| `routes[].skip_cert_verify` | 布尔 | 否 | 对自签名 HTTPS 目标跳过证书校验，仅调试用 |
+
+路由也可以启动后通过 REST API 管理。
 
 ### URL 路由
 
-将
-http://\<listening_host\>:\<listening_port\>/\<path_prefix\>/\<api_path\>
-转发至
-\<target_endpoint\>/\<api_path\>
+`http://<listen_host>:<listen_port>/<path_prefix>/<api_path>` 转发至 `<target_endpoint>/<api_path>`。
 
 ### API 密钥注入
 
@@ -716,19 +836,20 @@ http://\<listening_host\>:\<listening_port\>/\<path_prefix\>/\<api_path\>
 
 `注意：以下网络端点地址 https://api.openai.com、http://192.168.1.100:9000 均为示例`
 
-#### 配置文件yaml示例
+#### 配置文件 YAML 示例
 
 ```yaml
-inference_privacy_proxies:
+version: 1
+name: "inference-policy"
 
+inference_privacy_proxies:
   listen_host: "127.0.0.1"
   listen_port: 8080
-  
   routes:
     - path_prefix: "openai"
       target_endpoint: "https://api.openai.com"
       api_key: "sk_sandbox_managed_openai_key"
-   - path_prefix: "custom"
+    - path_prefix: "custom"
       target_endpoint: "http://192.168.1.100:9000"
       api_key: "sk_sandbox_managed_custom_key"
 ```
@@ -746,7 +867,6 @@ inference_privacy_proxies:
 ```
 
 #### jiuwenswarm 配置示例
-
 
 | 配置项    | 旧值                          | 新值                             |
 | --------- | ----------------------------- | -------------------------------- |

@@ -6,3 +6,5 @@
   - [Agent SSAS](2.Development%20Guide/Agent%20SSAS.md)
   - [JiuwenBox](2.Development%20Guide/JiuwenBox.md)
   - [Agent Shield](2.Development%20Guide/Agent%20Shield.md)
+  - [Security Gateway](2.Development%20Guide/Security%20Gateway.md)
+  - [Security Mask](2.Development%20Guide/Security%20Mask.md)

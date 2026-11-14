@@ -7,27 +7,27 @@ patch 修改 jiuwenswarm 的 3 个文件：`config.yaml`（新增 ssas 配置段
 ## 前置条件
 
 - Python >= 3.11，已安装 [uv](https://docs.astral.sh/uv/)
-- **本地依赖版**：`jiuwenswarm` 与 `AgentSecurity` 为同级目录：
+- **本地依赖版**：`jiuwenswarm` 与 `agent-security` 为同级目录：
 
   ```text
   <workspace>/
   ├── jiuwenswarm/          # JiuwenSwarm 仓库(develop 分支)
-  └── AgentSecurity/
-      └── AgentSSAS/        # 本仓库
+  └── agent-security/
+      └── agent_ssas/       # 本仓库
   ```
 
-- **在线依赖版**：可访问 `https://atomgit.com/yieux1/AgentSecurity`
+- **在线依赖版**：可访问 `https://gitcode.com/openJiuwen/agent-security`
 
 ## 第一步：应用 patch（二选一）
 
 在 jiuwenswarm 仓库根目录执行：
 
 ```bash
-# 方式 A: 本地依赖版 —— editable 引用本地 AgentSSAS 源码,改源码立即生效,适合开发调试
-git apply ../AgentSecurity/AgentSSAS/patches/jiuwenswarm_ssas_local.patch
+# 方式 A: 本地依赖版 —— editable 引用本地 agent-ssas 源码,改源码立即生效,适合开发调试
+git apply ../agent-security/agent_ssas/patches/jiuwenswarm_ssas_local.patch
 
-# 方式 B: 在线依赖版 —— 从 atomgit 拉取 agent-ssas,适合正式使用
-git apply ../AgentSecurity/AgentSSAS/patches/jiuwenswarm_ssas_online.patch
+# 方式 B: 在线依赖版 —— 从 gitcode 拉取 agent-ssas,适合正式使用
+git apply ../agent-security/agent_ssas/patches/jiuwenswarm_ssas_online.patch
 ```
 
 > 提示：在线依赖版不要求两仓同级存放，任意路径的 jiuwenswarm 仓库都可应用。

@@ -9,10 +9,10 @@
 
 ## 安装
 
-进入仓库的 AgentSSAS 目录，创建虚拟环境并以可编辑方式安装：
+进入仓库的 agent_ssas 目录，创建虚拟环境并以可编辑方式安装：
 
 ```bash
-cd AgentSecurity/AgentSSAS
+cd agent-security/agent_ssas
 uv venv
 uv pip install -e .
 ```
@@ -20,7 +20,7 @@ uv pip install -e .
 > 如果不方便使用本地源码，也可以从远程仓库安装：
 >
 > ```bash
-> uv pip install "agent-ssas @ git+https://atomgit.com/yieux1/AgentSecurity.git@develop#subdirectory=AgentSSAS"
+> uv pip install "agent-ssas @ git+https://gitcode.com/openJiuwen/agent-security.git@develop#subdirectory=agent_ssas"
 > ```
 
 本教程只用到进程内模式，无需额外依赖。HTTP 服务模式需要额外安装 fastapi / uvicorn，参见[HTTP 服务模式](./04-http-mode.md)。
@@ -32,6 +32,8 @@ uv pip install -e .
 ```bash
 uv run python examples/inprocess_quickstart/main.py
 ```
+
+> 若终端没有任何输出，是因为示例中的 `logger.info` 未配置日志处理器：请先启用 INFO 日志（例如 `logging.basicConfig(level=logging.INFO, format='%(message)s')`），或直接查看存储根目录下写入的文件。
 
 预期输出如下（存储路径中的用户目录因系统而异，Windows 上形如 `C:\Users\<user>\.jiuwenswarm\ssas`）：
 
@@ -60,7 +62,7 @@ uv run python examples/inprocess_quickstart/main.py
 
 `examples/inprocess_quickstart/main.py` 演示了 AgentSSASCore 的最小用法：
 
-1. `AgentSSASConfig.from_dict(None)`：默认配置，存储遵循 JIUWENSWARM_HOME 约定（`~/.jiuwenswarm/ssas`），可用环境变量 `SSAS_HOME` 覆盖
+1. `AgentSSASConfig.from_dict(None)`：默认配置；存储根目录按 `SSAS_HOME` > `JIUWENSWARM_DATA_DIR` > `JIUWENSWARM_HOME` > `~/.jiuwenswarm` 的顺序解析，最终数据落在 `<根目录>/ssas/`
 2. `AgentSSASBackend(config)` 加 `await backend.initialize()`：构造后端并扫描加载检测模块
 3. `await backend.report_event(raw_event)`：单一接口上报三层结构（`common` / `payload` / `metadata`）的事件，返回 `RiskAssessment`
 4. `await backend.close()`：释放 SQLite 连接（Windows 上必需，否则 WAL 文件会锁定目录）
