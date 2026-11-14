@@ -15,7 +15,7 @@ def _engine(root, guard):
     return PermissionEngine({
         "package_builtin_rules": False, "shell_allowlist": None,
         "tools": {"mcp_exec_command": "allow"},
-        "guard_actions": {"compound_chain": "allow", "parse_unavailable": "allow", "too_complex": "allow"},
+        "guard_actions": {"parse_unavailable": "allow", "too_complex": "allow"},
         "runtime": {"workspace_root": str(root),
                     "immutable_control_roots": [str(root / "settings")] if guard == "control" else []},
         "file_guard": {"enabled": guard == "file",

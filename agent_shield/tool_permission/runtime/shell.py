@@ -347,7 +347,9 @@ def resolve_execution_plan(
         return command, True, "sh"
     if shell_type == ShellType.BASH:
         exe = shutil.which("bash") or "/bin/bash"
-        return [exe, "-lc", command], False, "bash"
+        # Same Windows-path rewrite as the NT bash plan so command identity /
+        # grants stay OS-stable for agent commands that embed drive paths.
+        return [exe, "-lc", _normalize_windows_paths_for_bash(command)], False, "bash"
     if shell_type == ShellType.POWERSHELL:
         exe = shutil.which("pwsh") or shutil.which("powershell")
         if not exe:

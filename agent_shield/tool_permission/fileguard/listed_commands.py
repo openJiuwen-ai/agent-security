@@ -15,12 +15,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
 
-from ..toolguard.shell_ast import (
-    ShellAstParseResult,
-    _get_tree_sitter_bash_parser,
-    _parse_with_conservative_fallback,
-    _parse_with_tree_sitter,
-)
+from ..toolguard.command_canonicalize import canonicalize_shell_command_for_permission
+from ..toolguard.shell_ast import parse_shell_for_permission
 from .path_policy import _PATH_TOOLS, _iter_path_strings
 from .unix_bash_literal import is_script_interpreter, parse_literal_shell
 
@@ -110,34 +106,29 @@ def _basename_lower(command: str) -> str:
     return base.removesuffix(".exe")
 
 
-def _parse_shell_without_launcher_unwrap(command: str) -> ShellAstParseResult:
-    text = (command or "").strip()
-    if not text:
-        return ShellAstParseResult(kind="simple", backend="fallback")
-    parser = _get_tree_sitter_bash_parser()
-    if parser is not None:
-        try:
-            return _parse_with_tree_sitter(text, parser)
-        except (OSError, RuntimeError, ValueError):
-            logger.warning("permission.shell_ast.parse_failed fallback=true", exc_info=True)
-    return _parse_with_conservative_fallback(text)
+def _segments_for_extract(command: str, *, shell_type: str = "auto") -> list[str]:
+    """Split compound commands for path extract (AST when possible, else heuristic).
 
-
-def _segments_for_extract(command: str) -> list[str]:
+    Peels one launcher layer first, then ``parse_shell_for_permission`` (parse
+    itself no longer peels). The default FileGuard path uses
+    ``path_extract._walk_shell_segments`` instead; this helper serves the
+    listed-commands / read_deny_only path only.
+    """
     text = (command or "").strip()
     if not text:
         return []
-    parsed = _parse_shell_without_launcher_unwrap(text)
+    text = canonicalize_shell_command_for_permission(text)
+    parsed = parse_shell_for_permission(text, dialect=shell_type)
     invocations = [
         item.text.strip() for item in (parsed.subcommands or ()) if item.text and item.text.strip()
     ]
-    heuristic = [part.strip() for part in _CHAIN_SPLIT_RE.split(text) if part.strip()]
     if len(invocations) >= 2:
         return invocations
-    if len(heuristic) >= 2:
-        return heuristic
     if len(invocations) == 1:
         return invocations
+    heuristic = [part.strip() for part in _CHAIN_SPLIT_RE.split(text) if part.strip()]
+    if len(heuristic) >= 2:
+        return heuristic
     return [text]
 
 

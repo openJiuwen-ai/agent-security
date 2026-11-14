@@ -61,11 +61,18 @@ class InjectionComponent:
             return None
         raw = tool_args.get("command")
         command = raw if isinstance(raw, str) else ""
-        if route.command_dialect is CommandDialect.POSIX_SHELL:
+        # UNKNOWN (e.g. mcp_exec_command without shell_type) uses the bash AST
+        # for split; apply POSIX injection too so $() / <() are not fail-open
+        # after structure stopped lifting on substitution.
+        if route.command_dialect in (
+            CommandDialect.POSIX_SHELL,
+            CommandDialect.UNKNOWN,
+        ):
             rules, kind = _POSIX_RULES, "Shell"
         elif route.command_dialect is CommandDialect.POWERSHELL:
             rules, kind = _POWERSHELL_RULES, "PowerShell"
         else:
+            # CMD: no bash-style $() / <(); do not invent POSIX rules.
             return None
         for pattern, label in rules:
             if pattern.search(command):

@@ -117,14 +117,54 @@ def is_shell_tool(tool_name: str) -> bool:
     return _tool_basename(tool_name) in _COMMAND_ENTRY_TOOLS
 
 
-def supports_posix_subcommand_split(dialect: CommandDialect | None) -> bool:
-    """Phase-1 subcommand split uses the bash AST only.
+def coerce_command_dialect(dialect: CommandDialect | str | None) -> CommandDialect | None:
+    """Normalize enum / common string aliases to ``CommandDialect``.
 
-    POSIX is in scope. UNKNOWN (e.g. mcp_exec_command without shell args) also
-    uses the bash AST as a best-effort view. PowerShell / CMD wait for Phase 2.
+    Accepts tool-ish names (``bash``, ``pwsh``) and enum values
+    (``posix_shell``). Unknown non-empty strings become ``UNKNOWN`` so callers
+    that pass ``dialect="bash"`` still get AST split instead of silently
+    skipping structure analysis.
     """
 
-    return dialect in (CommandDialect.POSIX_SHELL, CommandDialect.UNKNOWN)
+    if dialect is None:
+        return None
+    if isinstance(dialect, CommandDialect):
+        return dialect
+    key = str(dialect).strip().lower()
+    if not key or key in {"none", "null"}:
+        return None
+    if key in _POSIX_TOOLS or key in {"posix", "posix_shell", "shell", "auto"}:
+        return CommandDialect.POSIX_SHELL if key != "auto" else CommandDialect.UNKNOWN
+    if key in _POWERSHELL_TOOLS or key in {"powershell", "pwsh", "ps", "core.powershell"}:
+        return CommandDialect.POWERSHELL
+    if key in _CMD_TOOLS or key in {"cmd", "batch", "dos"}:
+        return CommandDialect.CMD
+    if key == "unknown":
+        return CommandDialect.UNKNOWN
+    return CommandDialect.UNKNOWN
+
+
+def supports_posix_subcommand_split(dialect: CommandDialect | str | None) -> bool:
+    """Whether this dialect uses the bash AST (POSIX or best-effort UNKNOWN)."""
+
+    resolved = coerce_command_dialect(dialect)
+    return resolved in (CommandDialect.POSIX_SHELL, CommandDialect.UNKNOWN)
+
+
+def supports_ast_subcommand_split(dialect: CommandDialect | str | None) -> bool:
+    """Whether tree-sitter can split subcommands for this dialect.
+
+    POSIX / UNKNOWN → bash grammar; PowerShell → pwsh; CMD → batch.
+    String dialects are coerced (avoids ``dialect=\"bash\"`` skipping split).
+    """
+
+    resolved = coerce_command_dialect(dialect)
+    return resolved in (
+        CommandDialect.POSIX_SHELL,
+        CommandDialect.UNKNOWN,
+        CommandDialect.POWERSHELL,
+        CommandDialect.CMD,
+    )
 
 
 def resolve_dialect(tool_name: str, tool_args: Mapping[str, Any]) -> CommandDialect | None:
@@ -209,5 +249,7 @@ __all__ = [
     "resolve_dialect",
     "resolve_route",
     "route_matches",
+    "coerce_command_dialect",
+    "supports_ast_subcommand_split",
     "supports_posix_subcommand_split",
 ]

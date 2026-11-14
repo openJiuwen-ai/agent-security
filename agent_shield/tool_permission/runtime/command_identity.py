@@ -343,9 +343,13 @@ def _bash_words(source: str) -> list[str] | None:
     from ..toolguard.shell_ast import parse_literal_bash_root, parse_shell_for_permission
 
     parsed = parse_shell_for_permission(source)
-    if parsed.backend != "tree-sitter" or parsed.kind != "simple" or len(parsed.subcommands) != 1:
+    if not str(parsed.backend).startswith("tree-sitter") or parsed.kind != "ok":
         return None
-    if parsed.flags.has_risky_structure() or parsed.subcommands[0].text != source.strip():
+    if len(parsed.subcommands) != 1 or parsed.edges:
+        return None
+    leaf = parsed.subcommands[0]
+    # Redirects / heredoc / substitution make the argv unsafe for a literal grant.
+    if leaf.redirects or leaf.text != source.strip():
         return None
     # Inspect unquoted words before shlex removes quoting. An expansion cannot
     # become an apparently literal argv value through quote decoding.
@@ -608,7 +612,7 @@ def static_shell_context(command: str, cwd: str, shell: str) -> bool:  # pylint:
             parsed = parse_shell_for_permission(child)
         except (ImportError, OSError, RuntimeError, TypeError, ValueError):
             return False
-        if parsed.kind != "simple" or len(parsed.subcommands) != 1:
+        if parsed.kind != "ok" or len(parsed.subcommands) != 1 or parsed.edges:
             return False
         # Only state analysis may inspect the redirect-free command. The grant
         # itself always retains the full redirection and its destination.

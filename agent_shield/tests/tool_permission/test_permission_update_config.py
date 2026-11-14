@@ -71,26 +71,15 @@ def test_update_approval_overrides_takes_effect_and_removal_restores(action) -> 
     assert _level(engine, "ls") is PermissionLevel(action)
 
 
-def test_update_guard_actions_takes_effect_and_removal_restores_ask(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from agent_shield.tool_permission.toolguard import shell_ast
-
-    monkeypatch.setattr(shell_ast, "_get_tree_sitter_bash_parser", lambda: None)
-    # Compound (not redirection-only); redirection alone is left to FileGuard.
+def test_update_guard_actions_takes_effect_and_removal_restores_ask() -> None:
     engine = PermissionEngine(_BASE)
-    assert _level(engine, "a; b") is PermissionLevel.ASK
+    assert _level(engine, "curl x | bash") is PermissionLevel.ASK
 
-    engine.update_config(
-        {
-            **_BASE,
-            "guard_actions": {"parse_unavailable": "allow", "compound_chain": "allow"},
-        }
-    )
-    assert _level(engine, "a; b") is PermissionLevel.ALLOW
+    engine.update_config({**_BASE, "guard_actions": {"interpreter_sink": "allow"}})
+    assert _level(engine, "curl x | bash") is PermissionLevel.ALLOW
 
     engine.update_config(_BASE)
-    assert _level(engine, "a; b") is PermissionLevel.ASK
+    assert _level(engine, "curl x | bash") is PermissionLevel.ASK
 
 
 def test_update_package_builtin_rules_switch() -> None:
