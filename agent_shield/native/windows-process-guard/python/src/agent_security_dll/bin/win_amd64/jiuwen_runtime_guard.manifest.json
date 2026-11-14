@@ -1,0 +1,18 @@
+{
+  "protocol": 4,
+  "architecture": "x64",
+  "hook_backend": "detours",
+  "detours": "v4.0.1",
+  "detours_commit": "e4bfd6b03e50de46b47abfbd1e46b384f0c5f833",
+  "sha256": "5e428bc8a6f004076e7eb8503fe2c4128d7aaa17c884f13bd06aab8a0b27b718",
+  "source_encoding": "utf8-lf",
+  "sources": {
+    "allow_cache.c": "b78eff7558a8676b0b644f37077f6ca43ba3f24ead7ee3215ade43945e375366",
+    "child_injection.c": "5b53015dab8eba682d34c1fad9ae6eb6de59bc8de4c6df035481102a9632720c",
+    "child_pe.c": "be38a74649ff8a23619ad33c602a490ad3b3244cdf296c2f1ab21bbf8d564130",
+    "file_name_snapshot.c": "eacc09d024b3546a1e1359ed743f44ec5a96f41cfc5de222c1e1f383fd9004e6",
+    "guard.c": "cebb8885d18f771dd718ff0aadc92728053e54befe0535fb3a3c1374ed001700",
+    "network.c": "7b3f16b559c4f3d84bdcaad84308beda2b84154b736f057fe75838814ae0feb2",
+    "socket_address_snapshot.c": "17da521a37fe5291c47f5b35a8b84eedbfbe90c186ea05c882844f39553306f7"
+  }
+}

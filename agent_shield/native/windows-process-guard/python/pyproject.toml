@@ -3,15 +3,18 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-security-windows-process-guard"
+name = "agent-security-dll"
 version = "0.1.0"
-description = "Windows process guard binaries for agent-security. Same version as the core package."
+description = "Windows binaries shared by the agent-security guards"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
-dependencies = ["agent-security==0.1.0"]
+
+[tool.setuptools]
+license-files = ["LICENSE", "NOTICE", "src/agent_security_dll/bin/win_amd64/LICENSE.Detours.txt"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["agent_security_dll"]
 
 [tool.setuptools.package-data]
-agent_security_windows_process_guard = ["bin/win_amd64/*"]
+agent_security_dll = ["bin/win_amd64/jiuwen_runtime_guard.dll", "bin/win_amd64/jiuwen_runtime_guard.manifest.json", "bin/win_amd64/LICENSE.Detours.txt", "bin/win_amd64/process_guard.exe", "bin/win_amd64/process_guard_hook_x64.dll", "bin/win_amd64/process_guard_hook_x86.dll"]
