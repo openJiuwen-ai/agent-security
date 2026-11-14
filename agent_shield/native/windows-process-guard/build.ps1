@@ -5,17 +5,21 @@ param(
     # When set, clone Detours into DETOURS_ROOT if Makefile is missing.
     # Off by default so CI without GitHub access fails fast with a clear message
     # instead of hanging on github.com.
-    [switch]$FetchDetours
+    [switch]$FetchDetours,
+    [string]$ToolchainRoot
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-$install = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-if (-not $install) {
-    throw "MSVC C++ toolset was not found"
+if ($ToolchainRoot) {
+    $ToolchainRoot = (Resolve-Path -LiteralPath $ToolchainRoot).Path
+    $vcvars = Join-Path $ToolchainRoot 'setup_x64.bat'
+} else {
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    $install = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+    if (-not $install) { throw "MSVC C++ toolset was not found" }
+    $vcvars = Join-Path $install "VC\Auxiliary\Build\vcvars64.bat"
 }
-$vcvars = Join-Path $install "VC\Auxiliary\Build\vcvars64.bat"
 $out = Join-Path $root "build"
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 
@@ -53,8 +57,8 @@ foreach ($name in $tests) {
 Write-Output "windows process guard unit tests passed"
 
 $src = Join-Path $root "src"
-$vcvarsAll = Join-Path $install "VC\Auxiliary\Build\vcvarsall.bat"
-$wheelBin = Join-Path $root "python\src\agent_security_windows_process_guard\bin\win_amd64"
+$vcvarsAll = if ($ToolchainRoot) { $null } else { Join-Path $install "VC\Auxiliary\Build\vcvarsall.bat" }
+$wheelBin = Join-Path $root "python\src\agent_security_dll\bin\win_amd64"
 New-Item -ItemType Directory -Force -Path $wheelBin | Out-Null
 
 # Resolve Detours the same way jiuwenbox softdelete does: external checkout only.
@@ -126,9 +130,30 @@ Refusing to delete it. Point DETOURS_ROOT at a new empty path, or at a real Deto
 }
 
 Ensure-DetoursCheckout
+# A copied tree with src\Makefile is valid. Pin the commit only for a git checkout.
+if (Test-Path (Join-Path $detoursRoot ".git")) {
+    $commit = $null
+    try {
+        $commit = & git -C $detoursRoot rev-parse HEAD 2>$null
+    } catch {
+        $commit = $null
+    }
+    if ($LASTEXITCODE -ne 0 -or -not $commit) {
+        throw "Unable to read Detours HEAD at $detoursRoot (a git checkout is required)"
+    }
+    $commit = "$commit".Trim()
+    if ($commit -ne "e4bfd6b03e50de46b47abfbd1e46b384f0c5f833") {
+        throw "Use the pinned Detours v4.0.1 checkout"
+    }
+}
 
 function Invoke-Vc([string]$Arch, [string]$Command) {
-    cmd /c "`"$vcvarsAll`" $Arch && $Command"
+    if ($ToolchainRoot) {
+        $setup = Join-Path $ToolchainRoot $(if ($Arch -eq 'x86') {'setup_x86.bat'} else {'setup_x64.bat'})
+        cmd /c "`"$setup`" && $Command"
+    } else {
+        cmd /c "`"$vcvarsAll`" $Arch && $Command"
+    }
     if ($LASTEXITCODE -ne 0) {
         throw "command failed ($Arch): $Command"
     }
@@ -159,4 +184,5 @@ Invoke-Vc "x86" "cl /nologo /W4 /WX /EHsc /MT /utf-8 /LD /I `"$src`" /I `"$detou
 foreach ($name in @("process_guard.exe", "process_guard_hook_x64.dll", "process_guard_hook_x86.dll")) {
     Copy-Item (Join-Path $out $name) (Join-Path $wheelBin $name) -Force
 }
+Copy-Item -LiteralPath (Join-Path $detoursRoot 'LICENSE.md') -Destination (Join-Path $wheelBin 'LICENSE.Detours.txt') -Force
 Write-Output "windows process guard binaries built"
