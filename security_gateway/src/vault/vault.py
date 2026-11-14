@@ -241,7 +241,10 @@ class Vault(AuthorityMixin):
                     # and the handover log; the record store is a
                     # different half of the same namespace.
                     cluster_store = KVClusterStore(
-                        authority.store.kv, authority.ns)
+                        authority.store.kv,
+                        authority.ns,
+                        leases=getattr(authority.store, "leases", None),
+                    )
                     adopt = obtain_cluster_dek(
                         cfg.etcd, cluster_store, self_identity, anchor)
 
