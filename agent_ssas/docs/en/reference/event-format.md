@@ -37,7 +37,7 @@ raw_event
 | `agent_id` | str | Agent ID |
 | `trace_id` | str | Trace ID, spanning one complete trace |
 | `context_id` | str | Context ID |
-| `llm_call_seq` | int | LLM call sequence number; for llm_call events, the number of the current LLM call; for tool_call events, the number of the LLM call it belongs to; -1 when not applicable |
+| `llm_call_seq` | int | LLM call sequence number; in `llm_input` / `llm_output` it is the sequence number of this LLM call, in `tool_input` / `tool_output` it is the sequence number of the owning LLM call; `-1` when not applicable |
 | `tool_call_seq` | int | Auto-incrementing tool call sequence number; -1 for non-tool events |
 | `subsession_id` | str | Subsession ID |
 | `tool_call_id` | str | Tool call ID assigned by the reporter; used to explicitly correlate the same tool call across tool_input / tool_output events |
@@ -45,6 +45,13 @@ raw_event
 The convention for the sequence fields (`interaction_seq`, `llm_call_seq`, `tool_call_seq`): the default is `-1`, meaning the event does not carry this sequence number; the first valid value is `0`, incrementing thereafter.
 
 On database storage of the time field: when the raw_event's `timestamp` (Unix floating-point seconds) is written to the database (the events / alerts / raw_events tables), a `timestamp_text` human-readable column (local-timezone `YYYY-MM-DD HH:MM:SS.mmm` format) is written alongside it, convenient for direct inspection; the `timestamp` column remains Unix floating-point seconds, used for computation and sorting. When an older database is opened, the column is added automatically by migration and historical rows are backfilled.
+
+### Choosing Correlation IDs
+
+- `tool_call_id`: pairs the `tool_input` and `tool_output` of the same tool call
+- `session_id`: session-level aggregation
+- `trace_id`: cross-session tracing
+- `conversation_id` usually equals `session_id`; `subsession_id` is an empty string when there is no subsession
 
 ## Event Catalog (7 Types)
 
@@ -288,7 +295,11 @@ The following examples match the structure produced by `tests/fixtures/event_fac
 | `decision` | str | Security decision already made by the source rail (such as `reject`) |
 | `evidence` | dict | Evidence dictionary explaining the verdict |
 
+The `risk_level` field type defines five levels, but the current `permission_interrupt_tool` only produces low (`user_reject`) or medium (`policy_deny` / unknown); high and critical are reserved for other risk sources.
+
 These fields are consumed by detection modules that subscribe to security events, such as `security_rail_detection`; the aggregated result ultimately surfaces as a `RiskAssessment` (with the nine fields `has_risk`, `risk_level`, `risk_type`, `risk_score`, `confidence`, `detected_threats`, `recommended_actions`, `details`, and `evidence`).
+
+`confidence` is derived from `deny_reason` and expresses the certainty of the rejection-scene classification: `policy_deny` → 0.9, `user_reject` → 0.75, missing or unknown → 0.6.
 
 ## Related Documentation
 

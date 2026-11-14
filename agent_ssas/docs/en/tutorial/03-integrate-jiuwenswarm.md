@@ -17,36 +17,36 @@ The patch modifies 3 files in the JiuwenSwarm repository:
 ## Prerequisites
 
 - Python >= 3.11, with [uv](https://docs.astral.sh/uv/) installed
-- The JiuwenSwarm source repository (develop branch) and the AgentSecurity repository
+- The JiuwenSwarm source repository (develop branch) and the agent-security repository
 
 The **local-dependency patch** (`jiuwenswarm_ssas_local.patch`) requires the two repositories to be placed side by side:
 
 ```text
 <workspace>/
 ├── jiuwenswarm/          # JiuwenSwarm repository (develop branch)
-└── AgentSecurity/
-    └── AgentSSAS/        # This repository
+└── agent-security/
+    └── agent_ssas/       # This repository
 ```
 
-The **online-dependency patch** (`jiuwenswarm_ssas_online.patch`) pulls `agent-ssas` from atomgit, does not require the two repositories to be side by side, and can be applied to a jiuwenswarm repository at any path.
+The **online-dependency patch** (`jiuwenswarm_ssas_online.patch`) pulls `agent-ssas` from gitcode, does not require the two repositories to be side by side, and can be applied to a jiuwenswarm repository at any path.
 
 ## Step 1: Apply the Patch (Choose One)
 
 From the jiuwenswarm repository root, run:
 
 ```bash
-# Option A: local-dependency version - references the local AgentSSAS source in editable mode,
+# Option A: local-dependency version - references the local agent-ssas source in editable mode,
 # so source changes take effect immediately; suitable for development and debugging
-git apply ../AgentSecurity/AgentSSAS/patches/jiuwenswarm_ssas_local.patch
+git apply ../agent-security/agent_ssas/patches/jiuwenswarm_ssas_local.patch
 
-# Option B: online-dependency version - pulls agent-ssas from atomgit; suitable for production use
-git apply ../AgentSecurity/AgentSSAS/patches/jiuwenswarm_ssas_online.patch
+# Option B: online-dependency version - pulls agent-ssas from gitcode; suitable for production use
+git apply ../agent-security/agent_ssas/patches/jiuwenswarm_ssas_online.patch
 ```
 
 Both patches make exactly the same changes to the 3 files; the only difference is the source of the `agent-ssas` dependency in `pyproject.toml`:
 
-- The local-dependency version declares `agent-ssas = { path = "../AgentSecurity/AgentSSAS", editable = true }`
-- The online-dependency version declares `agent-ssas @ git+https://atomgit.com/yieux1/AgentSecurity.git@develop#subdirectory=AgentSSAS`
+- The local-dependency version declares `agent-ssas = { path = "../agent-security/agent_ssas", editable = true }`
+- The online-dependency version declares `agent-ssas @ git+https://gitcode.com/openJiuwen/agent-security.git@develop#subdirectory=agent_ssas`
 
 ## Step 2: Install Dependencies
 
@@ -135,7 +135,7 @@ git checkout -- jiuwenswarm/resources/config.yaml \
 | ---- | ------ |
 | Turn off SSAS | `ssas.enabled: false` |
 | Switch to HTTP mode | `ssas.mode: http` plus `ssas.http_endpoint` pointing to the standalone service (see [HTTP Service Mode](./04-http-mode.md)) |
-| Enable active protection | `ssas.decision_policy: active_protection` (critical is blocked, the rest raise alerts) |
+| Enable active protection | `ssas.decision_policy: active_protection` (critical is rejected, high/medium/low raise alerts, safe is allowed) |
 | Enable the test module | `ssas.modules.test_detection.enabled: true` |
 
 ## Related Resources

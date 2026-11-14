@@ -51,7 +51,7 @@ The meaning of each field:
 | `event_version` | No | `"1.0"` | Event format version |
 | `subscribed_events` | No | `["*"]` | List of subscribed event specifiers; see [below](#specifying-subscribed-events) for the syntax |
 | `analytic_type_id` | No | `0` | Analysis type identifier |
-| `plugins` | Yes | — | Plugin declaration list; must contain exactly one `type: data_modeling` entry and one `type: threat_analysis` entry |
+| `plugins` | Yes | — | Plugin declaration list; at least one `type: data_modeling` entry and one `type: threat_analysis` entry. If the same type is declared more than once, the current implementation uses the last one |
 
 Fields of each entry in the `plugins` list:
 
@@ -70,7 +70,7 @@ Now create a sample module `my_detection`: it subscribes to all events and repor
 ### Step 1: Create the Module Directory
 
 ```bash
-cd AgentSecurity/AgentSSAS
+cd agent-security/agent_ssas
 mkdir src/agent_ssas/core/detection_modules/my_detection
 touch src/agent_ssas/core/detection_modules/my_detection/__init__.py
 ```

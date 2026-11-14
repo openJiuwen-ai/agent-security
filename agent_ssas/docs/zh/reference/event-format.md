@@ -37,7 +37,7 @@ raw_event
 | `agent_id` | str | 智能体 ID |
 | `trace_id` | str | 链路追踪 ID，贯穿一次完整追踪 |
 | `context_id` | str | 上下文 ID |
-| `llm_call_seq` | int | LLM 调用序号；llm_call 事件时为本次大模型调用的序号，tool_call 事件时为所属大模型调用的序号；不具备时为 -1 |
+| `llm_call_seq` | int | LLM 调用序号；在 `llm_input` / `llm_output` 中为本次 LLM 调用的序号，在 `tool_input` / `tool_output` 中为其所属 LLM 调用的序号；不适用时为 `-1` |
 | `tool_call_seq` | int | 工具调用自增序号；非工具事件为 -1 |
 | `subsession_id` | str | 子会话 ID |
 | `tool_call_id` | str | 上报端工具调用 ID；用于跨 tool_input / tool_output 事件显式关联同一工具调用 |
@@ -45,6 +45,13 @@ raw_event
 序号字段（`interaction_seq`、`llm_call_seq`、`tool_call_seq`）的约定：缺省值为 `-1`，表示当前事件不具备此序号；首个有效值为 `0`，此后自增。
 
 关于时间字段的落库存储：raw_event 中的 `timestamp`（Unix 浮点秒）写入数据库（events / alerts / raw_events 三表）时，会同时写入 `timestamp_text` 可读列（本地时区 `YYYY-MM-DD HH:MM:SS.mmm` 格式），便于直接查看；`timestamp` 列仍为 Unix 浮点秒，用于计算与排序。旧库打开时自动迁移补列并回填历史数据。
+
+### 关联 ID 的选取
+
+- `tool_call_id`：配对同一次工具调用的 `tool_input` 与 `tool_output`
+- `session_id`：按会话聚合
+- `trace_id`：跨会话追踪
+- `conversation_id` 通常与 `session_id` 一致；没有子会话时 `subsession_id` 为空字符串
 
 ## 事件清单（7 类）
 
@@ -288,7 +295,11 @@ invoke_start -> llm_input -> tool_input -> tool_output -> llm_output -> invoke_e
 | `decision` | str | 来源 Rail 已做出的安全决策（如 `reject`） |
 | `evidence` | dict | 证据字典，说明判定原因 |
 
+`risk_level` 的字段类型为五级，但当前 `permission_interrupt_tool` 只会产生 low（`user_reject`）与 medium（`policy_deny` / 未知）；high / critical 预留给其他风险来源。
+
 这些字段供 `security_rail_detection` 等订阅安全事件的检测模块消费，聚合结果最终体现为 `RiskAssessment`（含 `has_risk`、`risk_level`、`risk_type`、`risk_score`、`confidence`、`detected_threats`、`recommended_actions`、`details`、`evidence` 九个字段）。
+
+其中 `confidence` 由 `deny_reason` 推导，表示拒绝场景分类的确定性：`policy_deny` → 0.9，`user_reject` → 0.75，缺失或未知 → 0.6。
 
 ## 相关文档
 

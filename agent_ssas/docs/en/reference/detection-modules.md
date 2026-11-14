@@ -54,7 +54,7 @@ Field descriptions:
 | `event_version` | no | Event format version; default `"1.0"` |
 | `subscribed_events` | no | List of subscribed events; default `["*"]` |
 | `analytic_type_id` | no | Analytic type ID, used for the `analytic.type` mapping in OCSF reports: 1=Rule, 2=Behavior; default 0 |
-| `auth_timeout_policy` | no | Default policy when an auth-mode subscriber times out; default `allow` |
+| `auth_timeout_policy` | no | Default policy when an auth-mode subscriber times out: `allow` (default; treat the timeout as no risk and allow) or `reject` (treat the timeout as high risk and recommend block), consistent with the pipeline's timeout report |
 | `report_only_risks` | no | When `true`, all events are still analyzed, but only reports with `has_risk=true` are written to the module result store and rendered as OCSF logs; default `false` |
 | `plugins` | yes | Plugin list; must contain one `data_modeling` and one `threat_analysis` plugin |
 
@@ -183,8 +183,10 @@ plugins:
 
 Behavior notes:
 
-- Subscribes to the `permission_interrupt_tool` security detection derived event (notify mode) and consumes the `risk_source`, `risk_type`, `risk_level`, `deny_reason`, `decision`, and `evidence` fields from the event payload.
-- The data modeling plugin is `BlankDataModeler` (blank modeling, produces no model content); the threat analysis plugin is `SecurityRailAnalyzer` (located in the module directory as `security_rail_analyzer.py`), which aggregates the interception decisions of other security rails into a risk assessment and writes it to its own result.db and the threat logs. Its report evidence carries the decision and the detail fields (`tool_name` / `tool_call_id` / `reason`) from `risk_assessment.evidence`, and `recommended_actions` follows the rejection scene: policy deny or unknown → `["log", "alert"]`, user rejection → `["log"]`.
+- Subscribes to the `permission_interrupt_tool` security-detection derived event (notify mode) and consumes the `risk_source`, `risk_type`, `risk_level`, `deny_reason`, `decision`, and `evidence` fields from the event payload.
+- The data modeling plugin is `BlankDataModeler` (blank modeling, produces no model content); the threat analysis plugin is `SecurityRailAnalyzer` (located in the module directory as `security_rail_analyzer.py`), which aggregates the interception decisions of other security rails into a risk assessment and writes it to its own result.db and the threat logs. Its report `evidence` carries the decision and the detail fields: `decision` comes from `risk_assessment.decision` (falling back to the top-level `decision` of the event), the `evidence` details (`tool_name` / `tool_call_id` / `reason`) come from `risk_assessment.evidence` (falling back to the `action_name`/`tool_call_id` of `event_node`); `recommended_actions` follows the rejection scenario: policy deny or unknown → `["log", "alert"]`, user rejection → `["log"]`.
+- `confidence` is derived from `deny_reason` and expresses the certainty of the rejection-scenario classification: `policy_deny` → 0.9, `user_reject` → 0.75, missing or unknown → 0.6.
+- `analytic_name` / `description` are scenario-specific: `policy_deny` yields `Tool Permission Denied` with the description `PermissionInterruptRail denied the tool call to <tool> (policy deny)`; `user_reject` yields `Tool Permission Rejected` with the description `User rejected the tool call to <tool>`; missing or unknown scenarios fall back to the policy-deny wording.
 - `analytic_type_id: 1` maps to `analytic.type = "Rule"` in OCSF reports.
 
 ### test_detection

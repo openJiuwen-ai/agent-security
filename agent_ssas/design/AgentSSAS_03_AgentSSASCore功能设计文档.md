@@ -5,7 +5,7 @@
 > **范围约定**：
 > - 本文不重复 agent-core 的 Rail 机制背景（见文档 02 第二章）
 > - 本文不重复跨仓接口的完整定义（见文档 01 第四章），但会说明 AgentSSASCore 侧如何实现该接口
-> - 本文聚焦 `AgentSecurity/AgentSSAS/` 子目录内的实现设计
+> - 本文聚焦 `agent-security/agent_ssas/` 子目录内的实现设计
 
 ---
 
@@ -13,11 +13,11 @@
 
 ### 1.1 子系统定位
 
-AgentSSAS 由两个子系统组成：**AgentSSAS = AgentSSASClient + AgentSSASCore**。其中 AgentSSASClient 是 agent-core 侧的事件采集与安全决策执行层（见文档 02），AgentSSASCore 子系统是威胁检测与呈现能力层。AgentSSASCore 子系统是一个通用子系统，位于 `AgentSecurity/AgentSSAS/` 子目录中，以独立 Python 包 `agent-ssas`（导入名 `agent_ssas.core.*`）的形式发布——它也可以对接 jiuwen 之外的智能体系统，只要上报方按 `AgentSSASBackendProtocol` 接口和三层结构事件格式上报即可。它接收 AgentSSASClient 上报的事件消息，执行数据预处理和威胁检测，输出安全决策，并呈现安全态势。
+AgentSSAS 由两个子系统组成：**AgentSSAS = AgentSSASClient + AgentSSASCore**。其中 AgentSSASClient 是 agent-core 侧的事件采集与安全决策执行层（见文档 02），AgentSSASCore 子系统是威胁检测与呈现能力层。AgentSSASCore 子系统是一个通用子系统，位于 `agent-security/agent_ssas/` 子目录中，以独立 Python 包 `agent-ssas`（导入名 `agent_ssas.core.*`）的形式发布——它也可以对接 jiuwen 之外的智能体系统，只要上报方按 `AgentSSASBackendProtocol` 接口和三层结构事件格式上报即可。它接收 AgentSSASClient 上报的事件消息，执行数据预处理和威胁检测，输出安全决策，并呈现安全态势。
 
 | 属性 | 值 |
 |------|-----|
-| 所在仓 | `AgentSecurity/AgentSSAS/`（`agent-ssas` 包实现） |
+| 所在仓 | `agent-security/agent_ssas/`（`agent-ssas` 包实现） |
 | PyPI 包名 | `agent-ssas` |
 | 导入名 | `agent_ssas.core.*` |
 | 依赖模型 | jiuwenswarm 直接依赖 `agent-ssas`（在 `[project.dependencies]` 中声明，默认安装、可配置关闭） |
@@ -53,7 +53,7 @@ AgentSSAS 通过实现 `AgentSSASBackendProtocol` 协议与 AgentSSASSecurityRai
 
 ```
 jiuwenswarm → openjiuwen[claude,codex] (agent-core)
-jiuwenswarm → agent-ssas (AgentSecurity/AgentSSAS)
+jiuwenswarm → agent-ssas (agent-security/agent_ssas)
 ```
 
 **jiuwenswarm 直接依赖 agent-ssas**（在 jiuwenswarm 的 `[project.dependencies]` 中声明，非 optional-dependencies）。因此：
@@ -243,7 +243,7 @@ AgentSSASCore 子系统的插件化架构支持两类生态参与者：
 | Rail | `rail_priority` | int | `80` | AgentSSASSecurityRail 的执行优先级 |
 | Rail | `enable_exception_hooks` | bool | `True` | 是否启用异常事件采集 |
 | Rail | `risk_report_threshold` | str | `low` | 风险事件上报门限（0.1版本预留字段，未实现过滤逻辑） |
-| Rail | `decision_policy` | str | `observe_only` | AgentSSASSecurityRail 决策策略模式名：`observe_only`（全部放行）| `active_protection`（按风险等级处理）。策略定义在 `decision_policies.yaml` 中 |
+| Rail | `decision_policy` | str | `observe_only` | AgentSSASSecurityRail 决策策略模式名：`observe_only`（全部放行）、`active_protection`（按风险等级处理）。策略定义在 `decision_policies.yaml` 中 |
 | auth 超时 | `auth_timeout` | float | `2.0` | auth 模式订阅者超时秒数，超时后按模块的 `auth_timeout_policy` 生成默认报告 |
 
 ### 3.3 各模块插件的专有配置项
@@ -2998,7 +2998,7 @@ AgentSSASCore 子系统的测试采用融合体系，结合 jiuwenswarm 和 agen
 测试目录在 `tests` 下加一级 `agent_ssas/core` 目录，与 `src` 的包结构保持一致。根 `conftest.py` 和 `fixtures/` 保持不动，所有针对源码包的测试统一收敛到 `tests/agent_ssas/core/` 下，按 framework / detection_modules / integration 三个子域组织。
 
 ```
-AgentSecurity/AgentSSAS/tests/
+agent-security/agent_ssas/tests/
 ├── conftest.py
 ├── fixtures/
 │   ├── event_factory.py
@@ -3037,7 +3037,7 @@ AgentSecurity/AgentSSAS/tests/
 ### 13.2 pytest 配置
 
 ```ini
-# AgentSecurity/AgentSSAS/tests/pytest.ini 或 pyproject.toml [tool.pytest.ini_options]
+# agent-security/agent_ssas/tests/pytest.ini 或 pyproject.toml [tool.pytest.ini_options]
 [pytest]
 testpaths = tests
 python_files = test_*.py
@@ -3355,8 +3355,8 @@ class TestTestDetection:
 ### 13.4 运行测试
 
 ```powershell
-# 在 AgentSecurity/AgentSSAS 目录下运行测试
-cd <WORKSPACE>/AgentSecurity/AgentSSAS
+# 在 agent-security/agent_ssas 目录下运行测试
+cd <WORKSPACE>/agent-security/agent_ssas
 
 # 运行所有测试
 pytest tests/

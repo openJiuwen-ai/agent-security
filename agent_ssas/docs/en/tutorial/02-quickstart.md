@@ -9,10 +9,10 @@
 
 ## Installation
 
-Enter the AgentSSAS directory of the repository, create a virtual environment, and install in editable mode:
+Enter the agent_ssas directory of the repository, create a virtual environment, and install in editable mode:
 
 ```bash
-cd AgentSecurity/AgentSSAS
+cd agent-security/agent_ssas
 uv venv
 uv pip install -e .
 ```
@@ -20,7 +20,7 @@ uv pip install -e .
 > If working from the local source code is not convenient, you can also install from the remote repository:
 >
 > ```bash
-> uv pip install "agent-ssas @ git+https://atomgit.com/yieux1/AgentSecurity.git@develop#subdirectory=AgentSSAS"
+> uv pip install "agent-ssas @ git+https://gitcode.com/openJiuwen/agent-security.git@develop#subdirectory=agent_ssas"
 > ```
 
 This tutorial only uses in-process mode, which requires no extra dependencies. HTTP service mode additionally requires fastapi / uvicorn; see [HTTP Service Mode](./04-http-mode.md).
@@ -32,6 +32,8 @@ From the AgentSSAS repository root, run:
 ```bash
 uv run python examples/inprocess_quickstart/main.py
 ```
+
+> If the terminal shows no output, the example's `logger.info` calls have no logging handler configured: enable INFO logging first (for example `logging.basicConfig(level=logging.INFO, format='%(message)s')`), or inspect the files written under the storage root.
 
 The expected output is as follows (the user directory in the storage path varies by system; on Windows it looks like `C:\Users\<user>\.jiuwenswarm\ssas`):
 
@@ -60,7 +62,7 @@ The example builds a complete event stream of 7 events: the first 6 lifecycle ev
 
 `examples/inprocess_quickstart/main.py` demonstrates the minimal usage of AgentSSASCore:
 
-1. `AgentSSASConfig.from_dict(None)`: default configuration; storage follows the JIUWENSWARM_HOME convention (`~/.jiuwenswarm/ssas`), which can be overridden with the environment variable `SSAS_HOME`
+1. `AgentSSASConfig.from_dict(None)`: default configuration; the storage root is resolved in the order `SSAS_HOME` > `JIUWENSWARM_DATA_DIR` > `JIUWENSWARM_HOME` > `~/.jiuwenswarm`, and the data finally lands in `<root>/ssas/`
 2. `AgentSSASBackend(config)` plus `await backend.initialize()`: construct the backend and scan and load the detection modules
 3. `await backend.report_event(raw_event)`: the single interface for reporting an event with the three-layer structure (`common` / `payload` / `metadata`); it returns a `RiskAssessment`
 4. `await backend.close()`: release the SQLite connection (required on Windows, otherwise the WAL file locks the directory)

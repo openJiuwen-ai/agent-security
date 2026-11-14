@@ -29,7 +29,7 @@ SSAS_HOME=<存储根目录>
 ### 方式二：示例脚本（仅监听本机回环）
 
 ```bash
-cd AgentSecurity/AgentSSAS
+cd agent-security/agent_ssas
 uv run --extra http python examples/http_server_demo/start_server.py
 ```
 

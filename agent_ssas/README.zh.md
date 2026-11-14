@@ -13,7 +13,7 @@
   ·
   <a href="CHANGELOG.md">更新日志</a>
   ·
-  <a href="https://atomgit.com/yieux1/AgentSecurity">AtomGit</a>
+  <a href="https://gitcode.com/openJiuwen/agent-security">GitCode</a>
 </p>
 
 <p align="center">
@@ -51,7 +51,7 @@
 - **插件化检测模块**：检测模块通过 `module.yaml` 声明式注册，以"数据建模插件 + 威胁分析插件"成对组织；新增检测能力零侵入框架代码
 - **3 个内置检测模块**：`agent_moss`（规则 + 行为链 + Agent行为图（Agent Behavior Graph，ABG）数据泄露分析）、`security_rail_detection`（其他安全 Rail 检测结果的衍生分析）、`test_detection`（链路验证，默认关闭）
 - **notify / auth 双订阅模式**：notify 后台异步检测不阻断业务；auth 同步参与安全决策，支持超时兜底策略
-- **决策策略**：`observe_only`（默认，仅态势感知全部放行）与 `active_protection`（critical 阻断、其余告警），通过配置一键切换
+- **决策策略**：`observe_only`（默认，仅态势感知全部放行）与 `active_protection`（critical 拒绝、high/medium/low 告警、safe 放行），通过配置一键切换
 - **fail-open 设计**：SSAS 自身任何故障（初始化失败、事件非法、检测超时）都不阻断 JiuwenSwarm 主流程
 - **OCSF 威胁日志**：检测结果以 OCSF 格式落盘 JSON 日志，事件与告警持久化到 SQLite
 
@@ -65,13 +65,13 @@
 | [examples/](examples/README.md) | 3 个可运行示例：进程内快速上手、HTTP 服务演示、JiuwenSwarm 集成 |
 | [design/](design/README.md) | 开发设计稿：整体架构与两个子系统功能设计、测试报告 |
 | [patches/](patches/) | JiuwenSwarm 集成补丁：本地依赖版 / 在线依赖版二选一 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录（[Release 入口](https://atomgit.com/yieux1/AgentSecurity/releases)） |
+| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录（[Release 入口](https://gitcode.com/openJiuwen/agent-security/releases)） |
 | [SECURITY.md](SECURITY.md) | 安全策略与漏洞报告方式 |
 
 仓库布局：
 
 ```
-AgentSSAS/
+agent_ssas/
 ├── README.md / README.zh.md     # 双语自述文件
 ├── LICENSE / CHANGELOG.md / SECURITY.md
 ├── docs/                          # 双语四类用户文档（zh / en）
@@ -95,13 +95,13 @@ AgentSSAS/
 ### 远程安装（推荐）
 
 ```bash
-uv pip install "agent-ssas @ git+https://atomgit.com/yieux1/AgentSecurity.git@develop#subdirectory=AgentSSAS"
+uv pip install "agent-ssas @ git+https://gitcode.com/openJiuwen/agent-security.git@develop#subdirectory=agent_ssas"
 ```
 
 ### 本地安装（开发）
 
 ```bash
-cd AgentSecurity/AgentSSAS
+cd agent-security/agent_ssas
 uv venv
 uv pip install -e .
 
@@ -139,9 +139,9 @@ uv run python examples/inprocess_quickstart/main.py
 ```bash
 cd <jiuwenswarm 仓根目录>
 # 本地依赖版（editable，适合与 AgentSSAS 源码协同开发）
-git apply <AgentSecurity 仓路径>/AgentSSAS/patches/jiuwenswarm_ssas_local.patch
-# 或在线依赖版（atomgit 远程依赖，适合正式使用）
-git apply <AgentSecurity 仓路径>/AgentSSAS/patches/jiuwenswarm_ssas_online.patch
+git apply <agent-security 仓路径>/agent_ssas/patches/jiuwenswarm_ssas_local.patch
+# 或在线依赖版（gitcode 远程依赖，适合正式使用）
+git apply <agent-security 仓路径>/agent_ssas/patches/jiuwenswarm_ssas_online.patch
 ```
 
 2. 安装依赖并配置：在 `~/.jiuwenswarm/config/config.yaml` 中添加 `ssas` 段（`enabled: true`）
@@ -164,6 +164,6 @@ git apply <AgentSecurity 仓路径>/AgentSSAS/patches/jiuwenswarm_ssas_online.pa
 
 欢迎通过以下方式参与贡献：
 
-- 报告缺陷与功能建议：[Issues](https://atomgit.com/yieux1/AgentSecurity/issues)
-- 提交代码与文档：[Pull Requests](https://atomgit.com/yieux1/AgentSecurity/pulls)
+- 报告缺陷与功能建议：[Issues](https://gitcode.com/openJiuwen/agent-security/issues)
+- 提交代码与文档：[Pull Requests](https://gitcode.com/openJiuwen/agent-security/pulls)
 - 安全漏洞请按 [SECURITY.md](SECURITY.md) 的流程私密报告，请勿公开 Issue

@@ -2,7 +2,7 @@
 
 > **文档定位**：AgentSSASClient 子系统的功能设计文档。agent-core 的代码层面背景介绍全部在此文档中，不在整体架构文档中重复。
 >
-> **版本**：v3.1 · **子系统所在仓**：AgentSecurity/AgentSSAS（实现，子类扩展）+ jiuwenswarm（依赖声明与 Rail 注册）
+> **版本**：v3.1 · **子系统所在仓**：agent-security/agent_ssas（实现，子类扩展）+ jiuwenswarm（依赖声明与 Rail 注册）
 >
 > **核心原则**：agent-core 仓**零修改**。AgentSSASSecurityRail 继承 `BaseSecurityRail`，在子类中覆写 `_run_and_apply`、扩展 `SecurityCheckContext`、新增 `_resolve_*` 方法。依赖声明和 Rail 注册由 jiuwenswarm 仓负责。
 
@@ -12,11 +12,11 @@
 
 ### 1.1 子系统定位
 
-AgentSSASClient 是 AgentSSAS 的事件采集与上报客户端，在 AgentSecurity/AgentSSAS 仓中实现（agent-core 仓零修改）。其核心类 `AgentSSASSecurityRail` 继承 agent-core 提供的 `BaseSecurityRail` 基类（位于 `openjiuwen/harness/rails/security/base_security_rail.py`），作为安全护栏体系的一员被 DeepAgent 的 Rail 挂载机制注册。
+AgentSSASClient 是 AgentSSAS 的事件采集与上报客户端，在 agent-security/agent_ssas 仓中实现（agent-core 仓零修改）。其核心类 `AgentSSASSecurityRail` 继承 agent-core 提供的 `BaseSecurityRail` 基类（位于 `openjiuwen/harness/rails/security/base_security_rail.py`），作为安全护栏体系的一员被 DeepAgent 的 Rail 挂载机制注册。
 
 | 属性 | 值 |
 |------|-----|
-| 所在仓 | `AgentSecurity/AgentSSAS`（`AgentSSASSecurityRail` 实现类，子类扩展 `BaseSecurityRail`）；依赖声明与 Rail 注册在 `jiuwenswarm` 仓 |
+| 所在仓 | `agent-security/agent_ssas`（`AgentSSASSecurityRail` 实现类，子类扩展 `BaseSecurityRail`）；依赖声明与 Rail 注册在 `jiuwenswarm` 仓 |
 | 基类 | `BaseSecurityRail`（继承 `AgentRail`，不经 `DeepAgentRail`，由 agent-core 提供，**零修改**） |
 | priority | 80（低于 `PermissionInterruptRail` 的 90 和 `SafetyPromptRail` 的 85） |
 | 职责 | 采集 Agent 行为事件 + 安全检测衍生事件，通过单一接口上报给 AgentSSAS |
@@ -27,7 +27,7 @@ AgentSSASClient 是 AgentSSAS 的事件采集与上报客户端，在 AgentSecur
 
 ```
 jiuwenswarm → openjiuwen[claude,codex] (agent-core)
-jiuwenswarm → agent-ssas (AgentSecurity/AgentSSAS)
+jiuwenswarm → agent-ssas (agent-security/agent_ssas)
 ```
 
 **jiuwenswarm 在 `[project.dependencies]` 中直接声明 `"agent-ssas>=0.1.0,<0.2"`**（不是 optional-dependencies）。agent-core 仓**零修改**，不声明 agent-ssas 依赖。安装 jiuwenswarm 时默认安装 agent-ssas，agent-core 本身不感知 agent-ssas。jiuwenswarm 的 `interface_deep.py` 中通过 try/except 导入 AgentSSASSecurityRail，实现可选加载（未安装时 jiuwenswarm 正常运行）。可以通过配置关闭 SSAS（如 config.yaml 中 `ssas.enabled: false`）。
@@ -769,11 +769,11 @@ default_policy: observe_only
 
 ## 九、AgentSSASSecurityRail 子类扩展方案
 
-agent-core 仓**零修改**。`BaseSecurityRail` 提供的 `SecurityCheckContext` 仅有 5 个字段，不含 ID 信息。SSAS 在 `AgentSecurity/AgentSSAS` 仓中通过子类扩展：定义 `ExtendedSecurityCheckContext`（继承 `SecurityCheckContext`）新增 ID 字段，在 `AgentSSASSecurityRail` 子类中覆写 `_run_and_apply` 方法自己构建扩展上下文，并新增 `_resolve_*` 方法解析 ID。agent-core 的原始 `SecurityCheckContext` 和 `_run_and_apply` 保持不变。
+agent-core 仓**零修改**。`BaseSecurityRail` 提供的 `SecurityCheckContext` 仅有 5 个字段，不含 ID 信息。SSAS 在 `agent-security/agent_ssas` 仓中通过子类扩展：定义 `ExtendedSecurityCheckContext`（继承 `SecurityCheckContext`）新增 ID 字段，在 `AgentSSASSecurityRail` 子类中覆写 `_run_and_apply` 方法自己构建扩展上下文，并新增 `_resolve_*` 方法解析 ID。agent-core 的原始 `SecurityCheckContext` 和 `_run_and_apply` 保持不变。
 
 ### 9.1 定义 ExtendedSecurityCheckContext（继承 SecurityCheckContext，新增 ID 字段，均有缺省值，向后兼容）
 
-在 `AgentSecurity/AgentSSAS` 仓的 `agent_ssas/backend_client/openjiuwen/extended_context.py` 中定义扩展上下文。继承 agent-core 的 `SecurityCheckContext`，新增 11 个 ID 字段（均有缺省值，向后兼容）。agent-core 的原始 `SecurityCheckContext` 不修改。
+在 `agent-security/agent_ssas` 仓的 `agent_ssas/backend_client/openjiuwen/extended_context.py` 中定义扩展上下文。继承 agent-core 的 `SecurityCheckContext`，新增 11 个 ID 字段（均有缺省值，向后兼容）。agent-core 的原始 `SecurityCheckContext` 不修改。
 
 **新增字段定义**（int 类型缺省值为 -1，str 类型缺省值为空字符串；-1 表示当前事件不具备此序号字段，首个有效值为 0，从 0 开始计数）：
 
@@ -850,7 +850,7 @@ agent-core 仓**零修改**。`BaseSecurityRail` 提供的 `SecurityCheckContext
 
 ## 十、AgentSSASSecurityRail 类实现
 
-本章给出 `AgentSSASSecurityRail` 类的完整实现代码。按第十三章 13.2 节定义的分文件结构组织，本章给出按模块分文件的完整实现代码，共 9 个文件，均位于 `AgentSecurity/AgentSSAS/src/agent_ssas/backend_client/openjiuwen/` 目录下（目录内另含 `__init__.py` 包初始化文件，不计入）。
+本章给出 `AgentSSASSecurityRail` 类的完整实现代码。按第十三章 13.2 节定义的分文件结构组织，本章给出按模块分文件的完整实现代码，共 9 个文件，均位于 `agent-security/agent_ssas/src/agent_ssas/backend_client/openjiuwen/` 目录下（目录内另含 `__init__.py` 包初始化文件，不计入）。
 
 > **说明**：本章为完整实现，包含第九章讲解的分段代码（`_run_and_apply` 覆写、`_resolve_*` 方法等）。第九章按设计要点分段讲解，本章给出可直接使用的完整类代码。与第十三章 13.2 节定义的文件结构对齐，代码按模块拆分为 9 个文件：
 
@@ -868,13 +868,13 @@ agent-core 仓**零修改**。`BaseSecurityRail` 提供的 `SecurityCheckContext
 
 ### 10.1 extended_context.py
 
-**文件路径**：`AgentSecurity/AgentSSAS/src/agent_ssas/backend_client/openjiuwen/extended_context.py`
+**文件路径**：`agent-security/agent_ssas/src/agent_ssas/backend_client/openjiuwen/extended_context.py`
 
 扩展上下文定义。继承 agent-core 的 `SecurityCheckContext`，新增 11 个 ID 字段（均有缺省值，向后兼容）。agent-core 的原始 `SecurityCheckContext` 不修改。字段定义与第九章 9.1 节一致，此处不再重复。
 
 ### 10.2 id_manager.py
 
-**文件路径**：`AgentSecurity/AgentSSAS/src/agent_ssas/backend_client/openjiuwen/id_manager.py`
+**文件路径**：`agent-security/agent_ssas/src/agent_ssas/backend_client/openjiuwen/id_manager.py`
 
 ID 管理模块。生成和管理 `interaction_seq`、`llm_call_seq`、`tool_call_seq` 等标识字段，并解析 `session_id`、`agent_id`、`trace_id` 等 ID。从 `AgentSSASSecurityRail` 类中提取的 `_ensure_*`、`_resolve_*`、`_event_class_for` 方法设计为 `IDManager` 类，方法签名不变，`self` 改为 `IDManager` 实例，接收 `ctx` 参数。
 
@@ -901,7 +901,7 @@ ID 管理模块。生成和管理 `interaction_seq`、`llm_call_seq`、`tool_cal
 
 ### 10.3 event_builder.py
 
-**文件路径**：`AgentSecurity/AgentSSAS/src/agent_ssas/backend_client/openjiuwen/event_builder.py`
+**文件路径**：`agent-security/agent_ssas/src/agent_ssas/backend_client/openjiuwen/event_builder.py`
 
 构建模块。将 `AgentCallbackContext` 和 `ExtendedSecurityCheckContext` 中的数据转换为 `raw_event`（三层结构 dict：common / payload / metadata），即传递给 AgentSSASCore 子系统的事件对象。从 `AgentSSASSecurityRail` 类中提取的 `_build_event_dict`、`_event_type_for`、`_extract_content` 方法设计为 `EventBuilder` 类，接收 `security_ctx` 返回 dict。
 
@@ -965,7 +965,7 @@ ID 管理模块。生成和管理 `interaction_seq`、`llm_call_seq`、`tool_cal
 
 ### 10.4 event_filter.py
 
-**文件路径**：`AgentSecurity/AgentSSAS/src/agent_ssas/backend_client/openjiuwen/event_filter.py`
+**文件路径**：`agent-security/agent_ssas/src/agent_ssas/backend_client/openjiuwen/event_filter.py`
 
 事件过滤模块。针对事件类型和不同策略进行过滤，输入是构建模块产出的 `raw_event`（三层结构 dict），输出是过滤后的 `raw_event`（可能被修改了 `event_type` 和 `event_class`）或 `None`（被过滤掉）。从 `AgentSSASSecurityRail` 类中提取的 `_filter_event`、`_build_risk_fields` 方法设计为 `EventFilter` 类。
 
@@ -1007,7 +1007,7 @@ return event_dict
 
 ### 10.5 event_reporter.py
 
-**文件路径**：`AgentSecurity/AgentSSAS/src/agent_ssas/backend_client/openjiuwen/event_reporter.py`
+**文件路径**：`agent-security/agent_ssas/src/agent_ssas/backend_client/openjiuwen/event_reporter.py`
 
 上报模块。通过 `AgentSSASBackendProtocol.report_event(raw_event)` 将 `raw_event` 上报给 AgentSSAS，获取返回的 `RiskAssessment`，再通过 `_assessment_to_decision()` 映射为 `SecurityDecision`。异常时 fail-open 返回 `SecurityAllow()`。从 `AgentSSASSecurityRail` 类中提取的 `_assessment_to_decision`、`_safe_report` 方法设计为 `EventReporter` 类，持有 `backend` 引用。
 
@@ -1032,7 +1032,7 @@ return event_dict
 
 ### 10.6 agent_ssas_security_rail.py
 
-**文件路径**：`AgentSecurity/AgentSSAS/src/agent_ssas/backend_client/openjiuwen/agent_ssas_security_rail.py`
+**文件路径**：`agent-security/agent_ssas/src/agent_ssas/backend_client/openjiuwen/agent_ssas_security_rail.py`
 
 `AgentSSASSecurityRail` 实现类。继承 `BaseSecurityRail`（agent-core 提供，零修改），`priority=80`，`supported_events` 声明 6 个走管线事件。覆写 `_run_and_apply()`（不修改 agent-core 的原始方法，在子类中自行构建 `ExtendedSecurityCheckContext` 并填充 ID 字段，调用 `run_security_check` 和基类的 `apply_security_decision`）。`__init__` 中创建 `IDManager`、`EventBuilder`、`EventFilter`、`EventReporter` 实例。`run_security_check()` 串联 `EventBuilder.build_event_dict` → `EventFilter.filter_event` → `EventReporter.report`，fail-open 逻辑保留在 `EventReporter.report` 中。
 
@@ -1068,7 +1068,7 @@ return event_dict
 
 ### 10.7 factory.py
 
-**文件路径**：`AgentSecurity/AgentSSAS/src/agent_ssas/backend_client/openjiuwen/factory.py`
+**文件路径**：`agent-security/agent_ssas/src/agent_ssas/backend_client/openjiuwen/factory.py`
 
 工厂函数模块。提供 `create_agent_ssas_rail(config)` 工厂函数，按 `AgentSSASConfig` 创建 `AgentSSASSecurityRail` 实例。jiuwenswarm 仓的 `interface_deep.py` 通过 `from agent_ssas.backend_client.openjiuwen.factory import create_agent_ssas_rail` 导入此函数。
 
@@ -1103,7 +1103,7 @@ agent-core 仓**零修改**。依赖声明和 Rail 注册由 jiuwenswarm 仓负�
 
 ```
 jiuwenswarm → openjiuwen[claude,codex] (agent-core)
-jiuwenswarm → agent-ssas (AgentSecurity/AgentSSAS)
+jiuwenswarm → agent-ssas (agent-security/agent_ssas)
 ```
 
 **jiuwenswarm 在 `[project.dependencies]`（不是 optional-dependencies）中直接声明 `"agent-ssas>=0.1.0,<0.2"`**。安装 jiuwenswarm 时默认安装 agent-ssas。agent-core 不修改，不声明 agent-ssas 依赖，不感知 agent-ssas 的存在。
@@ -1212,14 +1212,14 @@ _RailBuildInfo(
 
 > **关键说明**：DeepAgent 不做基于 `__subclasses__()` 的运行时自动扫描。Rail 的"发现"由 DeepAgentConfig 的 `config.rails` 列表或 `add_rail()` 方法显式入队。AgentSSASSecurityRail 通过 `_build_ssas_rail` 静态方法显式创建后注册。agent-core 仓**零修改**，所有依赖声明和 Rail 注册逻辑都在 jiuwenswarm 仓的 `interface_deep.py` 中实现。
 
-### 11.3 无 AgentSecurity 时的行为
+### 11.3 无 agent-security 时的行为
 
 - jiuwenswarm 正常运行，所有现有功能不受影响
 - agent-core 完全不感知 agent-ssas，正常运行不受影响
 - AgentSSASSecurityRail 类不加载（jiuwenswarm 的 `interface_deep.py` 中 try/except 包裹，找不到 agent_ssas.core 包则跳过）
 - 日志中输出一条 WARNING："[JiuWenSwarmDeepAdapter] AgentSSASSecurityRail not loaded: ..."（含具体 ImportError 信息）
 
-### 11.4 有 AgentSecurity 时的行为
+### 11.4 有 agent-security 时的行为
 
 - 安装 agent-ssas 后（jiuwenswarm 默认依赖，默认安装），AgentSSASSecurityRail 自动激活
 - jiuwenswarm 的 `interface_deep.py` 通过 `_build_ssas_rail` 静态方法直接构造 backend + `AgentSSASSecurityRail` 实例并加入 rails 列表（同步路径；标准异步路径 `await create_agent_ssas_rail(config)` 的取舍见 10.7 节"两条 Rail 创建路径并存"）
@@ -1230,7 +1230,7 @@ _RailBuildInfo(
 
 ## 十二、测试设计
 
-AgentSSASClient 子系统的测试遵循 agent-core 的测试规范（level0/level1 分级 + 镜像源码路径），但测试代码位于 **AgentSecurity/AgentSSAS 仓**的 `tests/agent_ssas/backend_client/openjiuwen/` 下（因为 AgentSSASSecurityRail 的实现代码在该仓的 `agent_ssas/backend_client/openjiuwen/` 目录下，agent-core 仓零修改）：
+AgentSSASClient 子系统的测试遵循 agent-core 的测试规范（level0/level1 分级 + 镜像源码路径），但测试代码位于 **agent-security/agent_ssas 仓**的 `tests/agent_ssas/backend_client/openjiuwen/` 下（因为 AgentSSASSecurityRail 的实现代码在该仓的 `agent_ssas/backend_client/openjiuwen/` 目录下，agent-core 仓零修改）：
 - 测试文件镜像源码路径，如 `src/agent_ssas/backend_client/openjiuwen/agent_ssas_security_rail.py` 对应 `tests/agent_ssas/backend_client/openjiuwen/test_agent_ssas_security_rail.py`
 - 使用 `level0`（冒烟/快乐路径，PR 门禁必须绿色）和 `level1`（功能分支/错误路径/边缘场景）分级标记
 - 测试风格同时支持 `pytest` 和 `unittest.IsolatedAsyncioTestCase`
@@ -1238,7 +1238,7 @@ AgentSSASClient 子系统的测试遵循 agent-core 的测试规范（level0/lev
 ### 12.1 测试文件规划
 
 ```
-AgentSecurity/AgentSSAS/tests/agent_ssas/backend_client/openjiuwen/
+agent-security/agent_ssas/tests/agent_ssas/backend_client/openjiuwen/
 ├── conftest.py                                    # 测试 fixtures
 ├── test_extended_context.py                       # ExtendedSecurityCheckContext 扩展验证
 │                                                  # @pytest.mark.level0
@@ -1253,7 +1253,7 @@ AgentSecurity/AgentSSAS/tests/agent_ssas/backend_client/openjiuwen/
 └── test_event_reporter.py                         # 上报模块（fail-open）
                                                    # @pytest.mark.level1
 
-AgentSecurity/AgentSSAS/tests/system_tests/
+agent-security/agent_ssas/tests/system_tests/
 └── test_agent_ssas_permission_interrupt.py              # 端到端：PermissionInterruptRail deny
                                                    # → AgentSSASSecurityRail 安全检测事件
                                                    # 参考 agent-core 的 test_deep_agent_tool_permission_interrupt.py
@@ -1387,8 +1387,8 @@ AgentSecurity/AgentSSAS/tests/system_tests/
 ### 12.3 运行测试
 
 ```powershell
-# 在 AgentSecurity/AgentSSAS 目录下运行 AgentSSASSecurityRail 相关测试
-cd <WORKSPACE>/AgentSecurity/AgentSSAS
+# 在 agent-security/agent_ssas 目录下运行 AgentSSASSecurityRail 相关测试
+cd <WORKSPACE>/agent-security/agent_ssas
 make test TESTFLAGS="tests/agent_ssas/backend_client/openjiuwen/"
 
 # 仅运行 level0（CI 门禁）
@@ -1405,25 +1405,25 @@ pytest tests/system_tests/test_agent_ssas_permission_interrupt.py -v
 
 ## 十三、项目结构
 
-AgentSSASClient 子系统的代码分布在三个仓中：agent-core 仓（提供基类，零修改）、AgentSecurity/AgentSSAS 仓（通过子类扩展实现）和 jiuwenswarm 仓（依赖声明与 Rail 注册）。
+AgentSSASClient 子系统的代码分布在三个仓中：agent-core 仓（提供基类，零修改）、agent-security/agent_ssas 仓（通过子类扩展实现）和 jiuwenswarm 仓（依赖声明与 Rail 注册）。
 
 ### 13.1 agent-core 仓——零修改
 
-agent-core 仓不做任何修改。`BaseSecurityRail`、`SecurityCheckContext`、`_run_and_apply()` 等均保持原样。AgentSSASSecurityRail 通过继承 `BaseSecurityRail`，在子类中覆写 `_run_and_apply`、扩展 `SecurityCheckContext`（定义 `ExtendedSecurityCheckContext`）、新增 `_resolve_*` 方法来实现事件采集功能。所有扩展代码都在 AgentSecurity/AgentSSAS 仓中，不触碰 agent-core 的源码。
+agent-core 仓不做任何修改。`BaseSecurityRail`、`SecurityCheckContext`、`_run_and_apply()` 等均保持原样。AgentSSASSecurityRail 通过继承 `BaseSecurityRail`，在子类中覆写 `_run_and_apply`、扩展 `SecurityCheckContext`（定义 `ExtendedSecurityCheckContext`）、新增 `_resolve_*` 方法来实现事件采集功能。所有扩展代码都在 agent-security/agent_ssas 仓中，不触碰 agent-core 的源码。
 
 agent-core 不感知 agent-ssas，其 `pyproject.toml` 不声明 agent-ssas 依赖。
 
-### 13.2 AgentSecurity/AgentSSAS 仓中的新增
+### 13.2 agent-security/agent_ssas 仓中的新增
 
-AgentSecurity/AgentSSAS 仓中新增 AgentSSASSecurityRail 的实现类、扩展上下文、事件过滤模块、ID 管理模块、构建模块、上报模块、后端协议接口和配置。
+agent-security/agent_ssas 仓中新增 AgentSSASSecurityRail 的实现类、扩展上下文、事件过滤模块、ID 管理模块、构建模块、上报模块、后端协议接口和配置。
 
-**核心原则**：AgentSSASSecurityRail 的所有代码逻辑（包括对 `BaseSecurityRail` 的子类扩展——覆写 `_run_and_apply`、定义 `ExtendedSecurityCheckContext`、新增 `_resolve_*` 方法）都放在 AgentSecurity/AgentSSAS 仓中。agent-core 仓零修改。依赖声明和 Rail 注册由 jiuwenswarm 仓负责。
+**核心原则**：AgentSSASSecurityRail 的所有代码逻辑（包括对 `BaseSecurityRail` 的子类扩展——覆写 `_run_and_apply`、定义 `ExtendedSecurityCheckContext`、新增 `_resolve_*` 方法）都放在 agent-security/agent_ssas 仓中。agent-core 仓零修改。依赖声明和 Rail 注册由 jiuwenswarm 仓负责。
 
 为支持未来对接除 openjiuwen 之外的其他智能体，AgentSSAS 仓中新增 `backend_client/` 目录，存放所有对接智能体运行时的插桩代码。`backend_client` 表示"后端客户端"，即对接各智能体运行时的客户端插桩代码。当前0.1版本在 `agent_ssas/backend_client/openjiuwen/` 下存放对接 openjiuwen (agent-core) 的插桩实现；未来对接其他智能体时，在 `backend_client/` 下新增对应的插桩目录。
 
 ```
-AgentSecurity/
-└── AgentSSAS/
+agent-security/
+└── agent_ssas/
     ├── pyproject.toml                                    # name="agent-ssas", 包定义
     └── src/
         ├── agent_ssas/core/                              # AgentSSASCore 子系统（框架代码，详见文档03）
@@ -1449,8 +1449,8 @@ AgentSecurity/
 测试目录分开存放：
 
 ```
-AgentSecurity/
-└── AgentSSAS/
+agent-security/
+└── agent_ssas/
     └── tests/
         ├── backend_client/
         │   └── openjiuwen/                                # AgentSSASSecurityRail 测试
@@ -1480,7 +1480,7 @@ AgentSecurity/
 | `src/agent_ssas/core/framework/access_adapter/protocol.py` | AgentSSASBackendProtocol 接口定义。跨仓接口契约，完整定义见《AgentSSAS_01_整体架构设计文档》第四章。进程内模式由 `AgentSSASBackend` 直接实现，HTTP 模式由 `AgentSSASRemoteBackend` 通过 HTTP 调用实现 |
 | `src/agent_ssas/core/framework/config/settings.py` | AgentSSASConfig 配置类。从 `config.yaml` 的 `ssas` 段加载配置，环境变量覆盖（`SSAS_` 前缀），注入到各模块。包含 `enabled`、`mode`、`rail_priority` 等配置项 |
 
-> **代码分布说明**：AgentSSASSecurityRail 的所有扩展代码（`ExtendedSecurityCheckContext` 定义、`_run_and_apply()` 覆写、`_resolve_*` 方法、ID 管理方法）都在 AgentSecurity/AgentSSAS 仓的 `agent_ssas/backend_client/openjiuwen/` 目录下实现。agent-core 仓**零修改**，`BaseSecurityRail`、`SecurityCheckContext`、`_run_and_apply()` 等均保持原样。依赖声明和 Rail 注册由 jiuwenswarm 仓负责（jiuwenswarm 在 `pyproject.toml` 中声明 agent-ssas 依赖，在 `interface_deep.py` 中通过 try/except 导入并注册 AgentSSASSecurityRail）。
+> **代码分布说明**：AgentSSASSecurityRail 的所有扩展代码（`ExtendedSecurityCheckContext` 定义、`_run_and_apply()` 覆写、`_resolve_*` 方法、ID 管理方法）都在 agent-security/agent_ssas 仓的 `agent_ssas/backend_client/openjiuwen/` 目录下实现。agent-core 仓**零修改**，`BaseSecurityRail`、`SecurityCheckContext`、`_run_and_apply()` 等均保持原样。依赖声明和 Rail 注册由 jiuwenswarm 仓负责（jiuwenswarm 在 `pyproject.toml` 中声明 agent-ssas 依赖，在 `interface_deep.py` 中通过 try/except 导入并注册 AgentSSASSecurityRail）。
 
 > **导入隔离设计**：agent-ssas 包的 `__init__.py` 和核心模块（`framework/access_adapter/`、`framework/data_preprocessor/`、`framework/data_modeler/`、`framework/threat_analyzer/`、`framework/storage/`、`framework/presentation/`）**不直接导入** `agent_ssas/backend_client/openjiuwen/` 的代码。`agent_ssas/backend_client/openjiuwen/` 的代码只在被外部（如 jiuwenswarm）通过 try/except 显式导入时加载。如果 openjiuwen 未安装，`agent_ssas/backend_client/openjiuwen/` 的导入会失败（ImportError），但 agent-ssas 核心能力不受影响。这是有意设计的：agent-ssas 是通用子系统，`backend_client/` 下可以有多个智能体的插桩，只有对应的智能体运行时安装时才激活。
 
@@ -1502,8 +1502,8 @@ jiuwenswarm 代码中通过 try/except 导入 `from agent_ssas.backend_client.op
 
 **3. AgentSSASSecurityRail 可以独立测试和验证**
 
-AgentSSASSecurityRail 的测试在 AgentSecurity/AgentSSAS 仓中进行：
-- **在 AgentSecurity/AgentSSAS 仓中独立测试**：在 `tests/agent_ssas/backend_client/openjiuwen/` 下进行。测试时安装 agent-core 包以导入真实的 `BaseSecurityRail` 基类（agent-core 仓零修改，基类原样可用）。AgentSSASSecurityRail 通过子类扩展实现，测试时直接测试子类的覆写方法和扩展上下文。
+AgentSSASSecurityRail 的测试在 agent-security/agent_ssas 仓中进行：
+- **在 agent-security/agent_ssas 仓中独立测试**：在 `tests/agent_ssas/backend_client/openjiuwen/` 下进行。测试时安装 agent-core 包以导入真实的 `BaseSecurityRail` 基类（agent-core 仓零修改，基类原样可用）。AgentSSASSecurityRail 通过子类扩展实现，测试时直接测试子类的覆写方法和扩展上下文。
 - **端到端测试**：在 `tests/system_tests/` 下进行，参考 agent-core 的 permission_interrupt 测试模式。
 
 结论：可以独立测试和验证。
@@ -1560,11 +1560,11 @@ jiuwenswarm/
 "agent-ssas>=0.1.0,<0.2"        # 新增
 ```
 
-开发阶段在 `[tool.uv.sources]` 中添加本地路径，指向 AgentSecurity/AgentSSAS 仓的源码（便于联调，发布前移除）：
+开发阶段在 `[tool.uv.sources]` 中添加本地路径，指向 agent-security/agent_ssas 仓的源码（便于联调，发布前移除）：
 
 ```toml
 [tool.uv.sources]
-agent-ssas = { path = "../AgentSecurity/AgentSSAS", editable = true }
+agent-ssas = { path = "../agent-security/agent_ssas", editable = true }
 ```
 
 **② `jiuwenswarm/server/runtime/agent_adapter/interface_deep.py`：新增 SSAS Rail 构建逻辑**

@@ -29,7 +29,7 @@ Starting via this entry point requires the `http` extra dependencies (fastapi, u
 ### Option 2: Example Script (Loopback Only)
 
 ```bash
-cd AgentSecurity/AgentSSAS
+cd agent-security/agent_ssas
 uv run --extra http python examples/http_server_demo/start_server.py
 ```
 

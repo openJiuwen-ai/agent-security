@@ -13,7 +13,7 @@ Related documentation:
 The loading order is:
 
 1. **Defaults**: the dataclass defaults of the `AgentSSASConfig` fields.
-2. **The `ssas` section of config.yaml**: `AgentSSASConfig.from_dict(data)` reads the `ssas` section and recognizes known fields only (unknown fields are ignored); `from_dict(None)` falls back to the defaults. `AgentSSASConfig.from_yaml(path)` reads the whole config.yaml and extracts the `ssas` section; a file without an `ssas` section is equivalent to the default configuration.
+2. **The `ssas` section of config.yaml**: `AgentSSASConfig.from_dict(data)` reads the `ssas` section and recognizes known fields only (unknown fields are ignored); `from_dict(None)` uses the field defaults but still applies the `SSAS_` environment variable overrides. `AgentSSASConfig.from_yaml(path)` reads the whole config.yaml and extracts the `ssas` section; a file without an `ssas` section is equivalent to the default configuration and likewise still applies the `SSAS_` environment variable overrides.
 3. **`SSAS_`-prefixed environment variables**: applied on top of the above, with the highest precedence.
 
 That is: `SSAS_` environment variables > the config.yaml `ssas` section > field defaults.
@@ -44,7 +44,7 @@ Environment variable parsing rules:
 | `cleanup_interval_hours` | int | `24` | `SSAS_CLEANUP_INTERVAL_HOURS` | Interval in hours for the periodic TTL background cleanup (`<= 0` disables the periodic cleanup) |
 | `rail_priority` | int | `80` | `SSAS_RAIL_PRIORITY` | Rail execution priority (Reserved, not effective in current version) |
 | `enable_exception_hooks` | bool | `true` | `SSAS_ENABLE_EXCEPTION_HOOKS` | Exception hooks switch (Reserved, not effective in current version) |
-| `risk_report_threshold` | str | `low` | `SSAS_RISK_REPORT_THRESHOLD` | Risk reporting threshold (safe/low/medium/high/critical) |
+| `risk_report_threshold` | str | `low` | `SSAS_RISK_REPORT_THRESHOLD` | Risk reporting threshold (reserved field, not effective in the current version; does not affect what is reported) |
 | `auth_timeout` | float | `2.0` | `SSAS_AUTH_TIMEOUT` | Timeout in seconds for auth-mode subscribers |
 | `decision_policy` | str | `observe_only` | `SSAS_DECISION_POLICY` | Decision policy name |
 | `modules` | dict | `{}` | — | Per detection module configuration |
@@ -52,7 +52,7 @@ Environment variable parsing rules:
 Notes:
 
 - `mode` corresponds to the `AgentSSASMode` enum: `inprocess` (in-process library mode, zero network latency) and `http` (standalone HTTP service mode, shared by multiple agents).
-- `risk_report_threshold` takes one of the five risk levels (`safe` / `low` / `medium` / `high` / `critical`); risks below the threshold are not reported.
+- `risk_report_threshold` takes one of the five risk levels (`safe` / `low` / `medium` / `high` / `critical`). The field is currently only read and stored by settings and **does not filter what is actually reported**; it is a reserved field.
 - `auth_timeout`: when an auth-mode subscriber does not return within this time, the module default policy applies.
 - `modules` has no corresponding environment variable and can only be configured via config.yaml.
 - `storage_backend`, `rail_priority`, `enable_exception_hooks`, and `risk_report_threshold` are reserved fields, not effective in the current version. `storage_backend` currently supports `sqlite` only; when any other value is passed, `from_dict` logs a warning (without raising) and the actual backend remains SQLiteStore.
@@ -90,10 +90,10 @@ ssas:
   report_file_ttl_days: 90    # Retention in days for threat report JSON files under reports/threat_log/
   cleanup_interval_hours: 24  # Interval in hours for the periodic TTL background cleanup (<= 0 disables)
 
-  # Rail configuration
-  rail_priority: 80
-  enable_exception_hooks: true
-  risk_report_threshold: low
+  # Rail configuration (the following three are reserved and not effective in the current version)
+  rail_priority: 80              # Reserved; not effective in the current version
+  enable_exception_hooks: true   # Reserved; not effective in the current version
+  risk_report_threshold: low     # Reserved; not effective in the current version and does not affect what is reported
 
   # Decision policy: observe_only (default) / active_protection / custom policy name
   decision_policy: observe_only
@@ -177,6 +177,7 @@ SSAS_HTTP_PORT=8443
 SSAS_HOME=/path/to/home
 SSAS_EVENT_TTL_DAYS=30
 SSAS_ALERT_TTL_DAYS=90
+SSAS_REPORT_FILE_TTL_DAYS=90
 SSAS_CLEANUP_INTERVAL_HOURS=24
 SSAS_RAIL_PRIORITY=80
 SSAS_ENABLE_EXCEPTION_HOOKS=true

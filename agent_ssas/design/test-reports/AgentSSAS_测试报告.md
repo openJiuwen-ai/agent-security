@@ -3,7 +3,7 @@
 > **生成时间**: 2026-08-21
 > **测试对象**: AgentSSAS 系统 (agent-ssas v0.1.0) — 包含 AgentSSASCore 子系统 + AgentSSASClient 子系统
 > **测试环境**: Windows, Python 3.13.14 (jiuwenswarm venv), pytest-9.0.3, pytest-asyncio-1.3.0
-> **工作目录**: `d:\TraeWorkspace\JiuwenSSAS\AgentSecurity\AgentSSAS`
+> **工作目录**: `d:\TraeWorkspace\JiuwenSSAS\agent-security\agent_ssas`
 > **Python 解释器**: `d:\TraeWorkspace\JiuwenSSAS\jiuwenswarm\.venv\Scripts\python.exe`
 
 ---
@@ -109,7 +109,7 @@ d:\TraeWorkspace\JiuwenSSAS\jiuwenswarm\.venv\Scripts\python.exe -c "import agen
 # 1. 运行全部 pytest 测试（207 个用例，含阶段一+阶段二+阶段三全部代码）
 #    注意：此命令只运行 pytest 测试用例，不包含下方的"真实环境验证脚本"
 # ============================================================
-cd d:\TraeWorkspace\JiuwenSSAS\AgentSecurity\AgentSSAS
+cd d:\TraeWorkspace\JiuwenSSAS\agent-security\agent_ssas
 d:\TraeWorkspace\JiuwenSSAS\jiuwenswarm\.venv\Scripts\python.exe -m pytest tests/ -v --tb=short --junitxml=test_results_all.xml
 # 预期结果：207 passed, 2 warnings
 # XML 结果文件：test_results_all.xml（全量测试结果，CI 系统可解析）
@@ -144,7 +144,7 @@ d:\TraeWorkspace\JiuwenSSAS\jiuwenswarm\.venv\Scripts\python.exe -m pytest tests
 # ============================================================
 # 3. 真实环境验证（使用独立验证脚本 tests/verify_phase3.py）
 # ============================================================
-cd d:\TraeWorkspace\JiuwenSSAS\AgentSecurity\AgentSSAS
+cd d:\TraeWorkspace\JiuwenSSAS\agent-security\agent_ssas
 
 # 3a. 进程内模式验证：Rail 注册 + 事件上报 + 日志生成
 d:\TraeWorkspace\JiuwenSSAS\jiuwenswarm\.venv\Scripts\python.exe -m tests.verify_phase3 inprocess
@@ -1126,7 +1126,7 @@ INFO:     Uvicorn running on http://0.0.0.0:8443 (Press CTRL+C to quit)
 服务端启动后，需要另开一个终端执行客户端验证脚本，向服务端发送事件并验证响应：
 
 ```powershell
-cd d:\TraeWorkspace\JiuwenSSAS\AgentSecurity\AgentSSAS
+cd d:\TraeWorkspace\JiuwenSSAS\agent-security\agent_ssas
 d:\TraeWorkspace\JiuwenSSAS\jiuwenswarm\.venv\Scripts\python.exe -m tests.verify_phase3 http-client
 ```
 
@@ -1193,7 +1193,7 @@ $env:TEMP\agent_ssas\phase3\http_server\ssas\
 
 **验证命令**：
 ```powershell
-cd d:\TraeWorkspace\JiuwenSSAS\AgentSecurity\AgentSSAS
+cd d:\TraeWorkspace\JiuwenSSAS\agent-security\agent_ssas
 d:\TraeWorkspace\JiuwenSSAS\jiuwenswarm\.venv\Scripts\python.exe -m tests.verify_phase3 disabled
 ```
 
@@ -1333,7 +1333,7 @@ uv venv
 uv pip install -e .
 
 # 2. 安装 agent-ssas（editable 模式）
-uv pip install --python .venv\Scripts\python.exe -e ../../AgentSecurity/AgentSSAS
+uv pip install --python .venv\Scripts\python.exe -e ../../agent-security/agent_ssas
 
 # 3. 构建前端（源码安装必须，否则启动时报错 dist directory not found）
 cd jiuwenswarm\channels\web\frontend
@@ -1426,7 +1426,7 @@ jiuwenswarm-start
 ```
 
 如果出现 `[JiuWenSwarmDeepAdapter] AgentSSASSecurityRail disabled by config`，说明 `ssas.enabled` 未设为 `true` 或 `ssas` 段缺失，需在 config.yaml 中添加。
-如果出现 `[JiuWenSwarmDeepAdapter] AgentSSASSecurityRail not available (agent-ssas not installed)`，说明 agent-ssas 未安装或导入失败，需执行 `uv pip install --python .venv\Scripts\python.exe -e ../../AgentSecurity/AgentSSAS` 重新安装。
+如果出现 `[JiuWenSwarmDeepAdapter] AgentSSASSecurityRail not available (agent-ssas not installed)`，说明 agent-ssas 未安装或导入失败，需执行 `uv pip install --python .venv\Scripts\python.exe -e ../../agent-security/agent_ssas` 重新安装。
 如果出现 `[JiuWenSwarmDeepAdapter] AgentSSASSecurityRail not loaded: <具体错误>`，说明导入链中某符号找不到，需查看具体 ImportError 信息排查。
 
 ##### 4.6.2.3 触发 Agent 行为
@@ -1519,7 +1519,7 @@ conn.close()
 
 在终端 1 启动 SSAS 服务端：
 ```powershell
-cd d:\TraeWorkspace\JiuwenSSAS\AgentSecurity\AgentSSAS
+cd d:\TraeWorkspace\JiuwenSSAS\agent-security\agent_ssas
 d:\TraeWorkspace\JiuwenSSAS\jiuwenswarm_2\jiuwenswarm\.venv\Scripts\python.exe -m tests.verify_phase3 http-server
 ```
 预期输出：`Uvicorn running on http://0.0.0.0:8443`
@@ -1668,8 +1668,8 @@ jiuwenswarm-start
 | pytest 版本 | 9.0.3 |
 | pytest-asyncio 版本 | 1.3.0 |
 | openjiuwen 安装方式 | PyPI wheel（v0.1.16，`uv sync` 安装） |
-| agent-ssas 安装方式 | editable (`d:\TraeWorkspace\JiuwenSSAS\AgentSecurity\AgentSSAS\src`) |
-| 工作目录 | `d:\TraeWorkspace\JiuwenSSAS\AgentSecurity\AgentSSAS` |
+| agent-ssas 安装方式 | editable (`d:\TraeWorkspace\JiuwenSSAS\agent-security\agent_ssas\src`) |
+| 工作目录 | `d:\TraeWorkspace\JiuwenSSAS\agent-security\agent_ssas` |
 | jiuwenswarm 版本 | 0.2.5.beta1 |
 | agent-ssas 版本 | 0.1.0 |
 
@@ -1677,7 +1677,7 @@ jiuwenswarm-start
 
 **1. 运行全部测试**：
 ```powershell
-cd d:\TraeWorkspace\JiuwenSSAS\AgentSecurity\AgentSSAS
+cd d:\TraeWorkspace\JiuwenSSAS\agent-security\agent_ssas
 d:\TraeWorkspace\JiuwenSSAS\jiuwenswarm\.venv\Scripts\python.exe -m pytest tests/ --tb=short -q
 ```
 **预期结果**：`207 passed, 2 warnings in ~17s`
@@ -1685,7 +1685,7 @@ d:\TraeWorkspace\JiuwenSSAS\jiuwenswarm\.venv\Scripts\python.exe -m pytest tests
 **2. 查看测试结果文件**：
 ```powershell
 # JUnit XML 文件（CI 系统可解析）
-# 位于 d:\TraeWorkspace\JiuwenSSAS\AgentSecurity\AgentSSAS\test_results_all.xml（全量）或 test_results_phase3.xml（阶段三）
+# 位于 d:\TraeWorkspace\JiuwenSSAS\agent-security\agent_ssas\test_results_all.xml（全量）或 test_results_phase3.xml（阶段三）
 ```
 
 **3. 检查存储文件生成**：

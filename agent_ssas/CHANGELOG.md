@@ -4,7 +4,7 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本 (SemVer)](https://semver.org/lang/zh-CN/)。
 
-发布入口：<https://atomgit.com/yieux1/AgentSecurity/releases>
+发布入口：<https://gitcode.com/openJiuwen/agent-security/releases>
 
 ## [Unreleased]
 
@@ -30,5 +30,5 @@
 - **JiuwenSwarm 集成补丁**：`patches/` 提供本地依赖版（editable）与在线依赖版（git 依赖）两种接入方式，二选一应用
 - **测试**：200+ 单元 / 集成 / 端到端测试用例，覆盖进程内与 HTTP 双模式
 
-[Unreleased]: https://atomgit.com/yieux1/AgentSecurity/compare/v0.1.0...develop
-[0.1.0]: https://atomgit.com/yieux1/AgentSecurity/releases/tag/v0.1.0
+[Unreleased]: https://gitcode.com/openJiuwen/agent-security/compare/v0.1.0...develop
+[0.1.0]: https://gitcode.com/openJiuwen/agent-security/releases/tag/v0.1.0

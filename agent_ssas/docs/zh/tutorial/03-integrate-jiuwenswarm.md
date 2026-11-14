@@ -17,35 +17,35 @@ patch 修改 JiuwenSwarm 仓库的 3 个文件：
 ## 前提
 
 - Python >= 3.11，已安装 [uv](https://docs.astral.sh/uv/)
-- 已有 JiuwenSwarm 源码仓（develop 分支）与 AgentSecurity 仓
+- 已有 JiuwenSwarm 源码仓（develop 分支）与 agent-security 仓
 
 **本地依赖版**（`jiuwenswarm_ssas_local.patch`）要求两个仓库同级存放：
 
 ```text
 <workspace>/
 ├── jiuwenswarm/          # JiuwenSwarm 仓库(develop 分支)
-└── AgentSecurity/
-    └── AgentSSAS/        # 本仓库
+└── agent-security/
+    └── agent_ssas/       # 本仓库
 ```
 
-**在线依赖版**（`jiuwenswarm_ssas_online.patch`）从 atomgit 拉取 `agent-ssas`，不要求两仓同级存放，任意路径的 jiuwenswarm 仓库都可应用。
+**在线依赖版**（`jiuwenswarm_ssas_online.patch`）从 gitcode 拉取 `agent-ssas`，不要求两仓同级存放，任意路径的 jiuwenswarm 仓库都可应用。
 
 ## 第一步：应用 patch（二选一）
 
 在 jiuwenswarm 仓库根目录执行：
 
 ```bash
-# 方式 A: 本地依赖版 —— editable 引用本地 AgentSSAS 源码,改源码立即生效,适合开发调试
-git apply ../AgentSecurity/AgentSSAS/patches/jiuwenswarm_ssas_local.patch
+# 方式 A: 本地依赖版 —— editable 引用本地 agent-ssas 源码,改源码立即生效,适合开发调试
+git apply ../agent-security/agent_ssas/patches/jiuwenswarm_ssas_local.patch
 
-# 方式 B: 在线依赖版 —— 从 atomgit 拉取 agent-ssas,适合正式使用
-git apply ../AgentSecurity/AgentSSAS/patches/jiuwenswarm_ssas_online.patch
+# 方式 B: 在线依赖版 —— 从 gitcode 拉取 agent-ssas,适合正式使用
+git apply ../agent-security/agent_ssas/patches/jiuwenswarm_ssas_online.patch
 ```
 
 两个 patch 对 3 个文件的修改内容完全一致，区别只在 `pyproject.toml` 中 `agent-ssas` 依赖的来源：
 
-- 本地依赖版声明为 `agent-ssas = { path = "../AgentSecurity/AgentSSAS", editable = true }`
-- 在线依赖版声明为 `agent-ssas @ git+https://atomgit.com/yieux1/AgentSecurity.git@develop#subdirectory=AgentSSAS`
+- 本地依赖版声明为 `agent-ssas = { path = "../agent-security/agent_ssas", editable = true }`
+- 在线依赖版声明为 `agent-ssas @ git+https://gitcode.com/openJiuwen/agent-security.git@develop#subdirectory=agent_ssas`
 
 ## 第二步：安装依赖
 
@@ -134,7 +134,7 @@ git checkout -- jiuwenswarm/resources/config.yaml \
 | ---- | ---- |
 | 关闭 SSAS | `ssas.enabled: false` |
 | 切换 HTTP 模式 | `ssas.mode: http` + `ssas.http_endpoint` 指向独立服务（见[HTTP 服务模式](./04-http-mode.md)） |
-| 启用主动防护 | `ssas.decision_policy: active_protection`（critical 阻断、其余告警） |
+| 启用主动防护 | `ssas.decision_policy: active_protection`（critical 拒绝、high/medium/low 告警、safe 放行） |
 | 启用测试模块 | `ssas.modules.test_detection.enabled: true` |
 
 ## 相关资源

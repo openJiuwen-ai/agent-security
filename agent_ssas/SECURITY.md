@@ -18,8 +18,8 @@
 
 | 渠道 | 适用场景 | 入口 |
 | ---- | -------- | ---- |
-| 私密渠道（推荐） | 可被利用的漏洞、敏感安全问题 | 通过 AtomGit 平台**私信**联系仓库维护者（[yieux1](https://atomgit.com/yieux1)），标题注明 `[security] AgentSSAS` |
-| Issue | 非敏感的安全加固建议、依赖组件风险讨论 | <https://atomgit.com/yieux1/AgentSecurity/issues> |
+| 私密渠道（推荐） | 可被利用的漏洞、敏感安全问题 | 通过 GitCode 仓库 `openJiuwen/agent-security` 的维护者私信渠道联系；若平台不提供私信，先开一个不含细节的 Issue 请求私密沟通，标题注明 `[security] AgentSSAS` |
+| Issue | 非敏感的安全加固建议、依赖组件风险讨论 | <https://gitcode.com/openJiuwen/agent-security/issues> |
 
 ### 报告内容要求
 
@@ -46,7 +46,7 @@
 1. **确认与评估**：维护者确认报告，评定风险等级（safe / low / medium / high / critical）
 2. **修复开发**：在私有分支完成修复与回归测试
 3. **发布**：随下一个 PATCH / MINOR 版本发布安全修复；critical 级别漏洞可发布紧急版本
-4. **披露**：版本发布后，在 [CHANGELOG.md](CHANGELOG.md) 与 [发布页](https://atomgit.com/yieux1/AgentSecurity/releases) 公开致谢（报告者同意的前提下）
+4. **披露**：版本发布后，在 [CHANGELOG.md](CHANGELOG.md) 与 [发布页](https://gitcode.com/openJiuwen/agent-security/releases) 公开致谢（报告者同意的前提下）
 
 ## 披露政策
 
@@ -61,5 +61,5 @@ AgentSSAS 自身遵循 fail-open 设计：分析引擎故障时不会阻断被�
 
 ## 联系方式
 
-- 仓库：<https://atomgit.com/yieux1/AgentSecurity>
-- 问题反馈：<https://atomgit.com/yieux1/AgentSecurity/issues>
+- 仓库：<https://gitcode.com/openJiuwen/agent-security>
+- 问题反馈：<https://gitcode.com/openJiuwen/agent-security/issues>

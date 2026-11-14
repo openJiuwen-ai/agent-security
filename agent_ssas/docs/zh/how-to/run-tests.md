@@ -7,7 +7,7 @@
 进入 AgentSSAS 仓库根目录并安装依赖：
 
 ```bash
-cd AgentSecurity/AgentSSAS
+cd agent-security/agent_ssas
 uv pip install -e .
 ```
 
@@ -38,7 +38,7 @@ uv run --extra http python examples/http_server_demo/start_server.py
 ## 直接使用 pytest
 
 ```bash
-cd AgentSecurity/AgentSSAS
+cd agent-security/agent_ssas
 python -m pytest tests/ --tb=short -q
 ```
 
@@ -97,7 +97,7 @@ Windows 环境如未安装 make，可直接执行 `Makefile` 中的对应命令�
 `tests/agent_ssas/core/integration/test_verify_phase3.py` 提供独立可执行的端到端验证命令，覆盖进程内模式、HTTP 服务模式、配置关闭三种场景：
 
 ```bash
-cd AgentSecurity/AgentSSAS
+cd agent-security/agent_ssas
 python -m tests.verify_phase3 all
 ```
 
@@ -118,7 +118,7 @@ python -m tests.verify_phase3 all
 
 ## 常见问题
 
-- **收集到 0 个用例**：确认当前目录是 `AgentSecurity/AgentSSAS`（`pyproject.toml` 所在目录），pytest 依据其中的 `testpaths` 配置收集。
+- **收集到 0 个用例**：确认当前目录是 `agent-security/agent_ssas`（`pyproject.toml` 所在目录），pytest 依据其中的 `testpaths` 配置收集。
 - **HTTP 测试报 `ModuleNotFoundError: fastapi`（或 uvicorn/httpx）**：安装 `http` 扩展，见上文运行前提。
 - **异步测试失败或被跳过**：确认安装了 `pytest-asyncio`；`asyncio_mode = "auto"` 已在配置中启用。
 - **Windows 下文件锁定导致清理失败**：验证脚本内置了兜底策略（重命名被锁定的目录），若仍失败，关闭占用 SQLite 文件的进程后重试。

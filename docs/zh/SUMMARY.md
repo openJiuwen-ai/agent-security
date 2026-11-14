@@ -7,3 +7,5 @@
   - [JiuwenBox](2.开发指南/JiuwenBox.md)
   - [Agent Shield](2.开发指南/Agent%20Shield.md)
   - [Agent Shield组件与配置参考](2.开发指南/Agent%20Shield组件与配置参考.html)
+  - [Security Gateway](2.开发指南/Security%20Gateway.md)
+  - [Security Mask](2.开发指南/Security%20Mask.md)
