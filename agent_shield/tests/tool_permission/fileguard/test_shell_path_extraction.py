@@ -11,6 +11,16 @@ from agent_shield.tool_permission.fileguard import path_extract as paths
 from agent_shield.tool_permission.manager import new_permission_manager
 
 
+def _expected_extract_path(name: str, tmp_path):
+    """Match extractor resolution for Windows abs paths on POSIX hosts."""
+    if paths.is_windows_abs_text(name):
+        return paths.resolve_extract_path(paths.Path(name))
+    path = paths.Path(name)
+    if not path.is_absolute():
+        path = tmp_path / name
+    return paths.resolve_extract_path(path)
+
+
 @pytest.mark.parametrize("tool,args,expected", [
     ("powershell", {"shell_type": "bash"}, "powershell"),
     ("core.powershell", {}, "powershell"),
@@ -234,6 +244,188 @@ def test_powershell_file_guard_paths_distinguish_lists_from_literal_commas(tmp_p
         f"Remove-Item {operands}", tmp_path, shell_type="powershell",
     )
     assert set(accesses) == {(tmp_path / filename, "write") for filename in filenames}
+
+
+@pytest.mark.parametrize("command,expected", [
+    (
+        r"Move-Item C:\tmp\a.txt C:\outside\b.txt",
+        {(r"C:\tmp\a.txt", "read"), (r"C:\tmp\a.txt", "write"), (r"C:\outside\b.txt", "write")},
+    ),
+    (
+        r"Move-Item -Path C:\tmp\a.txt -Destination C:\outside\b.txt",
+        {(r"C:\tmp\a.txt", "read"), (r"C:\tmp\a.txt", "write"), (r"C:\outside\b.txt", "write")},
+    ),
+    (
+        # Named flags must bind by role, not appearance order (A3).
+        r"Copy-Item -Destination C:\outside\b.txt -Path C:\tmp\a.txt",
+        {(r"C:\tmp\a.txt", "read"), (r"C:\outside\b.txt", "write")},
+    ),
+    (
+        r"Copy-Item C:\tmp\a.txt C:\outside\b.txt",
+        {(r"C:\tmp\a.txt", "read"), (r"C:\outside\b.txt", "write")},
+    ),
+    (
+        r"Rename-Item C:\tmp\a.txt renamed.txt",
+        {(r"C:\tmp\a.txt", "read"), (r"C:\tmp\a.txt", "write"), ("renamed.txt", "write")},
+    ),
+])
+def test_powershell_transfer_cmdlets_extract_source_and_destination(tmp_path, command, expected):
+    accesses = paths.extract_shell_path_accesses(command, tmp_path, shell_type="powershell")
+    resolved = {(_expected_extract_path(name, tmp_path), action) for name, action in expected}
+    assert set(accesses) == resolved
+
+
+@pytest.mark.parametrize("command,expected", [
+    (
+        r"xcopy C:\tmp\a.txt C:\outside\ /Y",
+        {(r"C:\tmp\a.txt", "read"), (r"C:\outside", "write")},
+    ),
+    (
+        r"robocopy C:\tmp C:\outside /E",
+        {(r"C:\tmp", "read"), (r"C:\outside", "write")},
+    ),
+    (
+        r"robocopy C:\tmp C:\outside *.txt /E",
+        {(r"C:\tmp", "read"), (r"C:\outside", "write")},
+    ),
+    (
+        r"ren C:\tmp\a.txt b.txt",
+        {(r"C:\tmp\a.txt", "read"), (r"C:\tmp\a.txt", "write"), ("b.txt", "write")},
+    ),
+])
+def test_cmd_sync_and_rename_extract_outside_destinations(tmp_path, command, expected):
+    accesses = paths.extract_shell_path_accesses(command, tmp_path, shell_type="cmd")
+    resolved = {(_expected_extract_path(name, tmp_path), action) for name, action in expected}
+    assert set(accesses) == resolved
+
+
+@pytest.mark.parametrize("command,expected", [
+    ("unlink ./a.txt", {("a.txt", "write")}),
+    ("rsync -a ./src/ ./dst/", {("src", "read"), ("dst", "write")}),
+])
+def test_posix_extra_file_commands_are_path_aware(tmp_path, command, expected):
+    accesses = paths.extract_shell_path_accesses(command, tmp_path, shell_type="bash")
+    assert set(accesses) == {
+        (paths.resolve_extract_path(tmp_path / name), action) for name, action in expected
+    }
+
+
+@pytest.mark.parametrize("command,expected", [
+    (
+        r'[System.IO.File]::Delete("C:\tmp\a.txt")',
+        {(r"C:\tmp\a.txt", "write")},
+    ),
+    (
+        r"[System.IO.Directory]::Delete('C:\tmp\dir', $true)",
+        {(r"C:\tmp\dir", "write")},
+    ),
+    (
+        r'[IO.File]::WriteAllText("C:\outside\out.txt", "x")',
+        {(r"C:\outside\out.txt", "write")},
+    ),
+    (
+        # Copy marks source as read (A4).
+        r'[System.IO.File]::Copy("C:\tmp\a.txt", "C:\outside\b.txt")',
+        {(r"C:\tmp\a.txt", "read"), (r"C:\outside\b.txt", "write")},
+    ),
+    (
+        r'[System.IO.File]::Move("C:\tmp\a.txt", "C:\outside\b.txt")',
+        {(r"C:\tmp\a.txt", "write"), (r"C:\outside\b.txt", "write")},
+    ),
+    (
+        # Nested parentheses around a literal path still bind (A1).
+        r'[System.IO.File]::Delete(("C:\tmp\a.txt"))',
+        {(r"C:\tmp\a.txt", "write")},
+    ),
+    (
+        r'cipher /w:C:\outside\wipe',
+        {(r"C:\outside\wipe", "write")},
+    ),
+    (
+        r'fsutil file setZeroData offset=0 length=1024 C:\outside\a.txt',
+        {(r"C:\outside\a.txt", "write")},
+    ),
+    (
+        r'rimraf ./stale',
+        {("stale", "write")},
+    ),
+    (
+        r'npx rimraf ./stale',
+        {("stale", "write")},
+    ),
+    (
+        r'deltree C:\outside\old',
+        {(r"C:\outside\old", "write")},
+    ),
+])
+def test_dotnet_filesystem_literals_extract_as_writes(tmp_path, command, expected):
+    shell = "powershell" if "::" in command or command.startswith(("cipher", "fsutil")) else "bash"
+    if command.startswith(("cipher", "fsutil", "deltree")):
+        shell = "cmd"
+    if command.startswith(("rimraf", "npx")):
+        shell = "bash"
+    accesses = paths.extract_shell_path_accesses(command, tmp_path, shell_type=shell)
+    resolved = {(_expected_extract_path(name, tmp_path), action) for name, action in expected}
+    assert set(accesses) == resolved
+
+
+@pytest.mark.parametrize("command", [
+    "Clear-RecycleBin -Force",
+    "SendToRecycleBin -Path C:\\tmp\\a.txt",
+    "$item.InvokeVerb('delete')",
+    "$f.Delete()",
+    "[System.IO.File]::Delete($path)",
+    # Non-path second arg must not be treated as the wipe target (A1).
+    r'[System.IO.File]::WriteAllText($path, "data")',
+    "New-Object -ComObject Shell.Application; $s.Namespace('C:\\tmp').ParseName('a.txt').InvokeVerb('delete')",
+    "Add-Type -TypeDefinition 'DllImport(\"kernel32\") public static extern bool DeleteFile(string p);'",
+    "SHFileOperation($op)",
+    # Drive-root cipher wipe has no bindable file path (A6).
+    r"cipher /w:C:",
+    # Peer analyzers run per segment: a recoverable literal must not mask opaque Delete.
+    r'[System.IO.File]::Delete("C:\tmp\a.txt"); $f.Delete()',
+    r'Remove-Item C:\tmp\a.txt; $f.Delete()',
+])
+def test_opaque_windows_destruction_fail_closes(tmp_path, command):
+    shell = "cmd" if command.strip().lower().startswith("cipher") else "powershell"
+    with pytest.raises(paths.ShellPathUnresolvedShellError):
+        paths.extract_shell_path_accesses(command, tmp_path, shell_type=shell)
+
+
+def test_quoted_shfileoperation_text_is_not_opaque(tmp_path):
+    """String literals mentioning wipe APIs must not fail-closed (A5)."""
+    accesses = paths.extract_shell_path_accesses(
+        'echo SHA1 "SHFileOperation("', tmp_path, shell_type="bash",
+    )
+    assert accesses == []
+
+
+@pytest.mark.parametrize("command,expected", [
+    (
+        r"robocopy C:\a D:\b /MOVE",
+        {(r"C:\a", "read"), (r"C:\a", "write"), (r"D:\b", "write")},
+    ),
+    (
+        r"robocopy C:\a D:\b /MOV",
+        {(r"C:\a", "read"), (r"C:\a", "write"), (r"D:\b", "write")},
+    ),
+    (
+        r"robocopy C:\a D:\b /MIR",
+        {(r"C:\a", "read"), (r"D:\b", "write")},
+    ),
+    (
+        r"robocopy C:\a D:\b /PURGE",
+        {(r"C:\a", "read"), (r"D:\b", "write")},
+    ),
+    (
+        r"robocopy C:\a D:\b /E",
+        {(r"C:\a", "read"), (r"D:\b", "write")},
+    ),
+])
+def test_robocopy_destructive_switches_mark_source_when_moving(tmp_path, command, expected):
+    accesses = paths.extract_shell_path_accesses(command, tmp_path, shell_type="cmd")
+    resolved = {(_expected_extract_path(name, tmp_path), action) for name, action in expected}
+    assert set(accesses) == resolved
 
 
 @pytest.mark.skipif(paths.os.name != "nt", reason="MSYS drive paths require Windows")

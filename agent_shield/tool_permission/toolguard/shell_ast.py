@@ -412,11 +412,20 @@ def _extract_redirected(
     if not redirects:
         return body_leaves, body_edges
     last = body_leaves[-1]
+    if last.source_span is None:
+        return body_leaves, body_edges
+    # Absorb trailing redirects into the last leaf only. An outer
+    # ``list 2>&1`` must become ``ls B 2>&1``, not rewrite earlier leaves.
+    start = last.source_span[0]
+    end = int(node.end_byte)
+    if end <= start:
+        return body_leaves, body_edges
+    merged = source[start:end].decode("utf-8", errors="replace").strip()
     body_leaves[-1] = ShellSubcommand(
-        text=last.text,
+        text=merged or last.text,
         argv=last.argv,
         redirects=last.redirects + redirects,
-        source_span=last.source_span,
+        source_span=(start, end),
         parent_operators=last.parent_operators,
     )
     return body_leaves, body_edges
@@ -519,16 +528,22 @@ def _node_text(node: Any, source: bytes) -> str:
     return source[start:end].decode("utf-8", errors="replace")
 
 
+_GRANT_NONLITERAL_RE = re.compile(r"`|\$\(|\$\{|<\(|>\(")
+
+
 def split_shell_for_grants(command: str) -> tuple[str, ...]:
     """Return literal reusable children only when the AST covers the whole input.
 
     Used by runtime grants / DLL-guard reuse: only emit children when every
     leaf is a contiguous literal span joined by ``&&`` / ``||`` / ``;`` / ``|``.
     Launcher unwrap is refused so interpreter semantics are not lost.
+    Command / process substitution and ``${...}`` are never grant-splittable.
     """
     text = (command or "").strip()
     # Unwrapping a launcher would lose its interpreter and execution semantics.
     if not text or canonicalize_shell_command_for_permission(text) != text:
+        return ()
+    if _GRANT_NONLITERAL_RE.search(text):
         return ()
     parsed = parse_shell_for_permission(text)
     if (

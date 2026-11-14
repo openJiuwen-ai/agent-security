@@ -14,7 +14,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-import shlex
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -26,10 +25,6 @@ from .path_extract import (
     ShellPathAnalysisLimitError,
     ShellPathUnresolvedCwdError,
     ShellPathUnresolvedShellError,
-)
-from .path_policy import (
-    _PATH_TOOLS,
-    _iter_path_strings,
 )
 from .path_policy import (
     strictest as tiered_strictest,
@@ -48,12 +43,6 @@ FileGuardAction = Literal["read", "write", "exec"]
 
 _WRITE_PATH_TOOLS = frozenset({
     "write_file", "edit_file", "write_text_file", "write", "search_replace",
-})
-
-_PATH_AWARE_COMMANDS = frozenset({
-    "cd", "rm", "cp", "mv", "mkdir", "touch", "chmod", "chown", "cat",
-    "ls", "dir", "type", "del", "rd", "copy", "move", "md",
-    "head", "tail", "more", "less", "vim", "nano", "gedit", "notepad",
 })
 
 _LEVEL_ORDER = {
@@ -548,45 +537,7 @@ def _normalize_native(
     )
 
 
-# ---------- Legacy 路径抽取（develop；禁止与 Native L1 混用） ----------
-
-
-def _looks_like_path(token: str) -> bool:
-    if token.startswith(("\\\\", "./", "../")):
-        return True
-    if re.match(r"^[A-Za-z]:[\\/]", token):
-        return True
-    return "\\" in token or "/" in token
-
-
-def _extract_paths_from_command(command: str, workdir: str | Path) -> list[Path]:
-    if not command or not isinstance(command, str):
-        return []
-    try:
-        tokens = shlex.split(command.strip(), posix=False)
-    except ValueError:
-        tokens = command.strip().split()
-    if not tokens:
-        return []
-    cmd = tokens[0].lower()
-    if cmd not in _PATH_AWARE_COMMANDS:
-        return []
-    base = Path(workdir).resolve()
-    paths: list[Path] = []
-    for tok in tokens[1:]:
-        tok = tok.strip().strip('"').strip("'")
-        if not tok or tok.startswith("-"):
-            continue
-        if not _looks_like_path(tok):
-            continue
-        p = Path(tok)
-        if not p.is_absolute():
-            p = base / tok
-        try:
-            paths.append(p.resolve())
-        except (OSError, RuntimeError):
-            continue
-    return paths
+# ---------- Legacy 路径抽取（共用 path_extract；调用处只取路径、丢掉轴） ----------
 
 
 def extract_paths_legacy(
@@ -595,46 +546,14 @@ def extract_paths_legacy(
     workspace: Path,
     permission_config: Mapping[str, Any] | None = None,
 ) -> list[Path]:
-    """develop 抽取：仅路径字符串，无 R/W/X（供 Legacy 投影锁定现网行为）。"""
+    """Legacy path list: shared ``path_extract`` core, paths only (no R/W/X)."""
+    from .path_extract import extract_accesses_native
+
     paths: list[Path] = []
-    if tool_name in {"send_file_to_user", "save_media_to_gallery", "save_file_to_file_manager"}:
-        from .path_extract import extract_accesses_native
-
-        return [p for p, _action, _source in extract_accesses_native(tool_name, tool_args, workspace)]
-    if is_shell_tool(tool_name, shell_tools_from_config(permission_config)):
-        from .path_extract import (
-            extract_accesses_native,
-            shell_type_for_file_access,
-        )
-
-        workdir = tool_args.get("workdir", "")
-        try:
-            workdir_resolved = (workspace / str(workdir)).resolve()
-        except (OSError, RuntimeError):
-            workdir_resolved = workspace
-        cmd = str(tool_args.get("command", "") or tool_args.get("cmd", ""))
-        paths = _extract_paths_from_command(cmd, workdir_resolved)
-        if shell_type_for_file_access(tool_name, tool_args) in {"cmd", "powershell"}:
-            accesses = extract_accesses_native(
-                tool_name, tool_args, workspace, permission_config,
-            )
-            for path, _action, _source in accesses:
-                if path not in paths:
-                    paths.append(path)
-    elif tool_name in _PATH_TOOLS:
-        for s in _iter_path_strings(tool_name, tool_args):
-            raw = s.strip().strip('"').strip("'")
-            if not raw:
-                continue
-            try:
-                p = Path(raw)
-                if not p.is_absolute():
-                    p = (workspace / p).resolve()
-                else:
-                    p = p.resolve()
-                paths.append(p)
-            except (OSError, RuntimeError):
-                continue
+    for path, _action, _source in extract_accesses_native(
+        tool_name, tool_args, workspace, permission_config,
+    ):
+        paths.append(path)
     return paths
 
 
@@ -719,28 +638,27 @@ class FileGuardChecker:
         tool_args: Mapping[str, Any],
         workspace: Path,
     ) -> list[tuple[Path, FileGuardAction]]:
+        """Pick one extractor entry; never merge parallel shell implementations."""
+        args = dict(tool_args)
         if self._effective.read_deny_only:
+            from . import listed_commands as extract
+
             if self._effective.mode == "native":
-                from .listed_commands import extract_accesses_native as extract_native
-
-                raw = extract_native(tool_name, dict(tool_args), workspace)
+                raw = extract.extract_accesses_native(tool_name, args, workspace)
                 return [(path, action) for path, action, _source in raw]
-            from .listed_commands import extract_paths_legacy as extract_legacy
-
-            paths = extract_legacy(tool_name, dict(tool_args), workspace)
-            action = _tool_default_action(tool_name, self._permission_config)
-            return [(path, action) for path in paths]
-        if self._effective.mode == "native":
+            paths = extract.extract_paths_legacy(tool_name, args, workspace)
+        elif self._effective.mode == "native":
             from .path_extract import extract_accesses_native
 
             raw = extract_accesses_native(
-                tool_name, dict(tool_args), workspace, self._permission_config,
+                tool_name, args, workspace, self._permission_config,
                 agent_cwd=self._agent_cwd,
             )
             return [(path, action) for path, action, _source in raw]
-        paths = extract_paths_legacy(
-            tool_name, dict(tool_args), workspace, self._permission_config,
-        )
+        else:
+            paths = extract_paths_legacy(
+                tool_name, args, workspace, self._permission_config,
+            )
         action = _tool_default_action(tool_name, self._permission_config)
         return [(path, action) for path in paths]
 

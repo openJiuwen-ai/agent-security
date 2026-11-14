@@ -21,6 +21,20 @@ from ..delguard.del_count import split_shell_operands
 from ..toolguard.command_canonicalize import (
     canonicalize_shell_command_for_permission,
 )
+from .command_sets import (
+    DELETE_CMDS as _DELETE_CMDS,
+    MOVE_CMDS as _MOVE_CMDS,
+    NT_CMD_SWITCH_COMMANDS as _NT_CMD_SWITCH_COMMANDS,
+    PATH_AWARE_COMMANDS as _PATH_AWARE_COMMANDS,
+    PS_DEST_FLAGS as _PS_DEST_FLAGS,
+    PS_NAMED_PATH_CMDS as _PS_NAMED_PATH_CMDS,
+    PS_PATH_FLAGS as _PS_PATH_FLAGS,
+    PS_SOURCE_FLAGS as _PS_SOURCE_FLAGS,
+    READ_CMDS as _READ_CMDS,
+    SYNC_CMDS as _SYNC_CMDS,
+    TRANSFER_CMDS as _TRANSFER_CMDS,
+    WRITE_CMDS as _WRITE_CMDS,
+)
 from .file_tool_specs import (
     FileToolSpec,
     lookup_file_tool_specs,
@@ -44,15 +58,6 @@ _MAX_CWD_CANDIDATES = 128
 _MAX_EXTRACTION_STEPS = 1024
 _MAX_INLINE_DEPTH = 4
 
-_PATH_AWARE_COMMANDS = frozenset({
-    "cd", "rm", "cp", "mv", "mkdir", "touch", "chmod", "chown", "cat",
-    "ls", "dir", "type", "del", "erase", "rd", "rmdir", "copy", "move", "md",
-    "head", "tail", "more", "less", "vim", "nano", "gedit", "notepad",
-    "get-content", "gc",
-    "set-content", "add-content", "out-file", "tee", "tee-object", "sc",
-    "remove-item", "ri", "new-item", "ni",
-})
-
 _INTERPRETER_BASENAMES = frozenset({
     "python", "python3", "pythonw", "py",
     "node", "nodejs", "bash", "sh", "dash", "zsh", "fish",
@@ -64,40 +69,31 @@ _WRITE_PATH_TOOLS = frozenset({
 })
 
 _NT_CMD_SWITCH_BODY = re.compile(r"^[A-Za-z]{1,2}(?::[^\s/\\]+)?$")
-_NT_CMD_SWITCH_COMMANDS = frozenset({
-    "cd", "dir", "del", "erase", "copy", "move", "rd", "rmdir", "md",
-    "type", "ren", "rename", "xcopy", "attrib", "cmd", "notepad",
-})
-
-_READ_CMDS = frozenset({
-    "cat", "ls", "dir", "type", "head", "tail", "more", "less",
-    "get-content", "gc",
-})
-_WRITE_CMDS = frozenset({
-    "mkdir", "touch", "chmod", "chown", "md",
-    "set-content", "add-content", "out-file", "tee", "tee-object", "sc",
-    "new-item", "ni",
-})
-# Keep deletions on the existing SDK write axis.
-_DELETE_CMDS = frozenset({
-    "rm", "del", "erase", "rd", "rmdir", "remove-item", "ri",
-})
-_PS_PATH_FLAGS = frozenset({"-path", "-literalpath", "-filepath"})
 _FD_ALIAS_RE = re.compile(r"^&\d+$")
 _UNEXPANDED_VAR_RE = re.compile(r"(?i)\$(\w+|\{[^}]+\}|env:\w+)")
-_TRANSFER_CMDS = frozenset({"cp", "copy", "mv", "move"})
 _WIN_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 
 
-def _is_windows_abs_text(text: str) -> bool:
+def is_windows_abs_text(text: str) -> bool:
+    """True for Windows drive-absolute path text such as ``C:\\tmp`` or ``D:/a``."""
     return bool(_WIN_ABS_RE.match(str(text).strip().strip('"').strip("'")))
 
 
-def _resolve_extract_path(path: Path) -> Path:
+def resolve_extract_path(path: Path) -> Path:
     """Resolve local paths; keep Windows drive paths intact on POSIX."""
-    if os.name != "nt" and _is_windows_abs_text(str(path)):
-        return path
+    if os.name != "nt" and is_windows_abs_text(str(path)):
+        # PosixPath keeps a trailing ``\\``; normalize so ``C:\\outside\\``
+        # matches ``C:\\outside`` the same way WinPath.resolve() would.
+        text = str(path).strip().strip('"').strip("'")
+        while len(text) > 3 and text.endswith(("\\", "/")):
+            text = text[:-1]
+        return Path(text)
     return path.resolve()
+
+
+# Compat aliases for in-package callers that still use the private names.
+_is_windows_abs_text = is_windows_abs_text
+_resolve_extract_path = resolve_extract_path
 
 
 def _nt_cmd_exe_switch_token(stripped: str, *, cmd0: str = "") -> bool:
@@ -163,6 +159,24 @@ def _collect_ps_path_tokens(tokens: list[str]) -> list[str]:
             first_positional = False
         idx += 1
     return out
+
+
+def _collect_ps_named_path_roles(tokens: list[str]) -> dict[str, list[str]]:
+    """Map PowerShell path flags to source/dest roles (order-independent)."""
+    roles: dict[str, list[str]] = {"source": [], "dest": []}
+    idx = 1
+    while idx < len(tokens):
+        bare = tokens[idx].strip().strip('"').strip("'").lower().split(":")[0]
+        if bare in _PS_SOURCE_FLAGS and idx + 1 < len(tokens):
+            roles["source"].append(tokens[idx + 1].strip())
+            idx += 2
+            continue
+        if bare in _PS_DEST_FLAGS and idx + 1 < len(tokens):
+            roles["dest"].append(tokens[idx + 1].strip())
+            idx += 2
+            continue
+        idx += 1
+    return roles
 
 
 def _is_shell_flag_token(tok: str, *, cmd0: str = "", shell_type: str = "auto") -> bool:
@@ -615,11 +629,18 @@ def _path_aware_one_segment(
             path_tokens.append((path, idx))
 
     for idx, tok in enumerate(tokens[1:]):
-        if cmd0 in {"dir", "ls"} and any(ch in tok for ch in "*?") and not any(ch in tok for ch in "/\\"):
+        if cmd0 in {"dir", "ls", "get-childitem", "gci"} and any(
+            ch in tok for ch in "*?"
+        ) and not any(ch in tok for ch in "/\\"):
             continue  # A bare listing glob reads cwd, not a fictitious literal file.
         bare_read_operand = shell_type in {"cmd", "powershell"} and cmd0 in _READ_CMDS
-        # tee / Tee-Object 的目标经常是裸文件名，不要求带斜杠。
-        loose_operand = bare_read_operand or cmd0 in {"cd", "tee", "tee-object"}
+        # tee / transfer / rename destinations are often bare filenames.
+        loose_operand = (
+            bare_read_operand
+            or cmd0 in {"cd", "tee", "tee-object"}
+            or cmd0 in _TRANSFER_CMDS
+            or cmd0 in _SYNC_CMDS
+        )
         pieces = [tok] if shell_type == "cmd" else split_shell_operands(
             tok, shell_type=shell_type, cmd0=cmd0,
         )
@@ -628,31 +649,79 @@ def _path_aware_one_segment(
                 continue
             _append_path_token(piece, idx, require_path_shape=not loose_operand)
 
-    if cmd0 in (
-        "get-content", "gc", "set-content", "add-content", "out-file",
-        "tee-object", "sc", "remove-item", "ri", "new-item", "ni",
-    ):
+    if cmd0 in _PS_NAMED_PATH_CMDS:
         for extra in _collect_ps_path_tokens(tokens):
             for piece in split_shell_operands(extra, shell_type=shell_type, cmd0=cmd0):
                 if _is_shell_flag_token(piece, cmd0=cmd0, shell_type=shell_type):
                     continue
                 _append_path_token(piece, len(path_tokens), require_path_shape=False)
 
+    # Named-flag re-collection can repeat operands; keep first sighting so
+    # transfer "last path is destination" stays stable.
+    deduped: list[tuple[Path, int]] = []
+    seen_paths: set[Path] = set()
+    for item in path_tokens:
+        if item[0] in seen_paths:
+            continue
+        seen_paths.add(item[0])
+        deduped.append(item)
+    path_tokens = deduped
+
     results: list[tuple[Path, FileAction]] = []
     new_cwd: Path | None = None
 
-    if cmd0 in _TRANSFER_CMDS and len(path_tokens) >= 2:
+    if cmd0 in _SYNC_CMDS and len(path_tokens) >= 2:
+        # robocopy/xcopy: source dest [file masks...]; only the first two matter.
+        from .windows_destructive import robocopy_flag_effects
+
+        results.append((path_tokens[0][0], "read"))
+        removes_source, _purges_destination = (
+            robocopy_flag_effects(tokens) if cmd0 == "robocopy" else (False, False)
+        )
+        if removes_source:
+            # /MOVE and /MOV delete each copied source after transfer.
+            results.append((path_tokens[0][0], "write"))
+        # /MIR and /PURGE also mutate the destination tree; dest stays write.
+        results.append((path_tokens[1][0], "write"))
+    elif cmd0 in _TRANSFER_CMDS and cmd0 in _PS_NAMED_PATH_CMDS:
+        roles = _collect_ps_named_path_roles(tokens)
+        if roles["source"] or roles["dest"]:
+            def _resolve_role_token(tok: str) -> Path | None:
+                for piece in split_shell_operands(tok, shell_type=shell_type, cmd0=cmd0):
+                    if _is_shell_flag_token(piece, cmd0=cmd0, shell_type=shell_type):
+                        continue
+                    return _resolve_shell_operand(piece, base, shell_type, bare=True)
+                return None
+
+            for tok in roles["source"]:
+                path = _resolve_role_token(tok)
+                if path is None:
+                    continue
+                results.append((path, "read"))
+                if cmd0 in _MOVE_CMDS:
+                    results.append((path, "write"))
+            for tok in roles["dest"]:
+                path = _resolve_role_token(tok)
+                if path is not None:
+                    results.append((path, "write"))
+        elif len(path_tokens) >= 2:
+            for p, _ in path_tokens[:-1]:
+                results.append((p, "read"))
+                if cmd0 in _MOVE_CMDS:
+                    results.append((p, "write"))
+            results.append((path_tokens[-1][0], "write"))
+    elif cmd0 in _TRANSFER_CMDS and len(path_tokens) >= 2:
         for p, _ in path_tokens[:-1]:
             results.append((p, "read"))
-            if cmd0 in {"mv", "move"}:
-                # Moving removes each source; policy checks delete on the write axis.
+            if cmd0 in _MOVE_CMDS:
+                # Moving/renaming removes each source; policy checks delete on write.
                 results.append((p, "write"))
         results.append((path_tokens[-1][0], "write"))
     elif cmd0 in _DELETE_CMDS or cmd0 in _WRITE_CMDS:
         for p, _ in path_tokens:
             results.append((p, "write"))
     elif cmd0 in _READ_CMDS:
-        if not path_tokens and cmd0 in ("dir", "ls") and base is not None:
+        if not path_tokens and cmd0 in ("dir", "ls", "get-childitem", "gci") and base is not None:
             try:
                 results.append((_resolve_extract_path(base), "read"))
             except (OSError, RuntimeError):
@@ -666,21 +735,52 @@ def _path_aware_one_segment(
     return results, new_cwd
 
 
+def _segment_peer_analyzers() -> tuple[Callable[[str, Path | None], list[tuple[Path, str]]], ...]:
+    """Non-cmd0 segment analyzers, peer to ``_path_aware_one_segment``.
+
+    Extend this tuple when adding forms that are not ``cmd0 + path operands``
+    (for example Windows .NET/COM destruction). Each analyzer receives one
+    shell segment and may raise ``ShellPathUnresolvedShellError`` to fail closed.
+    """
+    from .windows_destructive import analyze_windows_destructive_accesses
+
+    return (analyze_windows_destructive_accesses,)
+
+
+def _peer_segment_accesses(segment: str, cwd: Path | None) -> list[tuple[Path, FileAction]]:
+    """Run peer analyzers on raw segment text (no cmd0 tokenization required)."""
+    results: list[tuple[Path, FileAction]] = []
+    for analyzer in _segment_peer_analyzers():
+        for path, action in analyzer(segment, cwd):
+            if action not in {"read", "write", "exec"}:
+                action = "write"
+            results.append((path, action))
+    return results
+
+
 def _shell_segment_accesses(
     segment: str, cwd: Path | None, *, include_cd_reads: bool, shell_type: str, shell_extras: bool,
 ) -> tuple[list[tuple[Path, FileAction]], Path | None]:
-    """Use one entry cwd for file operands, interpreter scripts and redirects."""
-    part, new_cwd = _path_aware_one_segment(
-        segment, cwd, include_cd_reads=include_cd_reads, shell_type=shell_type,
-    )
-    tokens, redirects = _segment_tokens(segment, shell_type)
-    tokens = _execution_tokens(tokens, shell_type)
-    if shell_extras:
-        for tok, action in [(tok, "exec") for tok in _interpreter_operands(tokens)] + redirects:
-            path = _resolve_shell_operand(tok, cwd, shell_type, bare=True)
-            if path is not None:
-                part.append((path, action))
-    return part, new_cwd
+    """cmd0 whitelist and peer analyzers share one segment / entry cwd."""
+    # Peer analyzers see raw text so forms with ``()`` / ``::`` still work when
+    # tokenization would treat them as unsupported scopes.
+    peer = _peer_segment_accesses(segment, cwd)
+    try:
+        part, new_cwd = _path_aware_one_segment(
+            segment, cwd, include_cd_reads=include_cd_reads, shell_type=shell_type,
+        )
+        tokens, redirects = _segment_tokens(segment, shell_type)
+        tokens = _execution_tokens(tokens, shell_type)
+        if shell_extras:
+            for tok, action in [(tok, "exec") for tok in _interpreter_operands(tokens)] + redirects:
+                path = _resolve_shell_operand(tok, cwd, shell_type, bare=True)
+                if path is not None:
+                    part.append((path, action))
+    except ShellPathUnresolvedShellError:
+        if peer:
+            return list(dict.fromkeys(peer)), None
+        raise
+    return list(dict.fromkeys([*part, *peer])), new_cwd
 
 
 def _inline_shell_command(segment: str, tokens: list[str], shell_type: str) -> tuple[str | None, str]:
@@ -782,22 +882,34 @@ def _walk_shell_segments(
                 budget[0] -= 1
                 if budget[0] < 0:
                     _raise_analysis_limit("shell path analysis work limit")
-                tokens, _ = _segment_tokens(segment, profile)
-                tokens = _execution_tokens(tokens, profile)
+                # Tokenization may fail on ``()`` / ``::`` forms; still yield the
+                # raw segment so peer analyzers (non-cmd0) can run beside cmd0.
+                tokens: list[str] = []
+                try:
+                    tokens, _ = _segment_tokens(segment, profile)
+                    tokens = _execution_tokens(tokens, profile)
+                except ShellPathUnresolvedShellError:
+                    tokens = []
                 new_cwd = None
-                if _directory_command(tokens, profile):
+                if tokens and _directory_command(tokens, profile):
                     _, new_cwd = _cd_accesses(
                         tokens, cwd, include_cd_reads=False, shell_type=profile, resolve_path=resolve_path,
                     )
                 yield segment, cwd, profile
-                inline, child_shell = _inline_shell_command(segment, tokens, profile)
-                if inline is not None:
-                    if depth >= _MAX_INLINE_DEPTH:
-                        _raise_analysis_limit("inline shell depth limit")
-                    yield from _walk_shell_segments(
-                        inline, cwd, shell_type=child_shell, resolve_path=resolve_path, depth=depth + 1, budget=budget,
-                    )
-                    new_cwd = None
+                if tokens:
+                    inline, child_shell = _inline_shell_command(segment, tokens, profile)
+                    if inline is not None:
+                        if depth >= _MAX_INLINE_DEPTH:
+                            _raise_analysis_limit("inline shell depth limit")
+                        yield from _walk_shell_segments(
+                            inline,
+                            cwd,
+                            shell_type=child_shell,
+                            resolve_path=resolve_path,
+                            depth=depth + 1,
+                            budget=budget,
+                        )
+                        new_cwd = None
                 if new_cwd is not None:
                     next_cwds.add(new_cwd)
                 else:
