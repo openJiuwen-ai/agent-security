@@ -36,24 +36,18 @@ from security_gateway.vault.keys import (
 
 # The golden vector: the bytes as they appear in ``pkg/vault/keys.go``.
 #
-#    s3Shard = [shardSize]byte{
-#        0x56, 0x61, 0x75, 0x6c, 0x74, 0x53, 0x68, 0x61,
-#        ...
-#    }
-#    kekSalt = [crypto.SaltSize]byte{
-#        0x76, 0x61, 0x75, 0x6c, 0x74, 0x2d, 0x6b, 0x65,
-#        ...
-#    }
-GOLDEN_SHARD_BYTES = bytes((
-    0x56, 0x61, 0x75, 0x6C, 0x74, 0x53, 0x68, 0x61,
-    0x72, 0x64, 0x33, 0x4B, 0x65, 0x79, 0x4D, 0x61,
-    0x74, 0x65, 0x72, 0x69, 0x61, 0x6C, 0x32, 0x30,
-    0x32, 0x36, 0x2D, 0x53, 0x4D, 0x33, 0x2D, 0x46,
-))
-GOLDEN_SALT_BYTES = bytes((
-    0x76, 0x61, 0x75, 0x6C, 0x74, 0x2D, 0x6B, 0x65,
-    0x6B, 0x2D, 0x73, 0x61, 0x6C, 0x74, 0x2D, 0x76,
-))
+# s3Shard = [shardSize]byte{
+# 0x56, 0x61, 0x75, 0x6c, 0x74, 0x53, 0x68, 0x61,
+# ...
+# }
+# kekSalt = [crypto.SaltSize]byte{
+# 0x76, 0x61, 0x75, 0x6c, 0x74, 0x2d, 0x6b, 0x65,
+# ...
+# }
+GOLDEN_S3_SHARD = bytes.fromhex(
+    "5661756c745368617264334b65794d6174657269616c323032362d534d332d46"
+)
+GOLDEN_KEK_SALT = b"vault-kek-salt-v"
 
 # The Go source this package is a port of. It is not needed to run the
 # tests, but when it is there the constants are checked against it rather
@@ -78,12 +72,12 @@ def _go_literal(name: str) -> bytes:
 
 
 def test_the_s3_shard_is_the_golden_vector():
-    assert S3_SHARD == GOLDEN_SHARD_BYTES
+    assert S3_SHARD == GOLDEN_S3_SHARD
     assert len(S3_SHARD) == 32
 
 
 def test_the_kek_salt_is_the_golden_vector():
-    assert KEK_SALT == GOLDEN_SALT_BYTES
+    assert KEK_SALT == GOLDEN_KEK_SALT
     assert len(KEK_SALT) == 16
 
 

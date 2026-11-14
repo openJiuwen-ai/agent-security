@@ -131,13 +131,15 @@ def test_the_zeroes_become_the_defaults(a_config):
 
 def test_the_rotation_knobs_become_the_defaults(a_config):
     assert a_config.rotation.period == DEFAULT_ROTATION_PERIOD
-    assert a_config.rotation.max_phase_a_loops == \
-        DEFAULT_ROTATION_MAX_PHASE_A_LOOPS
+    assert a_config.rotation.max_phase_a_loops == DEFAULT_ROTATION_MAX_PHASE_A_LOOPS
     assert a_config.rotation.drain_timeout == DEFAULT_ROTATION_DRAIN_TIMEOUT
-    assert a_config.rotation.complete_drain_timeout == \
-        DEFAULT_ROTATION_COMPLETE_DRAIN_TIMEOUT
-    assert a_config.rotation.barrier_quorum_ratio == \
-        DEFAULT_ROTATION_BARRIER_QUORUM_RATIO
+    assert (
+        a_config.rotation.complete_drain_timeout
+        == DEFAULT_ROTATION_COMPLETE_DRAIN_TIMEOUT
+    )
+    assert (
+        a_config.rotation.barrier_quorum_ratio == DEFAULT_ROTATION_BARRIER_QUORUM_RATIO
+    )
 
 
 def test_the_cache_knobs_become_the_defaults(a_config):
@@ -157,17 +159,12 @@ def test_the_admin_knobs_become_the_defaults(a_config):
 
 def test_the_server_knobs_become_the_defaults(a_config):
     assert a_config.server.bind_address == DEFAULT_SERVER_BIND_ADDRESS
-    assert a_config.server.max_response_bytes == \
-        DEFAULT_SERVER_MAX_RESPONSE_BYTES
-    assert a_config.server.max_request_bytes == \
-        DEFAULT_SERVER_MAX_REQUEST_BYTES
-    assert a_config.server.shutdown_zero_budget == \
-        DEFAULT_SERVER_SHUTDOWN_ZERO_BUDGET
-    assert a_config.server.read_header_timeout == \
-        DEFAULT_SERVER_READ_HEADER_TIMEOUT
+    assert a_config.server.max_response_bytes == DEFAULT_SERVER_MAX_RESPONSE_BYTES
+    assert a_config.server.max_request_bytes == DEFAULT_SERVER_MAX_REQUEST_BYTES
+    assert a_config.server.shutdown_zero_budget == DEFAULT_SERVER_SHUTDOWN_ZERO_BUDGET
+    assert a_config.server.read_header_timeout == DEFAULT_SERVER_READ_HEADER_TIMEOUT
     assert a_config.server.shutdown_timeout == DEFAULT_SERVER_SHUTDOWN_TIMEOUT
-    assert a_config.server.idle_conn_timeout == \
-        DEFAULT_SERVER_IDLE_CONN_TIMEOUT
+    assert a_config.server.idle_conn_timeout == DEFAULT_SERVER_IDLE_CONN_TIMEOUT
 
 
 def test_the_ssrf_knobs_become_the_defaults(a_config):
@@ -178,8 +175,7 @@ def test_the_ssrf_knobs_become_the_defaults(a_config):
 def test_the_backup_and_recovery_knobs_become_the_defaults(a_config):
     assert a_config.backup.keep == 3
     assert a_config.backup.filename_template == "backup-{type}-{ts}.db"
-    assert a_config.backup.key_snapshot.filename_template == \
-        "key-snapshot-{ts}.bin"
+    assert a_config.backup.key_snapshot.filename_template == "key-snapshot-{ts}.bin"
     assert a_config.backup.key_snapshot.keep == 5
     assert a_config.recovery.max_wait == DEFAULT_RECOVERY_MAX_WAIT
 
@@ -188,8 +184,7 @@ def test_the_etcd_and_cluster_knobs_become_the_defaults(a_config):
     assert a_config.etcd.namespace == DEFAULT_ETCD_NAMESPACE
     assert a_config.etcd.operation_timeout == DEFAULT_ETCD_OPERATION_TIMEOUT
     assert a_config.etcd.dial_timeout == DEFAULT_ETCD_DIAL_TIMEOUT
-    assert a_config.etcd.watch_liveness_timeout == \
-        DEFAULT_ETCD_WATCH_LIVENESS_TIMEOUT
+    assert a_config.etcd.watch_liveness_timeout == DEFAULT_ETCD_WATCH_LIVENESS_TIMEOUT
     assert a_config.cluster.fetch_timeout == DEFAULT_CLUSTER_FETCH_TIMEOUT
 
 
@@ -212,9 +207,14 @@ def test_the_vault_rotation_period_is_not_replaced(tmp_path: Path):
     for a rotation one.
     """
     path = tmp_path / "config.yaml"
-    path.write_text(yaml.safe_dump({
-        "vault": {"rotation": {"period": "0s"}},
-    }), encoding="utf-8")
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "vault": {"rotation": {"period": "0s"}},
+            }
+        ),
+        encoding="utf-8",
+    )
 
     config = load(str(path))
 
@@ -224,9 +224,14 @@ def test_the_vault_rotation_period_is_not_replaced(tmp_path: Path):
 def test_a_negative_vault_rotation_period_is_still_refused(tmp_path: Path):
     """Replacing the non-positive values must not swallow the refusal."""
     path = tmp_path / "config.yaml"
-    path.write_text(yaml.safe_dump({
-        "vault": {"rotation": {"period": "-5m"}},
-    }), encoding="utf-8")
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "vault": {"rotation": {"period": "-5m"}},
+            }
+        ),
+        encoding="utf-8",
+    )
 
     from security_gateway.platform.config import ConfigError
 
@@ -238,9 +243,14 @@ def test_a_negative_vault_rotation_period_is_still_refused(tmp_path: Path):
 def test_a_negative_keystore_rotation_period_becomes_the_default(tmp_path: Path):
     """The Go replaces it, so this side replaces it too."""
     path = tmp_path / "config.yaml"
-    path.write_text(yaml.safe_dump({
-        "rotation": {"period": "-5m"},
-    }), encoding="utf-8")
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "rotation": {"period": "-5m"},
+            }
+        ),
+        encoding="utf-8",
+    )
 
     config = load(str(path))
 

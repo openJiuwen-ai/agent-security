@@ -15,8 +15,8 @@ runnable as a script.
 
 from __future__ import annotations
 
-import logging
 import os
+import logging
 import sys
 import time
 from pathlib import Path
@@ -30,15 +30,15 @@ ROLE_ENV = "CRED_ROUTER_VAULT_MULTIPROCESS_ROLE"
 #: The roles.
 ROLE_CLAIM = "claim"
 ROLE_WRITE = "write"
-
-LOGGER = logging.getLogger(__name__)
+ROLE_OPEN = "open"
 
 #: The marker files the parent and the children coordinate through.
 CLAIMED_FILE = "claimed"
 PROCEED_FILE = "proceed"
+GO_FILE = "go"
 
 
-def helper_schema():
+def test_schema():
     """The schema the Go tests use.
 
     One plaintext field and one encrypted one — the same shape as
@@ -59,7 +59,11 @@ def open_store(directory: str):
     """Open a store on a directory."""
     from security_gateway.vault.vault import Config, Vault
 
-    return Vault.open(Config(data_dir=directory), helper_schema())
+    return Vault.open(
+        Config(data_dir=directory, multi_process=True),
+        test_schema(),
+        _allow_duplicate=True,
+    )
 
 
 def multi_process_record(record_id: str, endpoint: str, secret: str):
@@ -127,8 +131,7 @@ def claim_pending(vault) -> int:
         (target, wrapped, int(time.time())),
     )
     if cur.rowcount != 1:
-        raise AssertionError(
-            f"the pending claim touched {cur.rowcount} rows, want 1")
+        raise AssertionError(f"the pending claim touched {cur.rowcount} rows, want 1")
     return target
 
 
@@ -153,7 +156,7 @@ def main(argv: list[str]) -> int:
     role = os.environ.get(ROLE_ENV, "")
     directory = os.environ.get(DIR_ENV, "")
     if not role or not directory:
-        LOGGER.error("usage: %s (needs %s and %s)", argv[0], ROLE_ENV, DIR_ENV)
+        logging.error("usage: %s (needs %s and %s)", argv[0], ROLE_ENV, DIR_ENV)
         return 2
 
     if role == ROLE_CLAIM:
@@ -178,12 +181,23 @@ def main(argv: list[str]) -> int:
         try:
             vault.put(
                 multi_process_record(
-                    "cross-process", "https://x.example.com", "value-x"))
+                    "cross-process", "https://x.example.com", "secret-x"
+                )
+            )
         finally:
             vault.close()
         return 0
 
-    LOGGER.error("unknown helper role %r", role)
+    if role == ROLE_OPEN:
+        # Open together with the other children on a brand-new directory.
+        # The initialization lock has to make exactly one of them mint the
+        # key; the rest load what it wrote.
+        wait_for_file(Path(directory) / GO_FILE)
+        vault = open_store(directory)
+        vault.close()
+        return 0
+
+    logging.error("unknown helper role %r", role)
     return 2
 
 

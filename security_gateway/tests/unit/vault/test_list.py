@@ -73,23 +73,23 @@ def test_the_vault_holds_whatever_shape_it_is_given(tmp_path):
             FieldDef(name="on", type=Type.BOOL),
         ],
     )
-    vault = Vault.open(Config(data_dir=str(tmp_path)), schema)
+    store = Vault.open(Config(data_dir=str(tmp_path)), schema)
     try:
-        vault.put(
+        store.put(
             Record(
-                id="thing/one",
+                "thing/one",
                 fields={
                     "label": Value.new_string("a-label"),
-                    "secret": Value.new_bytes(b"abc"),
+                    "secret": Value.new_bytes(b"sk-abc"),
                     "count": Value.new_int64(7),
                     "on": Value.new_bool(True),
                 },
             )
         )
 
-        entries = vault.list("thing/")
+        entries = store.list("thing/")
         assert len(entries) == 1
         assert "secret" not in entries[0].fields
         assert "label" in entries[0].fields
     finally:
-        vault.close()
+        store.close()

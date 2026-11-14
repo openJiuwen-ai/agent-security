@@ -37,7 +37,11 @@ from pathlib import Path
 
 import pytest
 from security_gateway.vault import rotate
-from security_gateway.vault.errors import NotFoundError, RotationInProgressError
+from security_gateway.vault.errors import (
+    NotFoundError,
+    RotationInProgressError,
+    StaleGenerationError,
+)
 from security_gateway.vault.store import count_stragglers, get_record
 
 #: The helper the cross-process test starts as a child.
@@ -136,7 +140,8 @@ def test_write_during_pending_uses_pending_generation(stores):
     assert row is not None, "the record B wrote is not in the database"
     assert row.dek_version == target, (
         f"the record is stamped with generation {row.dek_version}, "
-        f"want the pending generation {target}")
+        f"want the pending generation {target}"
+    )
 
     # B holds the key it wrote with ...
     require_secret(b, "rec-1", "secret-1")
@@ -164,10 +169,12 @@ def test_open_during_pending_does_not_steal_it(stores):
     km = helper.key_meta(a)
     assert km.pending_dek_version == target, (
         f"the pending generation is {km.pending_dek_version}, want the claimed "
-        f"generation {target}: opening the store took the rotation away")
+        f"generation {target}: opening the store took the rotation away"
+    )
     assert km.active_dek_version == active_before, (
         f"the active generation is {km.active_dek_version}, want the unchanged "
-        f"{active_before}: opening the store promoted the pending rotation")
+        f"{active_before}: opening the store promoted the pending rotation"
+    )
 
 
 def test_write_during_pending_does_not_strand_the_rotation(stores):
@@ -187,7 +194,8 @@ def test_write_during_pending_does_not_strand_the_rotation(stores):
     n = count_stragglers(a.db, target)
     assert n == 0, (
         f"{n} records are still under the generation before the pending one, "
-        "so the rotation can never commit")
+        "so the rotation can never commit"
+    )
 
 
 def test_read_after_another_process_rotated(stores):
@@ -217,11 +225,13 @@ def test_read_after_another_process_rotated(stores):
         try:
             rec = b.get(record_id)
         except Exception as exc:  # noqa: BLE001 - the message names the record
-            pytest.fail(f"B cannot read {record_id!r} "
-                        f"(generation {row.dek_version}): {exc}")
+            pytest.fail(
+                f"B cannot read {record_id!r} (generation {row.dek_version}): {exc}"
+            )
         got = rec.get_string("api_key")
         assert got == expected, (
-            f"the api_key field of {record_id!r} is {got!r}, want {expected!r}")
+            f"the api_key field of {record_id!r} is {got!r}, want {expected!r}"
+        )
 
 
 def test_the_status_reports_the_store_generation(stores):
@@ -243,8 +253,7 @@ def test_the_status_reports_the_store_generation(stores):
 
     # A record from before the rotation, so the rotation has something to
     # re-encrypt.
-    a.put(helper.multi_process_record(
-        "old", "https://old.example.com", "secret-old"))
+    a.put(helper.multi_process_record("old", "https://old.example.com", "secret-old"))
 
     rotate.rotate_dek(a)
 
@@ -252,21 +261,20 @@ def test_the_status_reports_the_store_generation(stores):
     want = before.dek_version + 1
     assert after.dek_version == want, (
         f"B reports generation {after.dek_version} after A rotated to {want}; "
-        "B's snapshot is behind and it reported its own instead of the store's")
+        "B's snapshot is behind and it reported its own instead of the store's"
+    )
     assert after.straggler_count == 0, (
-        f"B reports {after.straggler_count} stragglers after the rotation finished")
+        f"B reports {after.straggler_count} stragglers after the rotation finished"
+    )
 
 
 def test_rotate_behind_another_process(stores):
     """A process whose snapshot fell behind another process's rotation can rotate.
 
-    The rotation converges the records onto a new generation, and it opens each
-    record with the key for the generation that record was written with.  A
-    process that has not seen the other process's rotation does not hold that
-    generation, and the re-encryption used to give up on it — which lost the
-    rotation and left the store in the pending state until the lease expired
-    and somebody took it over.  The re-encryption has to reload the key
-    metadata and look again, the way the read path does.
+    The rotation opens each record with the key for its generation. A
+    process that has not seen the other process's rotation does not hold
+    that generation, so the re-encryption reloads the key metadata and
+    looks again, the way the read path does.
     """
     _directory, open_one = stores
     a = open_one()
@@ -282,10 +290,11 @@ def test_rotate_behind_another_process(stores):
     km = helper.key_meta(a)
     assert km.active_dek_version == 3, (
         f"the store is on generation {km.active_dek_version}, want 3: the two "
-        "rotations did not both land")
+        "rotations did not both land"
+    )
     assert km.pending_dek_version == 0, (
-        f"the store still has a pending rotation to generation "
-        f"{km.pending_dek_version}")
+        f"the store still has a pending rotation to generation {km.pending_dek_version}"
+    )
     n = count_stragglers(a.db, km.active_dek_version)
     assert n == 0, f"{n} records are still under an older generation"
     require_secret(a, "rec-1", "secret-1")
@@ -313,8 +322,11 @@ def test_the_converge_write_waits_out_a_busy_store(stores):
     # Another connection takes the write lock and holds it for longer than
     # the database's own busy timeout — so the first attempt times out.
     locker = sqlite3.connect(
-        str(Path(directory) / "vault.db"), timeout=5.0, isolation_level=None,
-        check_same_thread=False)
+        str(Path(directory) / "vault.db"),
+        timeout=5.0,
+        isolation_level=None,
+        check_same_thread=False,
+    )
     locker.execute("PRAGMA busy_timeout=5000")
     locker.execute("BEGIN IMMEDIATE")
 
@@ -334,7 +346,8 @@ def test_the_converge_write_waits_out_a_busy_store(stores):
     row = get_record(v.db, "rec-1")
     assert row is not None, "the record is not in the database"
     assert row.dek_version == target, (
-        f"the record is under generation {row.dek_version}, want {target}")
+        f"the record is under generation {row.dek_version}, want {target}"
+    )
     require_secret(v, "rec-1", "secret-1")
 
 
@@ -392,8 +405,11 @@ def test_rotation_under_concurrent_writes_leaves_no_straggler(stores):
         for i in range(max_records):
             record_id = f"rec-{i:03d}"
             try:
-                b.put(helper.multi_process_record(
-                    record_id, "https://b.example.com", "secret-" + record_id))
+                b.put(
+                    helper.multi_process_record(
+                        record_id, "https://b.example.com", "secret-" + record_id
+                    )
+                )
             except BaseException as exc:  # noqa: BLE001 - reported below
                 write_error.append(exc)
                 return
@@ -409,14 +425,19 @@ def test_rotation_under_concurrent_writes_leaves_no_straggler(stores):
     rotator.join(timeout=120)
     writer.join(timeout=120)
 
-    assert not write_error, f"B could not write while the rotation was running: {write_error[0]}"
+    assert not write_error, (
+        f"B could not write while the rotation was running: {write_error[0]}"
+    )
     assert written, "B wrote no records at all, so the rotation never met a writer"
 
     if rot_error:
         assert "did not converge" not in str(rot_error[0]), (
             f"the rotation did not converge while another process was writing: "
-            f"{rot_error[0]}")
-        pytest.fail(f"the rotation failed while another process was writing: {rot_error[0]}")
+            f"{rot_error[0]}"
+        )
+        pytest.fail(
+            f"the rotation failed while another process was writing: {rot_error[0]}"
+        )
 
     # The generation the rotation was aiming at: the active one once it has
     # committed, the pending one while it is still in flight.
@@ -427,7 +448,8 @@ def test_rotation_under_concurrent_writes_leaves_no_straggler(stores):
     n = count_stragglers(a.db, target)
     assert n == 0, (
         f"{n} records are still under the generation before {target}, so the "
-        "rotation left the store stranded")
+        "rotation left the store stranded"
+    )
 
     # Everything the other process wrote has to be readable by the process
     # that rotated.
@@ -467,12 +489,15 @@ def test_takeover_finishes_an_unfinished_rotation(stores, short_jitter):
     km = helper.key_meta(b)
     assert km.pending_dek_version == 0, (
         f"the pending generation is {km.pending_dek_version}, want 0: the "
-        "takeover did not commit")
+        "takeover did not commit"
+    )
     assert km.active_dek_version == target, (
         f"the active generation is {km.active_dek_version}, want the adopted "
-        f"generation {target}")
+        f"generation {target}"
+    )
     assert km.superseded_dek_version == target - 1, (
-        f"the superseded generation is {km.superseded_dek_version}, want {target - 1}")
+        f"the superseded generation is {km.superseded_dek_version}, want {target - 1}"
+    )
 
     # The record written under the pending generation is still readable, by
     # the process that took over and by the one whose rotation it was.
@@ -498,9 +523,11 @@ def test_takeover_declines_while_the_rotation_is_alive(stores):
 
     km = helper.key_meta(b)
     assert km.pending_dek_version == target, (
-        f"the pending generation is {km.pending_dek_version}, want the untouched {target}")
+        f"the pending generation is {km.pending_dek_version}, want the untouched {target}"
+    )
     assert km.active_dek_version == active_before, (
-        f"the active generation is {km.active_dek_version}, want the unchanged {active_before}")
+        f"the active generation is {km.active_dek_version}, want the unchanged {active_before}"
+    )
 
 
 def test_two_processes_take_over_the_same_pending_rotation(stores, short_jitter):
@@ -538,12 +565,16 @@ def test_two_processes_take_over_the_same_pending_rotation(stores, short_jitter)
     # happen is a rotation that was finished twice.
     for exc in errors:
         assert isinstance(exc, RotationInProgressError), (
-            f"the takeover failed with {exc}")
+            f"the takeover failed with {exc}"
+        )
 
     km = helper.key_meta(a)
-    assert km.pending_dek_version == 0, f"the pending generation is {km.pending_dek_version}, want 0"
+    assert km.pending_dek_version == 0, (
+        f"the pending generation is {km.pending_dek_version}, want 0"
+    )
     assert km.active_dek_version == target, (
-        f"the active generation is {km.active_dek_version}, want {target}")
+        f"the active generation is {km.active_dek_version}, want {target}"
+    )
 
     # The record is readable by everyone: one key under that generation,
     # whichever process won the race.
@@ -561,10 +592,12 @@ def test_takeover_on_a_clean_store_does_nothing(stores):
     a.takeover_pending()
     after = helper.key_meta(a)
     assert after.active_dek_version == before.active_dek_version, (
-        f"the active generation moved from {before.active_dek_version} to {after.active_dek_version}")
+        f"the active generation moved from {before.active_dek_version} to {after.active_dek_version}"
+    )
     assert after.pending_dek_version == before.pending_dek_version, (
         f"the pending generation moved from {before.pending_dek_version} "
-        f"to {after.pending_dek_version}")
+        f"to {after.pending_dek_version}"
+    )
 
 
 def test_claiming_a_rotation_against_a_moved_generation_fails(stores):
@@ -589,13 +622,16 @@ def test_claiming_a_rotation_against_a_moved_generation_fails(stores):
     wrapped = helper.mint_wrapped_dek(v)
     claimed = getattr(rotate, "_claim_rotation")(v, stale + 1, wrapped, stale)
     assert not claimed, (
-        f"the claim landed against the generation {stale}, but the store is on {moved}")
+        f"the claim landed against the generation {stale}, but the store is on {moved}"
+    )
 
     km = helper.key_meta(v)
     assert km.pending_dek_version == 0, (
-        f"the pending generation is {km.pending_dek_version}, want 0: the claim landed")
+        f"the pending generation is {km.pending_dek_version}, want 0: the claim landed"
+    )
     assert km.active_dek_version == moved, (
-        f"the active generation is {km.active_dek_version}, want the unchanged {moved}")
+        f"the active generation is {km.active_dek_version}, want the unchanged {moved}"
+    )
 
 
 # -- the rotation's failure taxonomy -----------------------------------------
@@ -635,9 +671,11 @@ def test_losing_the_claim_to_a_finished_rotation_starts_a_new_round(stores):
     km = helper.key_meta(a)
     assert km.active_dek_version == 3, (
         f"the store is on generation {km.active_dek_version}, want 3: the second "
-        "rotation did not start a new round")
+        "rotation did not start a new round"
+    )
     assert km.pending_dek_version == 0, (
-        f"the store still has a pending generation {km.pending_dek_version}")
+        f"the store still has a pending generation {km.pending_dek_version}"
+    )
 
 
 def test_the_rotation_reports_another_rotation_as_in_progress(stores):
@@ -673,31 +711,44 @@ def test_across_processes(stores):
     v = open_one()
 
     env = dict(os.environ)
-    env["PYTHONPATH"] = os.pathsep.join(
-        [str(_SRC), env.get("PYTHONPATH", "")]).strip(os.pathsep)
+    env["PYTHONPATH"] = os.pathsep.join([str(_SRC), env.get("PYTHONPATH", "")]).strip(
+        os.pathsep
+    )
     env[helper.ROLE_ENV] = helper.ROLE_CLAIM
     env[helper.DIR_ENV] = directory
 
     claim = subprocess.Popen(
-        [sys.executable, str(_HELPER_PATH)], env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        [sys.executable, str(_HELPER_PATH)],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     try:
         helper.wait_for_file(Path(directory) / helper.CLAIMED_FILE)
 
         env[helper.ROLE_ENV] = helper.ROLE_WRITE
         write = subprocess.run(
-            [sys.executable, str(_HELPER_PATH)], env=env,
-            capture_output=True, text=True, timeout=120)
+            [sys.executable, str(_HELPER_PATH)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
         if write.returncode != 0:
-            pytest.fail(f"the writing process failed: {write.returncode}\n"
-                        f"{write.stdout}\n{write.stderr}")
+            pytest.fail(
+                f"the writing process failed: {write.returncode}\n"
+                f"{write.stdout}\n{write.stderr}"
+            )
 
         # Let the claiming process finish.
         (Path(directory) / helper.PROCEED_FILE).write_text("1")
         claim.wait(timeout=120)
         if claim.returncode != 0:
-            pytest.fail(f"the claiming process failed: {claim.returncode}\n"
-                        f"{claim.stdout.read()}\n{claim.stderr.read()}")
+            pytest.fail(
+                f"the claiming process failed: {claim.returncode}\n"
+                f"{claim.stdout.read()}\n{claim.stderr.read()}"
+            )
     finally:
         if claim.poll() is None:
             claim.kill()
@@ -707,19 +758,142 @@ def test_across_processes(stores):
     # must still be able to commit: nothing may be left under the old
     # generation.
     km = helper.key_meta(v)
-    assert km.pending_dek_version != 0, "the pending generation is gone; the claim did not take"
+    assert km.pending_dek_version != 0, (
+        "the pending generation is gone; the claim did not take"
+    )
 
     row = get_record(v.db, "cross-process")
     assert row is not None, "the record the other process wrote is not in the database"
     assert row.dek_version == km.pending_dek_version, (
         f"the record is stamped with generation {row.dek_version}, want the "
-        f"pending generation {km.pending_dek_version}")
+        f"pending generation {km.pending_dek_version}"
+    )
 
     n = count_stragglers(v.db, km.pending_dek_version)
     assert n == 0, (
         f"{n} records are still under the generation before the pending one, "
-        "so the rotation can never commit")
+        "so the rotation can never commit"
+    )
 
     # And the record is readable here: the key for the pending generation is
     # in the store, and a process that has not seen the claim has to find it.
-    require_secret(v, "cross-process", "value-x")
+    require_secret(v, "cross-process", "secret-x")
+
+
+def test_several_processes_can_initialize_the_same_new_store(tmp_path):
+    """Three real processes open an empty directory at the same time.
+
+    Exactly one has to mint the key; the others must load that key rather
+    than create a second shard/metadata pair.
+    """
+    directory = str(tmp_path / "vault")
+    Path(directory).mkdir()
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join([str(_SRC), env.get("PYTHONPATH", "")]).strip(
+        os.pathsep
+    )
+    env[helper.ROLE_ENV] = helper.ROLE_OPEN
+    env[helper.DIR_ENV] = directory
+    children = [
+        subprocess.Popen(
+            [sys.executable, str(_HELPER_PATH)],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for _ in range(3)
+    ]
+    (Path(directory) / helper.GO_FILE).write_text("1")
+    for child in children:
+        stdout, stderr = child.communicate(timeout=120)
+        assert child.returncode == 0, f"{stdout}\n{stderr}"
+
+    vault = helper.open_store(directory)
+    try:
+        vault.put(
+            helper.multi_process_record(
+                "after-init", "https://x.example.com", "secret-x"
+            )
+        )
+        assert vault.get("after-init").get_string("api_key") == "secret-x"
+    finally:
+        vault.close()
+
+
+def test_every_process_can_trigger_a_rotation(stores):
+    """All three processes on the store can rotate, not just the first one.
+
+    The rotation lock is the fleet's, not the process's; a process that
+    only reads the store still has the authority handle and must be able
+    to start the next generation.
+    """
+    _directory, open_one = stores
+    a = open_one()
+    b = open_one()
+    c = open_one()
+
+    a.put(helper.multi_process_record("rec-1", "https://a.example.com", "secret-1"))
+
+    for process in (a, b, c):
+        rotate.rotate_dek(process)
+
+    km = helper.key_meta(a)
+    assert km.active_dek_version == 4, (
+        f"the store is on generation {km.active_dek_version}, want 4: three "
+        "processes did not each get a rotation"
+    )
+    assert km.pending_dek_version == 0
+    assert count_stragglers(a.db, km.active_dek_version) == 0
+    for process in (a, b, c):
+        require_secret(process, "rec-1", "secret-1")
+
+
+def test_a_stale_rotation_refreshes_from_the_fleet_and_tries_again(monkeypatch):
+    """A process behind the fleet adopts the current key and rotates.
+
+    The local row can lag the authority when another node rotated.  The
+    rotation asks the fleet for what it is missing and retries once; if
+    the key cannot be adopted, the stale error is still reported.
+    """
+
+    class Target:
+        rotate_mu = threading.Lock()
+
+        def __init__(self):
+            self.refreshed = 0
+
+        def refresh_from_fleet(self):
+            self.refreshed += 1
+            return True
+
+    calls = []
+
+    def rotate_once(vault, store, stop=None):
+        calls.append(1)
+        if len(calls) == 1:
+            raise StaleGenerationError("behind")
+
+    target = Target()
+    monkeypatch.setattr(rotate, "_rotate_locked", rotate_once)
+    rotate.rotate_dek(target)
+
+    assert len(calls) == 2, "the rotation did not retry after refreshing"
+    assert target.refreshed == 1
+
+    calls.clear()
+    target.refreshed = 0
+    monkeypatch.setattr(
+        rotate,
+        "_rotate_locked",
+        lambda vault, store, stop=None: (_ for _ in ()).throw(
+            StaleGenerationError("still behind")
+        ),
+    )
+
+    def refresh_from_fleet() -> bool:
+        return False
+
+    target.refresh_from_fleet = refresh_from_fleet
+    with pytest.raises(StaleGenerationError):
+        rotate.rotate_dek(target)
