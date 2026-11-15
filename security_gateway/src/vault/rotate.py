@@ -519,7 +519,8 @@ def converge_to(
                 src = vault.keys.by_version(row.dek_version)
             if src is None:
                 raise StaleGenerationError(
-                    f'record "{row.id}" is under generation {row.dek_version}, which this store does not hold (it holds '
+                    f'record "{row.id}" is under generation {row.dek_version}, '
+                    "which this store does not hold (it holds "
                     f"{format_held_versions(vault.keys.held_versions())})"
                 )
 
@@ -532,7 +533,9 @@ def converge_to(
                     )
                 if f.encrypted != definition.encrypted:
                     raise SchemaMismatchError(
-                        f'record "{row.id}" field "{f.name}" is marked encrypted={f.encrypted} but schema v{sch.version} says {definition.encrypted}'
+                        f'record "{row.id}" field "{f.name}" is marked '
+                        f"encrypted={f.encrypted} but schema v{sch.version} says "
+                        f"{definition.encrypted}"
                     )
                 if not definition.encrypted:
                     rewritten.append(f)
