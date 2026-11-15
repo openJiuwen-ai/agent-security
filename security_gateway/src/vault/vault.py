@@ -726,7 +726,8 @@ class Vault(AuthorityMixin):
             sch = self.schema_for_version(row.schema_version)
             if sch is None:
                 raise SchemaMismatchError(
-                    f'record "{record_id}" was written with schema v{row.schema_version}, which this store does not know'
+                    f'record "{record_id}" was written with schema '
+                    f'v{row.schema_version}, which this store does not know'
                 )
             try:
                 record = self._decode_record(row, sch)
@@ -1099,13 +1100,16 @@ class Vault(AuthorityMixin):
         """Raise a conflict when a guarded field no longer matches."""
         if expected is None:
             return
-        changed = sorted(
-            name
-            for name, wanted in expected.items()
-            if (present := current.fields.get(name)) is None
-            or present.type != wanted.type
-            or present.data != wanted.data
-        )
+        changed: list[str] = []
+        for name, wanted in expected.items():
+            present = current.fields.get(name)
+            if (
+                present is None
+                or present.type != wanted.type
+                or present.data != wanted.data
+            ):
+                changed.append(name)
+        changed.sort()
         if changed:
             raise ConflictError(
                 f"expected field(s) {', '.join(changed)} no longer match"
@@ -1551,12 +1555,13 @@ class Vault(AuthorityMixin):
         behind can now rotate without waiting for the background wrap
         loop to hand it the newer key.
         """
-        if (
+        missing_authority = (
             self.authority is None
             or self._etcd_cfg is None
             or self._self_identity is None
             or self._cluster_store is None
-        ):
+        )
+        if missing_authority:
             return False
         from .cluster import obtain_cluster_dek
         from .rotate_keys import read_pending_key
