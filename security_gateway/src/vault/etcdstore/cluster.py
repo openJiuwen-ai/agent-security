@@ -355,11 +355,11 @@ class Cluster:
         if target <= current:
             return False
         mint = mint_key(self._ns)
-        generation = generation_key(self._ns)
+        generation_record = generation_key(self._ns)
         result = self._txn(
             [
                 compare_value(mint, previous_owner.encode("utf-8")),
-                compare_value(generation, str(current).encode("utf-8")),
+                compare_value(generation_record, str(current).encode("utf-8")),
             ],
             [
                 PutOp(mint, node_id.encode("utf-8")),
@@ -441,19 +441,21 @@ class Cluster:
 
     # -- pending DEK -------------------------------------------------------
 
-    def publish_pending_deks(self, generation: int, wraps: dict[str, bytes]) -> None:
+    def publish_pending_deks(
+        self, generation_number: int, wraps: dict[str, bytes]
+    ) -> None:
         """Write the rotation's sealed key for every node in one transaction."""
         if not wraps:
             return
         ops = [
-            PutOp(pending_dek_key(self._ns, generation, node_id), blob)
+            PutOp(pending_dek_key(self._ns, generation_number, node_id), blob)
             for node_id, blob in sorted(wraps.items())
         ]
         self._txn([], ops)
 
-    def load_pending_dek(self, generation: int, node_id: str) -> bytes | None:
+    def load_pending_dek(self, generation_number: int, node_id: str) -> bytes | None:
         """Read the sealed key a rotation left for ``node_id``."""
-        found = self._get(pending_dek_key(self._ns, generation, node_id))
+        found = self._get(pending_dek_key(self._ns, generation_number, node_id))
         return None if found is None else bytes(found.value)
 
     # -- rotation markers --------------------------------------------------
@@ -824,15 +826,17 @@ def is_present(kv: KV, ns: str, node_id: str) -> bool:
 
 
 def publish_pending_deks(
-    kv: KV, ns: str, generation: int, wraps: dict[str, bytes]
+    kv: KV, ns: str, generation_number: int, wraps: dict[str, bytes]
 ) -> None:
     """Publish the rotation's sealed key for every node."""
-    Cluster(kv, ns, _NullLeases()).publish_pending_deks(generation, wraps)
+    Cluster(kv, ns, _NullLeases()).publish_pending_deks(generation_number, wraps)
 
 
-def load_pending_dek(kv: KV, ns: str, generation: int, node_id: str) -> bytes | None:
+def load_pending_dek(
+    kv: KV, ns: str, generation_number: int, node_id: str
+) -> bytes | None:
     """Read the sealed key a rotation left for one node."""
-    return Cluster(kv, ns, _NullLeases()).load_pending_dek(generation, node_id)
+    return Cluster(kv, ns, _NullLeases()).load_pending_dek(generation_number, node_id)
 
 
 def put_rotation_marker(kv: KV, ns: str, node_id: str, target_version: int) -> None:
