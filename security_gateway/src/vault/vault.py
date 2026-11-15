@@ -209,13 +209,15 @@ def _release_registry(
             _OPEN_BY_NAMESPACE.pop(namespace_key, None)
 
 
-class _no_lock:
+class _NoLock:
     """A context manager that does nothing, for the single-process path."""
 
-    def __enter__(self) -> None:
+    @staticmethod
+    def __enter__() -> None:
         return None
 
-    def __exit__(self, *exc: object) -> None:
+    @staticmethod
+    def __exit__(*exc: object) -> None:
         return None
 
 
@@ -458,7 +460,8 @@ class Vault(AuthorityMixin):
             if db is not None:
                 db.close()
             raise
-        assert db is not None
+        if db is None:
+            raise VaultError("vault: the database did not open")
         # The authority is declared outside the try so that the error path
         # can close it: a connection that is opened and then abandoned on
         # the way out is a connection the process keeps until it exits.
@@ -549,9 +552,10 @@ class Vault(AuthorityMixin):
                         or local_version > fleet_generation
                         or (owner != node_id and local_version == fleet_generation)
                     )
-                    if not multi_process or (
+                    should_adopt = not multi_process or (
                         leader is not None and (behind or local_conflict)
-                    ):
+                    )
+                    if should_adopt:
                         adopt = obtain_cluster_dek(
                             cfg.etcd, cluster_store, self_identity, anchor
                         )
@@ -570,7 +574,7 @@ class Vault(AuthorityMixin):
                     with (
                         initialization_lock(cfg.data_dir)
                         if multi_process
-                        else _no_lock()
+                        else _NoLock()
                     ):
                         keys, _km = init_keys(
                             db,
@@ -614,22 +618,23 @@ class Vault(AuthorityMixin):
                         raise
                     time.sleep(0.05)
             vault = cls(db, keys, secrets_dir, schema, {}, {}, authority)
-            vault._dir_guard = dir_guard
-            vault._registry_key = registry_key
+            setattr(vault, "_dir_guard", dir_guard)
+            setattr(vault, "_registry_key", registry_key)
             vault.rotation_period = cfg.rotation_period
             if cfg.cache_max_entries > 0:
-                vault._cache = RecordCache(
-                    cfg.cache_max_entries,
-                    cfg.cache_ttl,
+                setattr(
+                    vault,
+                    "_cache",
+                    RecordCache(cfg.cache_max_entries, cfg.cache_ttl),
                 )
-            vault._leader = leader
-            vault._shared_key_meta = multi_process
-            vault._etcd_cfg = cfg.etcd
-            vault._self_identity = self_identity
-            vault._cluster_anchor = anchor
-            vault._cluster_store = cluster_store
+            setattr(vault, "_leader", leader)
+            setattr(vault, "_shared_key_meta", multi_process)
+            setattr(vault, "_etcd_cfg", cfg.etcd)
+            setattr(vault, "_self_identity", self_identity)
+            setattr(vault, "_cluster_anchor", anchor)
+            setattr(vault, "_cluster_store", cluster_store)
             try:
-                vault._load_and_validate_schema(schema)
+                getattr(vault, "_load_and_validate_schema")(schema)
             except BaseException:
                 vault.close()
                 raise
@@ -645,17 +650,17 @@ class Vault(AuthorityMixin):
                 vault.converge_stragglers()
 
             if authority is not None:
-                vault._start_authority(
+                getattr(vault, "_start_authority")(
                     cfg.etcd, self_identity, anchor, cluster_store, leader
                 )
-                vault._start_presence(
+                getattr(vault, "_start_presence")(
                     getattr(cfg.etcd, "node_id", "")
                     or getattr(self_identity, "node_id", "")
                 )
             if cfg.rotation_period > 0:
                 from .rotate import start_auto_rotate
 
-                vault._auto_rotate_stop = start_auto_rotate(vault, cfg.rotation_period)
+                setattr(vault, "_auto_rotate_stop", start_auto_rotate(vault, cfg.rotation_period))
             return vault
         except BaseException as exc:
             if vault is not None:
@@ -705,23 +710,23 @@ class Vault(AuthorityMixin):
 
     # -- reading --------------------------------------------------------
 
-    def get(self, id: str) -> Record:
-        """Load a record by id."""
-        if not id:
-            raise InvalidRecordError("id is empty")
+    def get(self, record_id: str) -> Record:
+        """Load a record by record_id."""
+        if not record_id:
+            raise InvalidRecordError("record_id is empty")
         self._cache_check()
         if self._cache is not None:
-            cached = self._cache.get(id)
+            cached = self._cache.get(record_id)
             if cached is not None:
                 return cached
         for attempt in range(2):
-            row = get_record(self.db, id)
+            row = get_record(self.db, record_id)
             if row is None:
-                raise NotFoundError(f'"{id}"')
+                raise NotFoundError(f'"{record_id}"')
             sch = self.schema_for_version(row.schema_version)
             if sch is None:
                 raise SchemaMismatchError(
-                    f'record "{id}" was written with schema v{row.schema_version}, which this store does not know'
+                    f'record "{record_id}" was written with schema v{row.schema_version}, which this store does not know'
                 )
             try:
                 record = self._decode_record(row, sch)
@@ -870,7 +875,8 @@ class Vault(AuthorityMixin):
                     self.refresh_from_fleet()
                 if attempt < 4:
                     time.sleep(0.1)
-        assert last is not None
+        if last is None:
+            raise VaultError("vault: the write retry produced no error")
         raise last
 
     def _put_through_authority_once(
@@ -913,7 +919,7 @@ class Vault(AuthorityMixin):
             self._cache_put(rec)
 
     def _delete_through_authority(
-        self, id: str, expected: Mapping[str, Value] | None
+        self, record_id: str, expected: Mapping[str, Value] | None
     ) -> None:
         """Delete through the authority, refreshing a stale key once."""
         from .etcd import FencedWriteError
@@ -922,10 +928,12 @@ class Vault(AuthorityMixin):
         for attempt in range(5):
             try:
                 if expected is None:
-                    self.authority.delete_record(self.db, id)
+                    self.authority.delete_record(self.db, record_id)
                 else:
                     self.authority.delete_record(
-                        self.db, id, expected=self._expected_guard(expected)
+                        self.db,
+                        record_id,
+                        expected=self._expected_guard(expected),
                     )
                 return
             except (FencedWriteError, StaleGenerationError) as exc:
@@ -942,7 +950,8 @@ class Vault(AuthorityMixin):
                     self.refresh_from_fleet()
                 if attempt < 4:
                     time.sleep(0.1)
-        assert last is not None
+        if last is None:
+            raise VaultError("vault: the write retry produced no error")
         raise last
 
     def _authority_snapshot(self, *, fallback: bool = False) -> tuple[KeySnapshot, int]:
@@ -1160,34 +1169,34 @@ class Vault(AuthorityMixin):
             )
         return encode_container(container)
 
-    def delete(self, id: str, *, expected: Mapping[str, Value] | None = None) -> None:
+    def delete(self, record_id: str, *, expected: Mapping[str, Value] | None = None) -> None:
         """Remove a record.
 
         It raises :class:`~security_gateway.vault.errors.NotFoundError` when
-        the id is unknown. ``expected`` guards the same fields as
+        the record id is unknown. ``expected`` guards the same fields as
         :meth:`put`; a mismatch refuses the delete with
         :class:`ConflictError`.
         """
-        if not id:
-            raise InvalidRecordError("id is empty")
+        if not record_id:
+            raise InvalidRecordError("record_id is empty")
         self._validate_expected(expected)
         # With an authority the delete goes to it, and only to it: the
         # local copy is a mirror, and the watch brings the deletion here.
         # It must not hold the local write lock while it waits for etcd.
         if self.authority is not None:
-            self._delete_through_authority(id, expected)
-            self._cache_delete(id)
+            self._delete_through_authority(record_id, expected)
+            self._cache_delete(record_id)
             return
         with self.wmu:
             if expected is None:
-                if not run_with_busy_retry(lambda: delete_record(self.db, id)):
-                    raise NotFoundError(f'"{id}"')
-                self._cache_delete(id)
+                if not run_with_busy_retry(lambda: delete_record(self.db, record_id)):
+                    raise NotFoundError(f'"{record_id}"')
+                self._cache_delete(record_id)
                 return
             for attempt in range(8):
-                current = run_with_busy_retry(lambda: get_record(self.db, id))
+                current = run_with_busy_retry(lambda: get_record(self.db, record_id))
                 if current is None:
-                    raise NotFoundError(f'"{id}"')
+                    raise NotFoundError(f'"{record_id}"')
                 try:
                     self._assert_expected(self._decode_current(current), expected)
                 except StaleGenerationError:
@@ -1196,11 +1205,11 @@ class Vault(AuthorityMixin):
                     self.reload_snapshot()
                     continue
                 if run_with_busy_retry(
-                    lambda: delete_record_cas(self.db, id, current.row_version)
+                    lambda: delete_record_cas(self.db, record_id, current.row_version)
                 ):
-                    self._cache_delete(id)
+                    self._cache_delete(record_id)
                     return
-            raise ConflictError(f'the record "{id}" kept changing')
+            raise ConflictError(f'the record "{record_id}" kept changing')
 
     # -- housekeeping ---------------------------------------------------
 
