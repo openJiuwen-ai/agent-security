@@ -59,7 +59,7 @@ def _checked_revision(source_revision: int) -> int:
 
 def apply_mirrored_record(
     db: Database,
-    id: str,
+    record_id: str,
     data: bytes,
     schema_version: int,
     dek_version: int,
@@ -70,7 +70,10 @@ def apply_mirrored_record(
     source_revision = _checked_revision(source_revision)
     db.execute(
         """
-        INSERT INTO vault_record (id, schema_version, data, dek_version, row_version, source_revision, created_at, updated_at)
+        INSERT INTO vault_record (
+            id, schema_version, data, dek_version, row_version,
+            source_revision, created_at, updated_at
+        )
         VALUES (?, ?, ?, ?, 1, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             schema_version  = excluded.schema_version,
@@ -81,7 +84,7 @@ def apply_mirrored_record(
             updated_at      = excluded.updated_at
         WHERE vault_record.source_revision < excluded.source_revision""",
         (
-            id,
+            record_id,
             int(schema_version),
             data,
             int(dek_version),
@@ -92,12 +95,14 @@ def apply_mirrored_record(
     )
 
 
-def delete_mirrored_record(db: Database, id: str, source_revision: int) -> None:
+def delete_mirrored_record(
+    db: Database, record_id: str, source_revision: int
+) -> None:
     """Remove a record the authority has deleted."""
     source_revision = _checked_revision(source_revision)
     db.execute(
         "DELETE FROM vault_record WHERE id = ? AND source_revision <= ?",
-        (id, int(source_revision)),
+        (record_id, int(source_revision)),
     )
 
 
@@ -185,8 +190,8 @@ class MirrorApplier:
             )
 
         local = list_mirrored_record_ids(self._db)
-        for id in local - present:
-            delete_mirrored_record(self._db, id, PURGE_ALL_REVISIONS)
+        for record_id in local - present:
+            delete_mirrored_record(self._db, record_id, PURGE_ALL_REVISIONS)
         self._changed()
 
     def apply_upsert(self, key: str, item: RecordEntry) -> None:
@@ -288,7 +293,8 @@ class RecordSource:
 
         return record_id_from_key(self.namespace(), key)
 
-    def decode(self, value: bytes, mod_revision: int) -> "RecordEntry":
+    @staticmethod
+    def decode(value: bytes, mod_revision: int) -> "RecordEntry":
         """Parse a value the authority wrote."""
         from security_gateway.vault.etcdstore.entry import unmarshal_record
 

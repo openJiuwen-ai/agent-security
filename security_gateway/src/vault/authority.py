@@ -215,7 +215,6 @@ class AuthorityMixin:
     def adopt_cluster_dek(self, dek: bytes, generation: int) -> None:
         """Install the fleet's newer generation on this node."""
         from security_gateway.crypto import KeyBytes, parse_mode, wrap_dek
-        from security_gateway.vault.errors import KeyMismatchError
         from security_gateway.vault.keys import (
             KeySnapshot,
             derive_kek,

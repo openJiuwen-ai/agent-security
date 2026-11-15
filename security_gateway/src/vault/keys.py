@@ -90,16 +90,14 @@ KEY_FILE_MODE = 0o600
 #:
 #: Copied byte for byte from ``pkg/vault/keys.go``:
 #: ``0x56 0x61 0x75 0x6c 0x74 0x53 0x68 0x61 ...`` = "VaultShard3KeyMaterial2026-SM3-F".
-S3_SHARD = bytes.fromhex(
-    "5661756c745368617264334b65794d6174657269616c323032362d534d332d46"
-)
+S3_SHARD = b"VaultShard3KeyMaterial2026-SM3-F"
 
 #: A compile-time constant: 16 bytes fixed at build time. It is PBKDF2
 #: domain separation, not a secret — the literal is in the binary.
 #:
 #: Copied byte for byte from ``pkg/vault/keys.go``:
 #: ``0x76 0x61 0x75 0x6c 0x74 0x2d 0x6b 0x65 ...`` = "vault-kek-salt-v".
-KEK_SALT = bytes.fromhex("7661756c742d6b656b2d73616c742d76")
+KEK_SALT = b"vault-kek-salt-v"
 
 
 def crypto_mode_unusable(stored: str, exc: Exception) -> KeyMismatchError:
@@ -593,8 +591,10 @@ def init_keys(
             km.wrapped_dek = km.pending_wrapped_dek
             km.pending_wrapped_dek = b""
             km.pending_dek_version = 0
-            assert mgr.prev() is not None
-            km.superseded_dek_version = mgr.prev().version
+            previous = mgr.prev()
+            if previous is None:
+                raise KeyMismatchError("vault: a key rotation left no previous key")
+            km.superseded_dek_version = previous.version
             km.superseded_wrapped_dek = old_wrapped
             update_key_meta(db, km)
     finally:

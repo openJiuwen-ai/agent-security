@@ -315,14 +315,14 @@ def _row_to_record(row: tuple) -> RecordRow:
     )
 
 
-def get_record(db: Database, id: str) -> RecordRow | None:
+def get_record(db: Database, record_id: str) -> RecordRow | None:
     """Load one record by id.
 
     It returns None when the id is unknown, so the caller distinguishes
     "absent" from "failed" without inspecting an error string.
     """
     row = db.query_one(
-        f"SELECT {_RECORD_COLUMNS} FROM vault_record WHERE id = ?", (id,)
+        f"SELECT {_RECORD_COLUMNS} FROM vault_record WHERE id = ?", (record_id,)
     )
     if row is None:
         return None
@@ -387,17 +387,19 @@ def put_record_cas(db: Database, row: RecordRow, expected_row_version: int) -> b
     return cur.rowcount > 0
 
 
-def delete_record(db: Database, id: str) -> bool:
+def delete_record(db: Database, record_id: str) -> bool:
     """Remove a record."""
-    cur = db.execute("DELETE FROM vault_record WHERE id = ?", (id,))
+    cur = db.execute("DELETE FROM vault_record WHERE id = ?", (record_id,))
     return cur.rowcount > 0
 
 
-def delete_record_cas(db: Database, id: str, expected_row_version: int) -> bool:
+def delete_record_cas(
+    db: Database, record_id: str, expected_row_version: int
+) -> bool:
     """Remove a record only if it is still at ``expected_row_version``."""
     cur = db.execute(
         "DELETE FROM vault_record WHERE id = ? AND row_version = ?",
-        (id, expected_row_version),
+        (record_id, expected_row_version),
     )
     return cur.rowcount > 0
 
@@ -455,7 +457,11 @@ def count_stragglers(db: Database, target_dek: int) -> int:
 
 
 def update_record_cipher(
-    db: Database, id: str, row_version: int, data: bytes, dek_version: int
+    db: Database,
+    record_id: str,
+    row_version: int,
+    data: bytes,
+    dek_version: int,
 ) -> bool:
     """Write a re-encrypted record."""
     cur = db.execute(
@@ -463,7 +469,7 @@ def update_record_cipher(
         UPDATE vault_record
         SET data = ?, dek_version = ?, row_version = row_version + 1, updated_at = ?
         WHERE id = ? AND row_version = ?""",
-        (data, dek_version, int(time.time()), id, row_version),
+        (data, dek_version, int(time.time()), record_id, row_version),
     )
     return cur.rowcount > 0
 
@@ -488,7 +494,7 @@ def insert_schema_entry(db: Database, entry: SchemaEntry) -> None:
 
 def _chunks(items: Sequence[str]) -> Iterator[Sequence[str]]:
     for start in range(0, len(items), _BATCH_QUERY_LIMIT):
-        yield items[start : start + _BATCH_QUERY_LIMIT]
+        yield items[start:start + _BATCH_QUERY_LIMIT]
 
 
 def get_records(db: Database, ids: Sequence[str]) -> dict[str, RecordRow]:
