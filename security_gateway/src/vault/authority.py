@@ -38,11 +38,11 @@ class AuthorityMixin:
         """Record when the fleet's rotation gate was last passed, if it has none yet."""
         from datetime import datetime, timezone
 
-        from security_gateway.credmgr.etcdstore import (
+        from security_gateway.vault.etcdstore import (
             last_rotation_at,
             set_last_rotation_at,
         )
-        from security_gateway.credmgr.etcdstore.errors import NotFoundError
+        from security_gateway.vault.etcdstore.errors import NotFoundError
 
         store = self.authority.store
         try:
@@ -51,28 +51,29 @@ class AuthorityMixin:
             try:
                 set_last_rotation_at(store.kv, store.ns, datetime.now(timezone.utc))
             except Exception as exc:  # noqa: BLE001 - reported, not fatal
-                _log.warning(
-                    "vault: could not seed the fleet's rotation gate: %s", exc
-                )
+                _log.warning("vault: could not seed the fleet's rotation gate: %s", exc)
         except Exception as exc:  # noqa: BLE001 - reported, not fatal
             _log.warning("vault: could not read the fleet's rotation gate: %s", exc)
 
-    def start_authority(
+    def _start_authority(
         self,
         cfg: Any,
         self_identity: Any,
         anchor: Any,
         cluster_store: Any,
+        leader: Any = None,
     ) -> None:
         """Bring the authority's background loops up.
 
-        Two of them, and they answer different questions:
+        They answer different questions:
 
         * the **mirror** keeps this node's database in step with the
           authority.
         * the **sealing loop** answers the handover requests this node
           can serve, and asks for a newer generation when it holds an
           old one.
+        * the **key watch** follows generations another process
+          committed and finishes a pending rotation it finds.
         """
         # The authority's generation and this store's have to agree. They
         # are the same key: a node holding generation 3 against an authority
@@ -86,13 +87,23 @@ class AuthorityMixin:
         cur = self.keys.cur()
         if cur is not None:
             local = int(cur.version)
+        pending = self.keys.pend()
+        pending_version = int(pending.version) if pending is not None else 0
         if generation and generation != local:
-            raise KeyMismatchError(
-                f"the authority holds key generation {generation} and this store holds {local}"
-            )
+            shared_pending = self._shared_key_meta and pending_version == generation
+            catching_up = self._shared_key_meta and generation > local
+            if leader is None and not shared_pending and not catching_up:
+                raise KeyMismatchError(
+                    f"the authority holds key generation {generation} and this store holds {local}"
+                )
 
         # The fleet's rotation gate is seeded when the fleet forms.
         self._seed_fleet_rotation_gate()
+
+        if pending is not None:
+            from .rotate import finish_pending_rotation
+
+            finish_pending_rotation(self, self.authority.store)
 
         from .mirror import serve_mirror
 
@@ -106,6 +117,8 @@ class AuthorityMixin:
                 self.db,
                 self._local_dek_version,
                 self.authority.store.watch_source,
+                None,
+                self._cache_clear,
             ),
             name="cred-router-vault-mirror",
             daemon=True,
@@ -115,10 +128,12 @@ class AuthorityMixin:
         if self_identity is not None and cluster_store is not None:
             from .cluster import serve_cluster_wrapping
 
+            wrap_stop = threading.Event()
+            self._wrap_stop = wrap_stop
             self._wrap_thread = threading.Thread(
                 target=serve_cluster_wrapping,
                 args=(
-                    stop,
+                    wrap_stop,
                     cluster_store,
                     self_identity,
                     self.keys.cur,
@@ -134,6 +149,43 @@ class AuthorityMixin:
                 daemon=True,
             )
             self._wrap_thread.start()
+
+        if self._shared_key_meta:
+            key_stop = threading.Event()
+            self._key_stop = key_stop
+            self._key_thread = threading.Thread(
+                target=self._watch_key_generations,
+                args=(key_stop,),
+                name="cred-router-vault-key-watch",
+                daemon=True,
+            )
+            self._key_thread.start()
+
+    def _watch_key_generations(self, stop: threading.Event) -> None:
+        """Follow a generation another process committed."""
+        from .keys import read_key_meta
+        from .rotate import finish_pending_rotation
+
+        while not stop.wait(1.0):
+            try:
+                generation = int(self.authority.generation())
+            except Exception:  # noqa: BLE001 - the next tick retries
+                continue
+            if generation and self.keys.by_version(generation) is None:
+                try:
+                    self.reload_snapshot()
+                except Exception as exc:  # noqa: BLE001 - the next tick retries
+                    _log.warning(
+                        "vault: could not reload the newer key generation: %s", exc
+                    )
+            km = read_key_meta(self.db)
+            if km is not None and km.pending_dek_version != 0:
+                try:
+                    finish_pending_rotation(self, self.authority.store)
+                except Exception as exc:  # noqa: BLE001 - the next tick retries
+                    _log.info(
+                        "vault: the pending rotation is not finished yet: %s", exc
+                    )
 
     def count_stragglers(self, target: int) -> int:
         """How many records are still under an older key generation."""
@@ -163,6 +215,7 @@ class AuthorityMixin:
     def adopt_cluster_dek(self, dek: bytes, generation: int) -> None:
         """Install the fleet's newer generation on this node."""
         from security_gateway.crypto import KeyBytes, parse_mode, wrap_dek
+        from security_gateway.vault.errors import KeyMismatchError
         from security_gateway.vault.keys import (
             KeySnapshot,
             derive_kek,
@@ -231,5 +284,5 @@ class AuthorityMixin:
 
         source = RecordSource(authority.store, authority.store.watch_source)
         listing = source.list_entries()
-        applier = MirrorApplier(self.db, self._local_dek_version)
+        applier = MirrorApplier(self.db, self._local_dek_version, self._cache_clear)
         applier.reconcile(listing.items)

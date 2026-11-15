@@ -69,6 +69,11 @@ class Config:
     #: changed afterwards.
     crypto_mode: Mode = Mode.AES
 
+    #: The automatic DEK rotation period in seconds. Zero disables it.
+    #: The value is part of the store's identity: every process opening
+    #: the same database has to agree on it.
+    rotation_period: float = 0.0
+
     #: Makes etcd the write authority for the store's records.
     #:
     #: It is ``None`` for a standalone store, and that is the only
@@ -80,6 +85,20 @@ class Config:
     #: left untyped here so that importing this module does not drag the
     #: etcd half in.
     etcd: Any = None
+
+    #: Whether processes on one host share this store. They then share
+    #: the data directory and key metadata; a host-local leader only
+    #: mints the first key. Off by default.
+    multi_process: bool = False
+
+    #: The maximum number of decrypted records kept in the read cache.
+    #: Zero disables the cache.
+    cache_max_entries: int = 0
+
+    #: How long a cached record stays valid, in seconds. Zero means it
+    #: does not expire; it is still evicted by writes, deletes, mirror
+    #: changes and LRU pressure.
+    cache_ttl: float = 0.0
 
 
 @dataclass
@@ -104,6 +123,12 @@ class Status:
     #: The number of records still encrypted under an older key generation.
     #: It is zero in steady state.
     straggler_count: int = 0
+
+    #: The unix time of the last successful DEK rotation, or 0 if none.
+    last_rotate_at: int = 0
+
+    #: The configured automatic DEK rotation period in seconds.
+    rotation_period: float = 0.0
 
 
 @dataclass
