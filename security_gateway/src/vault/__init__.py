@@ -66,6 +66,8 @@ from .record import Record, Value
 from .rotate import (
     RotationTarget,
     rotate_dek,
+    rotate_s1,
+    rotate_s2,
     start_auto_rotate,
     takeover_pending,
 )
@@ -112,6 +114,7 @@ from .vault import (
     is_additive,
     set_put_before_write_hook,
 )
+from .batch import BatchDeleteResult, batch_delete, batch_get
 
 __all__ = [
     "CONTAINER_FORMAT",
@@ -133,6 +136,7 @@ __all__ = [
     "SHARD_SIZE",
     "SYNC_STATE_DDL",
     "AdoptedDEK",
+    "BatchDeleteResult",
     "ClosedError",
     "Config",
     "ConflictError",
@@ -164,6 +168,8 @@ __all__ = [
     "Vault",
     "VaultError",
     "bootstrap_schema",
+    "batch_delete",
+    "batch_get",
     "check_data_dir",
     "count_records",
     "count_stragglers",
@@ -183,6 +189,8 @@ __all__ = [
     "put_record",
     "read_schema_entries",
     "rotate_dek",
+    "rotate_s1",
+    "rotate_s2",
     "select_stragglers",
     "set_put_before_write_hook",
     "start_auto_rotate",
