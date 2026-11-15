@@ -363,7 +363,7 @@ class Cluster:
             ],
             [
                 PutOp(mint, node_id.encode("utf-8")),
-                PutOp(generation, str(target).encode("utf-8")),
+                PutOp(generation_record, str(target).encode("utf-8")),
             ],
         )
         return bool(result.succeeded)
