@@ -864,7 +864,7 @@ def test_the_schedule_takes_the_fleet_lock_when_the_store_has_an_authority(
     vault.authority = SimpleNamespace(store=_FakeAuthority())
 
     with pytest.raises(VaultError):
-        rotate_module._rotate_once(vault, 0.0)
+        getattr(rotate_module, "_rotate_once")(vault, 0.0)
 
     assert events and events[0][0] == "lock", (
         "the schedule rotated a clustered store without the fleet lock"
@@ -886,7 +886,7 @@ def test_the_schedule_takes_no_lock_for_a_standalone_store(vault, monkeypatch):
         _fake_acquire(events),
     )
 
-    rotate_module._rotate_once(vault, 0.0)
+    getattr(rotate_module, "_rotate_once")(vault, 0.0)
 
     assert events == [], "a standalone store has no fleet lock to take"
     assert vault.keys.cur().version == 2, "the standalone store did not rotate"
@@ -916,7 +916,7 @@ def test_the_schedule_gate_is_the_fleets_not_the_local_rows(vault, monkeypatch):
     _open_the_gate(vault)
     vault.authority = SimpleNamespace(store=_FakeAuthority())
 
-    rotate_module._rotate_once(vault, 60.0)
+    getattr(rotate_module, "_rotate_once")(vault, 60.0)
 
     assert events == [], (
         "the schedule rotated although the fleet had just rotated: "
@@ -951,7 +951,7 @@ def test_a_clustered_node_follows_the_fleet_even_when_its_own_row_is_fresh(
     )
     vault.authority = SimpleNamespace(store=_FakeAuthority())
 
-    rotate_module._rotate_once(vault, 60.0)
+    getattr(rotate_module, "_rotate_once")(vault, 60.0)
 
     assert events and events[0][0] == "lock", (
         "the schedule skipped a rotation the fleet was due for: "

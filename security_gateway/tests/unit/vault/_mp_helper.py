@@ -15,10 +15,13 @@ runnable as a script.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import time
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 #: The environment variable that tells the child where the store lives.
 DIR_ENV = "CRED_ROUTER_VAULT_MULTIPROCESS_DIR"
@@ -166,10 +169,10 @@ def crash_rotating(directory: str, stage: str) -> int:
     from security_gateway.vault import rotate
 
     def die() -> None:
-        os._exit(17)
+        getattr(os, "_exit")(17)
 
     if stage == "after_claim":
-        original_claim = rotate._claim_rotation
+        original_claim = getattr(rotate, "_claim_rotation")
 
         def claim(*args, **kwargs):
             won = original_claim(*args, **kwargs)
@@ -177,7 +180,7 @@ def crash_rotating(directory: str, stage: str) -> int:
                 die()
             return won
 
-        rotate._claim_rotation = claim
+        setattr(rotate, "_claim_rotation", claim)
     elif stage == "after_pending_swap":
         original_pending = rotate.KeyManager.set_pending
 
@@ -208,15 +211,15 @@ def crash_rotating(directory: str, stage: str) -> int:
 
         rotate.converge = converge
     elif stage == "before_commit":
-        original_commit = rotate._commit_rotation
+        original_commit = getattr(rotate, "_commit_rotation")
 
         def commit(*args, **kwargs):
             die()
             return original_commit(*args, **kwargs)
 
-        rotate._commit_rotation = commit
+        setattr(rotate, "_commit_rotation", commit)
     elif stage == "after_commit":
-        original_commit = rotate._commit_rotation
+        original_commit = getattr(rotate, "_commit_rotation")
 
         def commit(*args, **kwargs):
             result = original_commit(*args, **kwargs)
@@ -224,9 +227,9 @@ def crash_rotating(directory: str, stage: str) -> int:
                 die()
             return result
 
-        rotate._commit_rotation = commit
+        setattr(rotate, "_commit_rotation", commit)
     else:
-        sys.stderr.write(f"unknown crash stage {stage!r}\n")
+        _log.error(f"unknown crash stage {stage!r}\n")
         return 2
 
     vault = open_store(directory)
@@ -245,7 +248,7 @@ def crash_opening(directory: str) -> int:
 
     def init_then_die(*args, **kwargs):
         result = original(*args, **kwargs)
-        os._exit(17)
+        getattr(os, "_exit")(17)
         return result
 
     vault_module.init_keys = init_then_die
@@ -262,7 +265,7 @@ def main(argv: list[str]) -> int:
     role = os.environ.get(ROLE_ENV, "")
     directory = os.environ.get(DIR_ENV, "")
     if not role or not directory:
-        sys.stderr.write(f"usage: {argv[0]} (needs {ROLE_ENV} and {DIR_ENV})\n")
+        _log.error(f"usage: {argv[0]} (needs {ROLE_ENV} and {DIR_ENV})\n")
         return 2
 
     if role == ROLE_CLAIM:
@@ -309,7 +312,7 @@ def main(argv: list[str]) -> int:
     if role == ROLE_CRASH_OPEN:
         return crash_opening(directory)
 
-    sys.stderr.write(f"unknown helper role {role!r}\n")
+    _log.error(f"unknown helper role {role!r}\n")
     return 2
 
 

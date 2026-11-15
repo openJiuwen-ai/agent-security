@@ -48,8 +48,10 @@ class FakeAuthority:
         self.deleted: list[str] = []
         self.closed = False
 
-    def write_record(self, db, id, data, schema_version, dek_version) -> None:
-        self.written.append((id, data, schema_version, dek_version))
+    def write_record(
+        self, db, record_id, data, schema_version, dek_version
+    ) -> None:
+        self.written.append((record_id, data, schema_version, dek_version))
 
     def delete_record(self, db, record_id) -> None:
         self.deleted.append(record_id)

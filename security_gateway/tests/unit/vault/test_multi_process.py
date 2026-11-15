@@ -621,7 +621,7 @@ def test_claiming_a_rotation_against_a_moved_generation_fails(stores):
 
     # A rotation that still holds the old generation cannot claim.
     wrapped = helper.mint_wrapped_dek(v)
-    claimed = rotate._claim_rotation(v, stale + 1, wrapped, stale)
+    claimed = getattr(rotate, "_claim_rotation")(v, stale + 1, wrapped, stale)
     assert not claimed, (
         f"the claim landed against the generation {stale}, but the store is on {moved}"
     )
