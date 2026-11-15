@@ -973,6 +973,7 @@ def test_a_stale_rotation_refreshes_from_the_fleet_and_tries_again(monkeypatch):
             StaleGenerationError("still behind")
         ),
     )
+
     def no_refresh() -> bool:
         return False
 

@@ -58,16 +58,20 @@ class _StubTransactions:
         return _StubTransaction(key)
 
     @staticmethod
-    def Put(key: str, value: bytes, lease: int | None = None) -> tuple:
+    def put(key: str, value: bytes, lease: int | None = None) -> tuple:
         return ("put", key, value, lease)
 
     @staticmethod
-    def Get(key: str) -> tuple:
+    def get(key: str) -> tuple:
         return ("get", key)
 
     @staticmethod
-    def Delete(key: str) -> tuple:
+    def delete(key: str) -> tuple:
         return ("delete", key)
+
+    Put = put
+    Get = get
+    Delete = delete
 
 
 class _StubClient:
@@ -105,8 +109,10 @@ class _StubClient:
         return True, []
 
     @staticmethod
-    def Get(key, *args, **kwargs):
+    def get(key, *args, **kwargs):
         return None, None
+
+    Get = get
 
 
 def _stub_etcd3() -> types.ModuleType:
