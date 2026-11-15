@@ -58,15 +58,15 @@ class _StubTransactions:
         return _StubTransaction(key)
 
     @staticmethod
-    def put(key: str, value: bytes, lease: int | None = None) -> tuple:
+    def Put(key: str, value: bytes, lease: int | None = None) -> tuple:
         return ("put", key, value, lease)
 
     @staticmethod
-    def get(key: str) -> tuple:
+    def Get(key: str) -> tuple:
         return ("get", key)
 
     @staticmethod
-    def delete(key: str) -> tuple:
+    def Delete(key: str) -> tuple:
         return ("delete", key)
 
 
@@ -105,7 +105,7 @@ class _StubClient:
         return True, []
 
     @staticmethod
-    def get(key, *args, **kwargs):
+    def Get(key, *args, **kwargs):
         return None, None
 
 
@@ -164,7 +164,8 @@ def test_the_vault_hands_the_client_names_it_takes(monkeypatch):
         )
     )
     try:
-        called = getattr(authority, "_client_at")(0).called
+        client = getattr(authority, "_client")
+        called = getattr(client, "_client_at")(0).called
         assert called["ca_cert"] == "ca.pem"
         assert called["cert_cert"] == "cert.pem"
         assert called["cert_key"] == "key.pem"

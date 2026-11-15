@@ -96,7 +96,7 @@ def test_a_rotation_keeps_every_record_readable(vault, data_dir):
 
     for record_id in ("cred-1", "cred-2", "cred-3"):
         got = vault.get(record_id)
-        assert got.get_string("api_key") == f"secret-for-{id}"
+        assert got.get_string("api_key") == f"secret-for-{record_id}"
 
     after = read_raw_data(os.path.join(data_dir, "vault.db"), "cred-1")
     assert before != after, "the stored ciphertext did not change across the rotation"

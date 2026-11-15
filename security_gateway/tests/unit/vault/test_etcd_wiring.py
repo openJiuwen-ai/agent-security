@@ -131,9 +131,10 @@ def test_the_mapping_does_not_turn_the_tls_certificate_into_the_identity():
         cluster = TlsOnlyCluster()
 
         etcd = types.SimpleNamespace(
+            endpoints=FakeEtcd.endpoints,
             tls=types.SimpleNamespace(
                 ca_file="ca.pem", cert_file="cert.pem", key_file="key.pem"
-            )
+            ),
         )
 
     cfg = vault_etcd_config(TlsOnlyConfig())
@@ -261,9 +262,10 @@ def test_the_mapping_carries_the_tls_when_there_is_some():
 
     class WithTls(FakePlatformConfig):
         etcd = types.SimpleNamespace(
+            endpoints=FakeEtcd.endpoints,
             tls=types.SimpleNamespace(
                 ca_file="ca.pem", cert_file="cert.pem", key_file="key.pem"
-            )
+            ),
         )
 
     cfg = vault_etcd_config(WithTls())
