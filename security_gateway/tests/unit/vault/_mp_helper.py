@@ -15,7 +15,6 @@ runnable as a script.
 
 from __future__ import annotations
 
-import logging
 import os
 import sys
 import time
@@ -30,15 +29,20 @@ ROLE_ENV = "CRED_ROUTER_VAULT_MULTIPROCESS_ROLE"
 #: The roles.
 ROLE_CLAIM = "claim"
 ROLE_WRITE = "write"
+ROLE_OPEN = "open"
+ROLE_CRASH_ROTATE = "crash-rotate"
+ROLE_CRASH_OPEN = "crash-open"
 
-LOGGER = logging.getLogger(__name__)
+#: Which point of the rotation the child dies at.
+CRASH_STAGE_ENV = "CRED_ROUTER_VAULT_CRASH_STAGE"
 
 #: The marker files the parent and the children coordinate through.
 CLAIMED_FILE = "claimed"
 PROCEED_FILE = "proceed"
+GO_FILE = "go"
 
 
-def helper_schema():
+def test_schema():
     """The schema the Go tests use.
 
     One plaintext field and one encrypted one — the same shape as
@@ -59,7 +63,11 @@ def open_store(directory: str):
     """Open a store on a directory."""
     from security_gateway.vault.vault import Config, Vault
 
-    return Vault.open(Config(data_dir=directory), helper_schema())
+    return Vault.open(
+        Config(data_dir=directory, multi_process=True),
+        test_schema(),
+        _allow_duplicate=True,
+    )
 
 
 def multi_process_record(record_id: str, endpoint: str, secret: str):
@@ -127,8 +135,7 @@ def claim_pending(vault) -> int:
         (target, wrapped, int(time.time())),
     )
     if cur.rowcount != 1:
-        raise AssertionError(
-            f"the pending claim touched {cur.rowcount} rows, want 1")
+        raise AssertionError(f"the pending claim touched {cur.rowcount} rows, want 1")
     return target
 
 
@@ -148,12 +155,114 @@ def wait_for_file(path: Path, timeout: float = 30.0) -> None:
         time.sleep(0.01)
 
 
+def crash_rotating(directory: str, stage: str) -> int:
+    """Run a rotation and die at ``stage`` with a real process exit.
+
+    A fault hook that raises can be caught and cleaned up by the frame
+    that raised it.  ``os._exit`` does not run ``finally`` blocks, does not
+    flush Python buffers and does not close the SQLite connection: it is the
+    closest a test can get to a process that was killed at that instant.
+    """
+    from security_gateway.vault import rotate
+
+    def die() -> None:
+        os._exit(17)
+
+    if stage == "after_claim":
+        original_claim = rotate._claim_rotation
+
+        def claim(*args, **kwargs):
+            won = original_claim(*args, **kwargs)
+            if won:
+                die()
+            return won
+
+        rotate._claim_rotation = claim
+    elif stage == "after_pending_swap":
+        original_pending = rotate.KeyManager.set_pending
+
+        def set_pending(self, snapshot):
+            original_pending(self, snapshot)
+            die()
+
+        rotate.KeyManager.set_pending = set_pending
+    elif stage == "mid_converge":
+        original_update = rotate.update_record_cipher
+        rewritten = 0
+
+        def update(*args, **kwargs):
+            nonlocal rewritten
+            result = original_update(*args, **kwargs)
+            rewritten += 1
+            if rewritten == 1:
+                die()
+            return result
+
+        rotate.update_record_cipher = update
+    elif stage == "after_converge":
+        original_converge = rotate.converge
+
+        def converge(*args, **kwargs):
+            original_converge(*args, **kwargs)
+            die()
+
+        rotate.converge = converge
+    elif stage == "before_commit":
+        original_commit = rotate._commit_rotation
+
+        def commit(*args, **kwargs):
+            die()
+            return original_commit(*args, **kwargs)
+
+        rotate._commit_rotation = commit
+    elif stage == "after_commit":
+        original_commit = rotate._commit_rotation
+
+        def commit(*args, **kwargs):
+            result = original_commit(*args, **kwargs)
+            if result:
+                die()
+            return result
+
+        rotate._commit_rotation = commit
+    else:
+        sys.stderr.write(f"unknown crash stage {stage!r}\n")
+        return 2
+
+    vault = open_store(directory)
+    try:
+        rotate.rotate_dek(vault)
+    finally:
+        vault.close()
+    return 0
+
+
+def crash_opening(directory: str) -> int:
+    """Die once the store's schema and key material are initialized."""
+    from security_gateway.vault import vault as vault_module
+
+    original = vault_module.init_keys
+
+    def init_then_die(*args, **kwargs):
+        result = original(*args, **kwargs)
+        os._exit(17)
+        return result
+
+    vault_module.init_keys = init_then_die
+    try:
+        vault = open_store(directory)
+    finally:
+        pass
+    vault.close()
+    return 0
+
+
 def main(argv: list[str]) -> int:
     """Run the helper in one of its two roles."""
     role = os.environ.get(ROLE_ENV, "")
     directory = os.environ.get(DIR_ENV, "")
     if not role or not directory:
-        LOGGER.error("usage: %s (needs %s and %s)", argv[0], ROLE_ENV, DIR_ENV)
+        sys.stderr.write(f"usage: {argv[0]} (needs {ROLE_ENV} and {DIR_ENV})\n")
         return 2
 
     if role == ROLE_CLAIM:
@@ -178,12 +287,29 @@ def main(argv: list[str]) -> int:
         try:
             vault.put(
                 multi_process_record(
-                    "cross-process", "https://x.example.com", "value-x"))
+                    "cross-process", "https://x.example.com", "secret-x"
+                )
+            )
         finally:
             vault.close()
         return 0
 
-    LOGGER.error("unknown helper role %r", role)
+    if role == ROLE_OPEN:
+        # Open together with the other children on a brand-new directory.
+        # The initialization lock has to make exactly one of them mint the
+        # key; the rest load what it wrote.
+        wait_for_file(Path(directory) / GO_FILE)
+        vault = open_store(directory)
+        vault.close()
+        return 0
+
+    if role == ROLE_CRASH_ROTATE:
+        return crash_rotating(directory, os.environ.get(CRASH_STAGE_ENV, ""))
+
+    if role == ROLE_CRASH_OPEN:
+        return crash_opening(directory)
+
+    sys.stderr.write(f"unknown helper role {role!r}\n")
     return 2
 
 
