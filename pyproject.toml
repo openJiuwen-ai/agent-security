@@ -1,0 +1,187 @@
+# ============================================================================
+# openjiuwen-security —— 聚合发行包（一个 wheel 包含四个组件的全部模块）
+#
+# 包含模块（导入名与各子目录独立安装时完全一致，现有代码无需改动）：
+#   - agent_shield   <- agent_shield/          （flat 布局）
+#   - agent_ssas     <- agent_ssas/src/        （src 布局）
+#   - security_mask  <- foundation/security_mask/
+#   - jiuwenbox      <- jiuwenbox/src/         （src 布局）
+#
+# 安装（git URL，注意：不需要 #subdirectory）：
+#   pip install "openjiuwen-security @ git+https://gitcode.com/openJiuwen/agent-security.git@<ref>"
+# 依赖引用（可替代 jiuwenswarm 中现在的四条 git 依赖）：
+#   "openjiuwen-security @ git+https://gitcode.com/openJiuwen/agent-security.git@develop",
+#
+# ⚠ 互斥：本包已内置四个模块，消费方不要再同时安装
+#   agent-shield / agent-ssas / security-mask / jiuwenbox 子包，否则模块重复。
+#
+# 开发（本仓库根目录）：
+#   uv sync --all-packages                  # 四个成员 editable 安装 + 依赖 + dev 工具
+#   uv run --package agent-ssas pytest       # 在某个成员环境下运行
+#
+# 发布构建：
+#   uvx --from build pyproject-build        # 产物在 dist/（sdist + wheel）
+#
+# 维护约定：
+#   1. 子包增删、foundation 新增组件目录 → 同步更新 [tool.setuptools] 的
+#      package-dir 和 packages 列表（新组件目录加一行映射 + 枚举其子包）；
+#   2. 子包运行依赖变化 → 同步更新 [project] dependencies（四个子包运行依赖的并集）；
+#   3. 各子目录 pyproject.toml 保持独立可用，独立开发/构建/发布不受影响。
+# ============================================================================
+
+[build-system]
+# 与 agent_shield 一致；CI 用 --no-build-isolation + setuptools 68 构建
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openjiuwen-security"
+version = "0.1.0"
+description = "OpenJiuwen agent security suite: agent_shield, agent_ssas, security_mask and jiuwenbox in one distribution"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = [
+    # --- agent_shield ---
+    "PyYAML>=6",
+    "tree-sitter>=0.25.0,<0.26.0",
+    "tree-sitter-bash>=0.25.0,<0.26.0",
+    "tree-sitter-pwsh>=0.38.0",
+    "tree-sitter-batch>=0.11.0",
+    # --- agent_ssas ---（PyYAML，已含于上）
+    # --- security_mask ---（无运行依赖）
+    # --- jiuwenbox ---
+    "pydantic>=2.0",
+    "httpx>=0.27",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
+    "mcp>=1.27.2,<2",
+]
+
+[project.optional-dependencies]
+# 对应 agent-shield 的 dll-guard extra（tree-sitter/tree-sitter-bash 已在基础依赖中）
+dll-guard = [
+    "tld>=0.13,<0.14",
+]
+
+[project.scripts]
+# 与子包声明的入口点保持一致
+agent-pdp = "agent_shield.policy_engine.server.cli:main"
+jiuwenbox = "jiuwenbox.cli.jiuwenbox:main"
+jiuwenbox-server = "jiuwenbox.server.launcher:main"
+
+[dependency-groups]
+# 便于在根环境直接运行各成员的测试；各成员 pyproject 自己的 dev/test extra 依然有效
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "jsonschema>=4",
+    "tld>=0.13,<0.14",
+    "requests>=2.32",
+    "cryptography>=43",
+]
+
+[tool.uv]
+# 开发时根目录不作为包安装：四个成员已各自 editable 安装，
+# 若再把 openjiuwen-security 装入同一环境，模块会重复（根包仅在发布构建时打包）
+package = false
+
+[tool.uv.workspace]
+members = [
+    "agent_shield",
+    "agent_ssas",
+    "foundation",
+    "jiuwenbox",
+]
+# security_gateway 不列入 members，继续按独立项目使用
+
+[tool.setuptools]
+license-files = ["LICENSE"]
+packages = [
+    # --- agent_shield（flat 布局，与其自身 pyproject 的显式列表一致）---
+    "agent_shield",
+    "agent_shield.detection",
+    "agent_shield.tool_permission",
+    "agent_shield.tool_permission.delguard",
+    "agent_shield.tool_permission.fileguard",
+    "agent_shield.tool_permission.hostguard",
+    "agent_shield.tool_permission.netguard",
+    "agent_shield.tool_permission.toolguard",
+    "agent_shield.tool_permission.runtime",
+    "agent_shield.policy_engine",
+    "agent_shield.policy_engine.matchers",
+    "agent_shield.policy_engine.models",
+    "agent_shield.policy_engine.core",
+    "agent_shield.policy_engine.builtin",
+    "agent_shield.policy_engine.events",
+    "agent_shield.policy_engine.server",
+    "agent_shield.intercepts",
+    "agent_shield.intercepts.tool_call",
+    "agent_shield.intercepts.tool_call.adapters",
+    "agent_shield.intercepts.tool_call.adapters.jiuwenswarm",
+    "agent_shield.intercepts.native_call",
+    "agent_shield.intercepts.native_call.dll_guard",
+    "agent_shield.intercepts.tool_output",
+    "agent_shield.intercepts.tool_output.adapters",
+    "agent_shield.intercepts.tool_output.adapters.jiuwenswarm",
+    # --- agent_ssas（src 布局）---
+    "agent_ssas",
+    "agent_ssas.backend_client",
+    "agent_ssas.backend_client.openjiuwen",
+    "agent_ssas.core",
+    "agent_ssas.core.detection_modules",
+    "agent_ssas.core.detection_modules.agent_moss",
+    "agent_ssas.core.detection_modules.agent_moss.engine",
+    "agent_ssas.core.detection_modules.common",
+    "agent_ssas.core.detection_modules.common.components",
+    "agent_ssas.core.detection_modules.security_rail_detection",
+    "agent_ssas.core.detection_modules.test_detection",
+    "agent_ssas.core.framework",
+    "agent_ssas.core.framework.access_adapter",
+    "agent_ssas.core.framework.analysis_pipeline",
+    "agent_ssas.core.framework.config",
+    "agent_ssas.core.framework.core_types",
+    "agent_ssas.core.framework.data_modeler",
+    "agent_ssas.core.framework.data_modeler.plugins",
+    "agent_ssas.core.framework.data_preprocessor",
+    "agent_ssas.core.framework.module_manager",
+    "agent_ssas.core.framework.presentation",
+    "agent_ssas.core.framework.storage",
+    "agent_ssas.core.framework.threat_analyzer",
+    "agent_ssas.core.framework.threat_analyzer.plugins",
+    "agent_ssas.core.framework.utils",
+    "agent_ssas.core.integration",
+    "agent_ssas.core.modes",
+    "agent_ssas.core.modes.http",
+    # --- security_mask（foundation/security_mask/）---
+    "security_mask",
+    # --- jiuwenbox（src 布局）---
+    "jiuwenbox",
+    "jiuwenbox.api",
+    "jiuwenbox.cli",
+    "jiuwenbox.models",
+    "jiuwenbox.policy",
+    "jiuwenbox.proxy",
+    "jiuwenbox.server",
+    "jiuwenbox.server.routes",
+    "jiuwenbox.server.runtime",
+    "jiuwenbox.server.runtime.windows",
+    "jiuwenbox.supervisor",
+]
+
+# 四个异构目录映射为各自顶层包；子包按映射目录的相对路径自动定位
+[tool.setuptools.package-dir]
+agent_shield = "agent_shield"
+agent_ssas = "agent_ssas/src/agent_ssas"
+security_mask = "foundation/security_mask"
+jiuwenbox = "jiuwenbox/src/jiuwenbox"
+
+[tool.setuptools.package-data]
+# 与各子包 pyproject 的声明保持一致
+agent_shield = ["py.typed"]
+"agent_shield.tool_permission.runtime" = ["defaults.yaml"]
+agent_ssas = ["**/*.yaml"]
+jiuwenbox = ["configs/*.yaml", "native/*.dll", "native/softdelete/*"]
