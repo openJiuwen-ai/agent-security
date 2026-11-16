@@ -23,10 +23,11 @@
 #   uvx --from build pyproject-build        # 产物在 dist/（sdist + wheel）
 #
 # 维护约定：
-#   1. 子包增删、foundation 新增组件目录 → 同步更新 [tool.setuptools] 的
-#      package-dir 和 packages 列表（新组件目录加一行映射 + 枚举其子包）；
-#   2. 子包运行依赖变化 → 同步更新 [project] dependencies（四个子包运行依赖的并集）；
-#   3. 各子目录 pyproject.toml 保持独立可用，独立开发/构建/发布不受影响。
+#   1. 新增子包（任意组件内部）：无需任何改动，setup.py 构建时自动发现；
+#   2. foundation 新增组件 → setup.py 的 COMPONENTS 加一行映射 + 本文件
+#      dependencies 更新并集；数据文件按需配 setup.py 的 package_data；
+#   3. 子包运行依赖变化 → 同步更新 [project] dependencies（并集）；
+#   4. 各子目录 pyproject.toml 保持独立可用，独立开发/构建/发布不受影响。
 # ============================================================================
 
 [build-system]
@@ -97,91 +98,5 @@ members = [
     "jiuwenbox",
 ]
 # security_gateway 不列入 members，继续按独立项目使用
-
-[tool.setuptools]
-license-files = ["LICENSE"]
-packages = [
-    # --- agent_shield（flat 布局，与其自身 pyproject 的显式列表一致）---
-    "agent_shield",
-    "agent_shield.detection",
-    "agent_shield.tool_permission",
-    "agent_shield.tool_permission.delguard",
-    "agent_shield.tool_permission.fileguard",
-    "agent_shield.tool_permission.hostguard",
-    "agent_shield.tool_permission.netguard",
-    "agent_shield.tool_permission.toolguard",
-    "agent_shield.tool_permission.runtime",
-    "agent_shield.policy_engine",
-    "agent_shield.policy_engine.matchers",
-    "agent_shield.policy_engine.models",
-    "agent_shield.policy_engine.core",
-    "agent_shield.policy_engine.builtin",
-    "agent_shield.policy_engine.events",
-    "agent_shield.policy_engine.server",
-    "agent_shield.intercepts",
-    "agent_shield.intercepts.tool_call",
-    "agent_shield.intercepts.tool_call.adapters",
-    "agent_shield.intercepts.tool_call.adapters.jiuwenswarm",
-    "agent_shield.intercepts.native_call",
-    "agent_shield.intercepts.native_call.dll_guard",
-    "agent_shield.intercepts.tool_output",
-    "agent_shield.intercepts.tool_output.adapters",
-    "agent_shield.intercepts.tool_output.adapters.jiuwenswarm",
-    # --- agent_ssas（src 布局）---
-    "agent_ssas",
-    "agent_ssas.backend_client",
-    "agent_ssas.backend_client.openjiuwen",
-    "agent_ssas.core",
-    "agent_ssas.core.detection_modules",
-    "agent_ssas.core.detection_modules.agent_moss",
-    "agent_ssas.core.detection_modules.agent_moss.engine",
-    "agent_ssas.core.detection_modules.common",
-    "agent_ssas.core.detection_modules.common.components",
-    "agent_ssas.core.detection_modules.security_rail_detection",
-    "agent_ssas.core.detection_modules.test_detection",
-    "agent_ssas.core.framework",
-    "agent_ssas.core.framework.access_adapter",
-    "agent_ssas.core.framework.analysis_pipeline",
-    "agent_ssas.core.framework.config",
-    "agent_ssas.core.framework.core_types",
-    "agent_ssas.core.framework.data_modeler",
-    "agent_ssas.core.framework.data_modeler.plugins",
-    "agent_ssas.core.framework.data_preprocessor",
-    "agent_ssas.core.framework.module_manager",
-    "agent_ssas.core.framework.presentation",
-    "agent_ssas.core.framework.storage",
-    "agent_ssas.core.framework.threat_analyzer",
-    "agent_ssas.core.framework.threat_analyzer.plugins",
-    "agent_ssas.core.framework.utils",
-    "agent_ssas.core.integration",
-    "agent_ssas.core.modes",
-    "agent_ssas.core.modes.http",
-    # --- security_mask（foundation/security_mask/）---
-    "security_mask",
-    # --- jiuwenbox（src 布局）---
-    "jiuwenbox",
-    "jiuwenbox.api",
-    "jiuwenbox.cli",
-    "jiuwenbox.models",
-    "jiuwenbox.policy",
-    "jiuwenbox.proxy",
-    "jiuwenbox.server",
-    "jiuwenbox.server.routes",
-    "jiuwenbox.server.runtime",
-    "jiuwenbox.server.runtime.windows",
-    "jiuwenbox.supervisor",
-]
-
-# 四个异构目录映射为各自顶层包；子包按映射目录的相对路径自动定位
-[tool.setuptools.package-dir]
-agent_shield = "agent_shield"
-agent_ssas = "agent_ssas/src/agent_ssas"
-security_mask = "foundation/security_mask"
-jiuwenbox = "jiuwenbox/src/jiuwenbox"
-
-[tool.setuptools.package-data]
-# 与各子包 pyproject 的声明保持一致
-agent_shield = ["py.typed"]
-"agent_shield.tool_permission.runtime" = ["defaults.yaml"]
-agent_ssas = ["**/*.yaml"]
-jiuwenbox = ["configs/*.yaml", "native/*.dll", "native/softdelete/*"]
+#
+# 包的发现与映射（四个异构目录）在 setup.py 里动态完成，此处不再静态枚举
