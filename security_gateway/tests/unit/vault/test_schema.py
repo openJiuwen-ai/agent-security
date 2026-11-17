@@ -10,6 +10,7 @@ The Go counterpart is ``TestSchemaValidate``,
 from __future__ import annotations
 
 import pytest
+
 from security_gateway.vault import (
     FieldDef,
     InvalidSchemaError,
@@ -78,7 +79,6 @@ def test_a_field_name_is_restricted_to_a_url_safe_subset():
 
 
 def test_schema_hash_ignores_field_order():
-    """The schema hash is stable under field reordering."""
     a = Schema(
         version=1,
         fields=[
@@ -153,7 +153,6 @@ def test_parse_schema_rejects_bytes_that_are_not_json():
 
 
 def test_is_additive():
-    """Additive schema changes are recognised."""
     old = Schema(
         version=1,
         fields=[

@@ -16,6 +16,7 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
+
 from security_gateway.vault import store as store_module
 from security_gateway.vault.errors import (
     ClosedError,
@@ -87,7 +88,7 @@ def test_the_composed_messages_are_pinned():
         ),
         (
             UndecryptableError('record "cred-1" field "api_key": bad'),
-            'vault: record exists but cannot be decrypted: '
+            "vault: record exists but cannot be decrypted: "
             'record "cred-1" field "api_key": bad',
         ),
         (
@@ -137,7 +138,9 @@ def test_the_go_s_own_plain_errors_are_copied_verbatim():
         "the ciphertext does not open with the key for generation 3: boom",
         whole=True,
     )
-    assert str(exc) == "the ciphertext does not open with the key for generation 3: boom"
+    assert (
+        str(exc) == "the ciphertext does not open with the key for generation 3: boom"
+    )
 
     exc = ClosedError("the store has no key", whole=True)
     assert str(exc) == "the store has no key"
@@ -149,7 +152,7 @@ def test_a_detail_that_is_already_a_whole_message_is_used_as_it_is():
     That is where the Go raises a plain error: it has no sentinel to wrap,
     so the text it prints is the text it wrote.
     """
-    exc = KeyMismatchError("vault: unknown crypto mode \"sm4\"")
+    exc = KeyMismatchError('vault: unknown crypto mode "sm4"')
     assert str(exc) == 'vault: unknown crypto mode "sm4"'
 
 
@@ -169,9 +172,7 @@ def test_the_busy_wait_names_its_budget_the_go_way(monkeypatch):
     with pytest.raises(VaultError) as excinfo:
         store_module.run_with_busy_retry(busy)
 
-    assert "the store stayed busy for 10ms: database is locked" in str(
-        excinfo.value
-    )
+    assert "the store stayed busy for 10ms: database is locked" in str(excinfo.value)
 
 
 def test_the_busy_wait_can_be_called_off(monkeypatch):
