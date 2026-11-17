@@ -28,8 +28,10 @@
 #   1. 新增子包（任意组件内部）：无需任何改动，setup.py 构建时自动发现；
 #   2. foundation 新增组件 → setup.py 的 COMPONENTS 加一行映射 + 本文件
 #      dependencies 更新并集；数据文件按需配 setup.py 的 package_data；
-#   3. 子包运行依赖变化 → 同步更新 [project] dependencies（并集）；
-#   4. 各子目录 pyproject.toml 保持独立可用，独立开发/构建/发布不受影响。
+#   3. 子包新增入口点或 package-data 声明 → 同步本文件 [project.scripts] /
+#      setup.py 的 package_data（setup.py 构建时自检，漏同步直接构建失败）；
+#   4. 子包运行依赖变化 → 同步更新 [project] dependencies（并集）；
+#   5. 各子目录 pyproject.toml 保持独立可用，独立开发/构建/发布不受影响。
 # ============================================================================
 
 [build-system]
