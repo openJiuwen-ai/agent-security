@@ -14,8 +14,8 @@ An in-process security decision SDK (pure rules, no LLM calls, no network IO). I
 | `intercepts/tool_output/` | Tool result text → content detection |
 | `tool_permission/` | Existing action-decision components: toolguard / fileguard / netguard / hostguard / delguard, plus `runtime` grant reuse |
 | `detection/` | Content detection engine for prompt injection and similar soft signals |
-| `native/windows-process-guard/` | C/C++ implementation of `process_guard.exe` and the x64 / x86 hook DLLs |
-| `native/windows-dll-guard/` | User-mode implementation of `jiuwen_runtime_guard.dll` |
+| `foundation/agent-security-dll/native/windows/` | C/C++ implementation of `process_guard.exe` and the x64 / x86 hook DLLs |
+| `foundation/agent-security-dll/native/windows/guard/` | User-mode implementation of `agent_security_guard.dll` |
 
 The sandbox (F2) is a separate deliverable: see `../jiuwenbox/` in this repository.
 
@@ -26,9 +26,9 @@ Both options share the binaries from the `agent-security-dll` package, but they 
 | Option | Entry point | Shape |
 |---|---|---|
 | Process guard | `agent_shield.intercepts.native_call.wrap()` | Standalone `process_guard.exe` plus hook DLLs over a JSON `native-record/v1` pipe; supports recycle-bin deletion and x86 WOW64 children |
-| DLL guard | `agent_shield.intercepts.native_call.dll_guard.RuntimeGuardManager` | A per-session manager inside the host process, injecting `jiuwen_runtime_guard.dll` with binary framing; supports in-flight approvals, grant reuse, and foreground/background process trees |
+| DLL guard | `agent_shield.intercepts.native_call.dll_guard.RuntimeGuardManager` | A per-session manager inside the host process, injecting `agent_security_guard.dll` with binary framing; supports in-flight approvals, grant reuse, and foreground/background process trees |
 
-New async toolchains should prefer `RuntimeGuardManager`. It is Windows x64 only; each tool call enters `async with manager.tool_execution(...)` and starts processes with `create_process()`. When an ask is raised, the host renders the event and calls `manager.approvals.resolve(...)` with the answer. The existing `Decide` / `wrap` protocol keeps its behavior and continues to run on the process guard.
+New async toolchains should prefer `RuntimeGuardManager`. It runs on a Windows x64 host and protects both x64 and WOW64 root and child processes; each tool call enters `async with manager.tool_execution(...)` and starts processes with `create_process()`. When an ask is raised, the host renders the event and calls `manager.approvals.resolve(...)` with the answer. The existing `Decide` / `wrap` protocol keeps its behavior and continues to run on the process guard.
 
 ```python
 from agent_shield.intercepts.native_call.dll_guard import (
@@ -52,11 +52,11 @@ from agent_shield.intercepts.native_call.dll_guard import (
 | Tool-call integration | `intercepts/tool_call/` |
 | Tool-result integration | `intercepts/tool_output/` |
 | W1b host process guard | `intercepts/native_call/` (`wrap` + `process_guard.exe`) |
-| DLL guard | `intercepts/native_call/dll_guard/` + `native/windows-dll-guard/` |
+| DLL guard | `intercepts/native_call/dll_guard/` + `foundation/agent-security-dll/native/windows/guard/` |
 | W7 host integration | Outside this repository (jiuwenswarm / agent-core side) |
 | W5 sandbox wiring | Server in `../jiuwenbox/`; SDK wiring follows W6 |
 
-`schema/` holds the JSON Schemas for decisions and native records. `native/windows-process-guard/` holds the process guard's C/C++ implementation; Microsoft Detours is a build-time external dependency (see `native/windows-process-guard/third_party/NOTICE.md`), and installing or importing the Python package does not require it. Third-party rules register through the ruleset interface. See [docs/agent_shield-design.md](docs/agent_shield-design.md) for the PDP design.
+`schema/` holds the JSON Schemas for decisions and native records. `foundation/agent-security-dll/native/windows/` holds the process guard's C/C++ implementation; Microsoft Detours is a build-time external dependency (see `foundation/agent-security-dll/third_party/NOTICE.md`), and installing or importing the Python package does not require it. Third-party rules register through the ruleset interface. See [docs/agent_shield-design.md](docs/agent_shield-design.md) for the PDP design.
 
 ## Environment
 
@@ -72,7 +72,7 @@ tree-sitter and its bash / pwsh / batch grammars are required dependencies. For 
 pip install -e ".[dll-guard]"
 pip install agent-security-dll
 # From a source checkout you can also install locally:
-# pip install ./native/windows-process-guard/python
+# pip install agent-security-dll==0.2.0 --find-links ../foundation/agent-security-dll/build/wheels
 ```
 
 ## Decisions and grants

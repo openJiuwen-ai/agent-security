@@ -18,9 +18,9 @@ from agent_shield.tool_permission.runtime.models import PermissionConfirmRespons
 
 ROOT = Path(__file__).resolve().parents[4]
 
-DLL = guard_binary_directory() / "jiuwen_runtime_guard.dll"
+DLL = guard_binary_directory() / "x64" / "agent_security_guard.dll"
 
-CLIENT = ROOT / "agent_shield/native/windows-dll-guard/build/client.exe"
+CLIENT = guard_binary_directory() / "client.exe"
 
 
 def nt_path(prefix, rest):

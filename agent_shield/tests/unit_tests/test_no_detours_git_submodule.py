@@ -22,9 +22,8 @@ def test_repo_has_no_gitmodules() -> None:
 def test_detours_is_not_a_gitlink() -> None:
     detours = (
         _REPO_ROOT
-        / "agent_shield"
-        / "native"
-        / "windows-process-guard"
+        / "foundation"
+        / "agent-security-dll"
         / "third_party"
         / "detours"
     )

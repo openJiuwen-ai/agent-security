@@ -1,7 +1,5 @@
 """Resolve and validate the Windows runtime DLL from installed resources."""
 
-import hashlib
-import json
 import platform
 import struct
 import sys
@@ -24,7 +22,7 @@ def require_guard_platform() -> None:
 
 def locate_guard_dll() -> Path:
     """Resolve the optional native package, with a source-checkout fallback."""
-    path = guard_binary_directory() / "jiuwen_runtime_guard.dll"
+    path = guard_binary_directory() / "x64" / "agent_security_guard.dll"
     if not path.is_file():
         raise GuardBundleMissingError(
             f"DLL Guard missing at {path}. Install agent-security-dll or provide an explicit DLL"
@@ -63,7 +61,7 @@ def _validate_guard_cached(path: Path, identity) -> Path:
     return path
 
 
-def validate_guard_bundle(path: Path) -> Path:
+def validate_guard_bundle(path: Path, *, architecture: str = "x64") -> Path:
     """Validate an explicit prebuilt artifact without importing the host or loading the DLL.
 
     Packaging and runtime share the protocol, architecture and checksum checks.
@@ -72,28 +70,17 @@ def validate_guard_bundle(path: Path) -> Path:
     if not path.is_file():
         raise GuardBundleMissingError(f"DLL Guard is not installed: {path}")
     try:
-        manifest = json.loads(guard_manifest_path(path).read_text(encoding="utf-8-sig"))
-        binary = path.read_bytes()
-        pe = struct.unpack_from("<I", binary, 0x3C)[0]
-        valid = (
-            manifest.get("protocol") == 4
-            and manifest.get("architecture") == "x64"
-            and manifest.get("sha256") == hashlib.sha256(binary).hexdigest()
-            and binary[:2] == b"MZ"
-            and binary[pe:pe + 4] == b"PE\0\0"
-            and struct.unpack_from("<H", binary, pe + 4)[0] == 0x8664
-        )
+        from .._binary_location import guard_loader
+        guard_loader().validate_library(path, architecture, required_protocol=6)
     except FileNotFoundError as exc:
         raise GuardBundleMissingError(str(exc)) from exc
-    except (OSError, ValueError, TypeError, AttributeError, struct.error) as exc:
-        raise GuardBundleError("DLL Guard bundle is incomplete or invalid") from exc
-    if not valid:
-        raise GuardBundleError("DLL Guard bundle protocol, architecture or checksum mismatch")
+    except (OSError, ValueError, TypeError, AttributeError, ImportError) as exc:
+        raise GuardBundleError("DLL Guard manifest, capabilities, image or exports are invalid") from exc
     return path
 
 
 @contextmanager
-def pin_guard_bundle(path: Path):
+def pin_guard_bundle(path: Path, *, architecture: str = "x64"):
     """Keep the validated files and their resolved directory names in place until Job close."""
     import _winapi
     import ctypes
@@ -129,5 +116,5 @@ def pin_guard_bundle(path: Path):
                 raise GuardBundleMissingError(str(exc)) from exc
             except OSError as exc:
                 raise GuardBundleError(f"Cannot pin DLL Guard bundle entry {entry}: {exc}") from exc
-        validate_guard_bundle(path)
+        validate_guard_bundle(path, architecture=architecture)
         yield path

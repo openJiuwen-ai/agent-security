@@ -20,6 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+soft-delete = ["agent-security-dll==0.2.0; sys_platform == 'win32'"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
@@ -36,7 +37,7 @@ where = ["src"]
 include = ["jiuwenbox*"]
 
 [tool.setuptools.package-data]
-jiuwenbox = ["configs/*.yaml", "native/*.dll", "native/softdelete/*"]
+jiuwenbox = ["configs/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

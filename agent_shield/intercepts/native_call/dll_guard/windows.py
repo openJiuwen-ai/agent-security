@@ -45,7 +45,9 @@ class CacheRevocation:
     def duplicate_wait_handle(self, pid):
         # Grant SYNCHRONIZE only. A child must never be able to reset this event.
         job = self.job
-        process = job.open_process(pid, 0x1040)  # QUERY_LIMITED_INFORMATION | DUP_HANDLE
+        process = job.open_member(pid, 0x1040)  # QUERY_LIMITED_INFORMATION | DUP_HANDLE
+        if process is None:
+            return 0
         try:
             member = wt.BOOL()
             check = job.api("IsProcessInJob", wt.BOOL, wt.HANDLE, wt.HANDLE, ct.POINTER(wt.BOOL))
@@ -84,6 +86,7 @@ class WindowsJob:
     """Own a kill-on-close process tree and query kernel-enforced membership."""
 
     def __init__(self) -> None:
+        self._registered_members = {}
         self.kernel = ct.WinDLL("kernel32", use_last_error=True)
         self.ntdll = ct.WinDLL("ntdll", use_last_error=True)
         self.close_handle = self.api("CloseHandle", wt.BOOL, wt.HANDLE)
@@ -121,29 +124,134 @@ class WindowsJob:
             "OpenProcess",
         )
 
+    def open_member(self, pid: int, access=0x1000):
+        return self._open_member(pid, access)
+
     def contains(self, pid: int) -> bool:
+        process = self._open_member(pid)
+        if process is None:
+            return False
+        self.close_handle(process)
+        return True
+
+    def _open_member(self, pid: int, access=0x1000):
         if not self.handle:
-            return False
+            return None
         try:
-            process = self.open_process(pid)
+            retained = self._registered_members.get(pid)
+            if retained:
+                process = wt.HANDLE()
+                duplicate = self.api("DuplicateHandle", wt.BOOL, wt.HANDLE, wt.HANDLE,
+                                     wt.HANDLE, ct.POINTER(wt.HANDLE), wt.DWORD, wt.BOOL, wt.DWORD)
+                self.check_result(
+                    duplicate(-1, retained, -1, ct.byref(process), 0, False, 2),
+                    "Duplicate registered member",
+                )
+            else:
+                process = self.open_process(pid, access)
         except OSError:
-            return False
+            return None
+        result = wt.BOOL()
+        check = self.api("IsProcessInJob", wt.BOOL, wt.HANDLE, wt.HANDLE, ct.POINTER(wt.BOOL))
+        if check(process, self.handle, ct.byref(result)) and result.value:
+            return process
+        self.close_handle(process)
+        return None
+
+    def member_instance_id(self, pid: int) -> str | None:
+        """Use the legacy PID:creation-FILETIME identity on a verified Job member."""
+        process = self._open_member(pid)
+        if process is None:
+            return None
         try:
-            result = wt.BOOL()
-            check = self.api("IsProcessInJob", wt.BOOL, wt.HANDLE, wt.HANDLE, ct.POINTER(wt.BOOL))
-            return bool(check(process, self.handle, ct.byref(result)) and result.value)
+            times = [wt.FILETIME() for _ in range(4)]
+            get_times = self.api("GetProcessTimes", wt.BOOL, wt.HANDLE, *([ct.POINTER(wt.FILETIME)] * 4))
+            if not get_times(process, *(ct.byref(value) for value in times)):
+                return None
+            created = times[0]
+            return f"{pid}:{(created.dwHighDateTime << 32) | created.dwLowDateTime}"
         finally:
             self.close_handle(process)
 
     def inject_and_resume(self, pid: int, dll: Path, config: bytes) -> None:
         process = self.open_process(pid, 0x1FFFFF)
         try:
-            self._inject_import(process, dll, config)
+            wow64 = wt.BOOL()
+            query = self.api("IsWow64Process", wt.BOOL, wt.HANDLE, ct.POINTER(wt.BOOL))
+            self.check_result(query(process, ct.byref(wow64)), "Query target architecture")
+            if wow64.value:
+                load = self.api("LoadLibraryW", wt.HMODULE, wt.LPCWSTR)
+                module = self.check_result(load(str(dll)), "Load x86 Guard helper")
+                try:
+                    resolve = self.api("GetProcAddress", ct.c_void_p, wt.HMODULE, wt.LPCSTR)
+                    address = self.check_result(
+                        resolve(module, b"guard_prepare_session"),
+                        "Resolve x86 session export",
+                    )
+                    prepare = ct.WINFUNCTYPE(wt.BOOL, wt.HANDLE, ct.c_void_p, wt.DWORD)(address)
+                    binding = ct.create_string_buffer(config)
+                    self.check_result(prepare(process, binding, len(config)), "Prepare x86 Guard session")
+                finally:
+                    self.api("FreeLibrary", wt.BOOL, wt.HMODULE)(module)
+            else:
+                self._inject_import(process, dll, config)
             resume = self.api("NtResumeProcess", ct.c_long, wt.HANDLE, library=self.ntdll)
             status = resume(process)
             if status != 0:
                 raise OSError(f"NtResumeProcess failed (NTSTATUS {status & 0xFFFFFFFF:#010x})")
         finally:
+            self.close_handle(process)
+
+    def member_identity(self, pid: int) -> dict:
+        """Read audit identity from a verified member, never from an IPC claim."""
+        process = self._open_member(pid)
+        if process is None:
+            raise OSError("Process is no longer a Guard Job member")
+        security = ct.WinDLL("advapi32", use_last_error=True)
+        token = wt.HANDLE()
+        security.OpenProcessToken.argtypes = [wt.HANDLE, wt.DWORD, ct.POINTER(wt.HANDLE)]
+        security.GetTokenInformation.argtypes = [wt.HANDLE, ct.c_int, ct.c_void_p, wt.DWORD, ct.POINTER(wt.DWORD)]
+        security.ConvertSidToStringSidW.argtypes = [ct.c_void_p, ct.POINTER(ct.c_wchar_p)]
+        free = self.api("LocalFree", ct.c_void_p, ct.c_void_p)
+        try:
+            self.check_result(security.OpenProcessToken(process, 8, ct.byref(token)), "Open audit token")
+
+            def token_sid(kind):
+                size = wt.DWORD()
+                security.GetTokenInformation(token, kind, None, 0, ct.byref(size))
+                buffer = ct.create_string_buffer(size.value)
+                self.check_result(
+                    security.GetTokenInformation(token, kind, buffer, size, ct.byref(size)),
+                    "Read audit token",
+                )
+                text = ct.c_wchar_p()
+                self.check_result(
+                    security.ConvertSidToStringSidW(ct.c_void_p.from_buffer_copy(buffer), ct.byref(text)),
+                    "Format audit SID",
+                )
+                try:
+                    return text.value
+                finally:
+                    free(text)
+
+            user_sid, integrity_sid = token_sid(1), token_sid(25)
+            level = int(integrity_sid.rsplit("-", 1)[1])
+            info = (ct.c_void_p * 6)()
+            query = self.api(
+                "NtQueryInformationProcess", ct.c_long, wt.HANDLE, wt.ULONG, ct.c_void_p,
+                wt.ULONG, ct.c_void_p, library=self.ntdll,
+            )
+            if query(process, 0, info, ct.sizeof(info), None):
+                raise OSError("Read audit process parent")
+            return {
+                "pid": pid, "parent_pid": info[5], "image": self.process_image(pid),
+                "process_instance_id": self.member_instance_id(pid), "user_sid": user_sid,
+                "integrity_level": "system" if level >= 16384 else "high" if level >= 12288
+                else "medium" if level >= 8192 else "low" if level >= 4096 else "untrusted",
+            }
+        finally:
+            if token.value:
+                self.close_handle(token)
             self.close_handle(process)
 
     def attach(self, pid: int) -> None:
@@ -154,8 +262,66 @@ class WindowsJob:
         finally:
             self.close_handle(process)
 
+    def register_child_handle(self, parent_pid: int, remote_handle: int, *, authorize=None) -> bool:
+        """Accept only a real child handle held by an authenticated Job member."""
+        if remote_handle <= 0 or remote_handle >= (1 << 64) - 16:
+            return False
+        # A registered cross-account parent may not be reopenable by PID.
+        parent = self._open_member(parent_pid, 0x1040)
+        if parent is None:
+            return False
+        child = wt.HANDLE()
+        try:
+            member = wt.BOOL()
+            check = self.api("IsProcessInJob", wt.BOOL, wt.HANDLE, wt.HANDLE, ct.POINTER(wt.BOOL))
+            if not check(parent, self.handle, ct.byref(member)) or not member.value:
+                return False
+            duplicate = self.api(
+                "DuplicateHandle", wt.BOOL, wt.HANDLE, wt.HANDLE, wt.HANDLE,
+                ct.POINTER(wt.HANDLE), wt.DWORD, wt.BOOL, wt.DWORD,
+            )
+            current = self.api("GetCurrentProcess", wt.HANDLE)()
+            if not duplicate(parent, remote_handle, current, ct.byref(child), 0, False, 2):
+                return False
+            info = (ct.c_void_p * 6)()
+            query = self.api(
+                "NtQueryInformationProcess", ct.c_long, wt.HANDLE, wt.ULONG,
+                ct.c_void_p, wt.ULONG, ct.c_void_p, library=self.ntdll,
+            )
+            if query(child, 0, info, ct.sizeof(info), None) or info[5] != parent_pid:
+                return False
+            if not (check(child, self.handle, ct.byref(member)) and member.value):
+                assign = self.api("AssignProcessToJobObject", wt.BOOL, wt.HANDLE, wt.HANDLE)
+                if not assign(self.handle, child):
+                    return False
+            get_pid = self.api("GetProcessId", wt.DWORD, wt.HANDLE)
+            pid = get_pid(child)
+            if not pid:
+                return False
+            previous = self._registered_members.get(pid)
+            self._registered_members[pid] = child
+            try:
+                if authorize is not None:
+                    authorize(self.member_identity(pid))
+            except BaseException:
+                if previous:
+                    self._registered_members[pid] = previous
+                else:
+                    self._registered_members.pop(pid, None)
+                raise
+            if previous:
+                self.close_handle(previous)
+            child = wt.HANDLE()
+            return True
+        finally:
+            if child.value:
+                self.close_handle(child)
+            self.close_handle(parent)
+
     def process_image(self, pid: int) -> str:
-        process = self.open_process(pid)
+        process = self._open_member(pid)
+        if process is None:
+            raise OSError("Process is not a Guard Job member")
         try:
             buffer, size = ct.create_unicode_buffer(32768), wt.DWORD(32768)
             query = self.api(
@@ -171,8 +337,35 @@ class WindowsJob:
         finally:
             self.close_handle(process)
 
+    def process_command_line(self, pid: int) -> str:
+        process = self._open_member(pid)
+        if process is None:
+            raise OSError("Process is not a Guard Job member")
+
+        class UnicodeString(ct.Structure):
+            _fields_ = [("length", wt.USHORT), ("maximum", wt.USHORT), ("buffer", ct.c_void_p)]
+        try:
+            query = self.api("NtQueryInformationProcess", ct.c_long, wt.HANDLE, wt.ULONG,
+                             ct.c_void_p, wt.ULONG, ct.POINTER(wt.ULONG), library=self.ntdll)
+            required = wt.ULONG()
+            query(process, 60, None, 0, ct.byref(required))
+            if not ct.sizeof(UnicodeString) <= required.value <= 131072:
+                raise OSError("Invalid process command line length")
+            buffer = ct.create_string_buffer(required.value)
+            status = query(process, 60, buffer, len(buffer), ct.byref(required))
+            value = UnicodeString.from_buffer(buffer)
+            start = ct.addressof(buffer)
+            end = start + len(buffer)
+            inside = bool(value.buffer) and start <= value.buffer <= value.buffer + value.length <= end
+            invalid = status < 0 or value.length % 2
+            if invalid or not inside:
+                raise OSError("Cannot query process command line")
+            return ct.wstring_at(value.buffer, value.length // 2)
+        finally:
+            self.close_handle(process)
+
     def _inject_import(self, process, dll: Path, config: bytes) -> None:
-        if len(config) != 1028 or config[:4] != struct.pack("<I", 0x44474333):
+        if len(config) != 1032 or config[:4] != struct.pack("<I", 0x44474333):
             raise ValueError("Invalid DLL Guard bootstrap configuration")
         read = self.api(
             "ReadProcessMemory",
@@ -280,26 +473,8 @@ class WindowsJob:
         # relative to the injected import directory; no sidecar or env mutation.
         payload = bytearray(8192)
         payload[4096:4096 + len(config)] = config
-        # Install Guard outside the already installed soft-delete hook chain.
-        # Only trust the exact module loaded by this host, never a basename
-        # supplied by the target executable's import table.
-        insertion = 0
-        module = self.api("GetModuleHandleW", wt.HMODULE, wt.LPCWSTR)("jiuwen_softdelete.dll")
-        if module and entries:
-            loaded = ct.create_string_buffer(32768)
-            get_name = self.api("GetModuleFileNameA", wt.DWORD, wt.HMODULE, ct.c_void_p, wt.DWORD)
-            self.check_result(get_name(module, loaded, len(loaded)), "Query soft-delete module")
-            entry_name = struct.unpack_from("<I", entries[0], 12)[0]
-            imported = bytearray()
-            for offset in range(32768):
-                character = read_bytes(image + entry_name + offset, 1)
-                if character == b"\0":
-                    break
-                imported.extend(character)
-            if bytes(imported).lower() == loaded.value.lower():
-                insertion = 1
         guard_entry = struct.pack("<IIIII", rva + ilt, 0, 0, rva + name_offset, rva + iat)
-        entries.insert(insertion, guard_entry)
+        entries.insert(0, guard_entry)
         for index, entry in enumerate(entries):
             payload[index * 20:(index + 1) * 20] = entry
         payload[name_offset:name_offset + len(name)] = name
@@ -322,6 +497,9 @@ class WindowsJob:
         if self.handle:
             self.close_handle(self.handle)
             self.handle = None
+        for process in self._registered_members.values():
+            self.close_handle(process)
+        self._registered_members.clear()
 
     def active_processes(self) -> int:
         """Count descendants as well as the original asyncio subprocess."""

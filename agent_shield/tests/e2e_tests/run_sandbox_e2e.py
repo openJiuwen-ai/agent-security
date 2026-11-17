@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 RECORDS = HERE / "sandbox_records.json"
 RESULTS = HERE / "sandbox_e2e_results.jsonl"
-BIN = ROOT / "native" / "windows-process-guard" / "build"
+BIN = ROOT.parent / "foundation" / "agent-security-dll" / "build"
 PROBE = BIN / "probe.exe"
 WORKSPACE_PREFIX = "c:/users/me/proj"
 

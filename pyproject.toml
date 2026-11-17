@@ -4,7 +4,7 @@
 # 包含模块（导入名与各子目录独立安装时完全一致，现有代码无需改动）：
 #   - agent_shield   <- agent_shield/          （flat 布局）
 #   - agent_ssas     <- agent_ssas/src/        （src 布局）
-#   - security_mask  <- foundation/security_mask/
+#   - security_mask  <- foundation/security-mask/src/security_mask/
 #   - jiuwenbox      <- jiuwenbox/src/         （src 布局）
 #
 # 安装（git URL，注意：不需要 #subdirectory）：
@@ -16,7 +16,7 @@
 #   agent-shield / agent-ssas / security-mask / jiuwenbox 子包，否则模块重复。
 #
 # 开发（本仓库根目录）：
-#   uv sync --all-packages                  # 四个成员 editable 安装 + 依赖 + dev 工具
+#   uv sync --all-packages                  # 工作区成员 editable 安装 + 依赖 + dev 工具
 #   uv run --package agent-ssas pytest       # 在某个成员环境下运行
 #
 # 发布构建：
@@ -63,6 +63,7 @@ dependencies = [
 [project.optional-dependencies]
 # 对应 agent-shield 的 dll-guard extra（tree-sitter/tree-sitter-bash 已在基础依赖中）
 dll-guard = [
+    "agent-security-dll==0.2.0; sys_platform == 'win32'",
     "tld>=0.13,<0.14",
 ]
 
@@ -86,15 +87,19 @@ dev = [
 ]
 
 [tool.uv]
-# 开发时根目录不作为包安装：四个成员已各自 editable 安装，
+# 开发时根目录不作为包安装：工作区成员已各自 editable 安装，
 # 若再把 openjiuwen-security 装入同一环境，模块会重复（根包仅在发布构建时打包）
 package = false
+
+[tool.uv.sources]
+agent-security-dll = { workspace = true }
 
 [tool.uv.workspace]
 members = [
     "agent_shield",
     "agent_ssas",
-    "foundation",
+    "foundation/security-mask",
+    "foundation/agent-security-dll",
     "jiuwenbox",
 ]
 # security_gateway 不列入 members，继续按独立项目使用

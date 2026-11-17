@@ -29,13 +29,15 @@ def test_both_guards_resolve_the_installed_package(tmp_path, monkeypatch):
     )
     with pytest.raises(bundle.GuardBundleMissingError, match="agent-security-dll"):
         bundle.locate_guard_dll()
-    dll = tmp_path / "jiuwen_runtime_guard.dll"
+    dll = tmp_path / "x64" / "agent_security_guard.dll"
+    dll.parent.mkdir()
     dll.touch()
     assert bundle.locate_guard_dll() == dll
     binaries = getattr(launch, "_binaries")
     names = getattr(launch, "_BINARIES")
     assert binaries() is None
     for name in names:
+        (tmp_path / name).parent.mkdir(exist_ok=True)
         (tmp_path / name).touch()
     assert binaries() == {name: str(tmp_path / name) for name in names}
     assert binaries(str(tmp_path / "explicit")) is None

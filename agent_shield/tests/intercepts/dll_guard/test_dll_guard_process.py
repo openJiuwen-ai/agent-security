@@ -30,9 +30,9 @@ from agent_shield.tool_permission.runtime.models import PermissionConfirmRespons
 
 ROOT = Path(__file__).resolve().parents[4]
 
-DLL = guard_binary_directory() / "jiuwen_runtime_guard.dll"
+DLL = guard_binary_directory() / "x64" / "agent_security_guard.dll"
 
-CLIENT = ROOT / "agent_shield/native/windows-dll-guard/build/client.exe"
+CLIENT = guard_binary_directory() / "client.exe"
 PYTHON = getattr(sys, "_base_executable", sys.executable)
 
 pytestmark = pytest.mark.skipif(
@@ -123,41 +123,45 @@ def test_native_address_snapshot_survives_cross_thread_updates():
 
 
 @pytest.mark.asyncio
-async def test_x86_start_reports_architecture_for_root_and_descendant(tmp_path):
-    x86 = Path(os.environ["SystemRoot"]) / "SysWOW64" / "cmd.exe"
-    if not x86.is_file():
-        pytest.skip("WOW64 system executable unavailable")
-    manager = RuntimeGuardManager(
-        session_id="architecture", dll=DLL, engine=PermissionEngine({"enabled": False})
-    )
+@pytest.mark.parametrize("child", [False, True], ids=["x86-root", "x64-to-x86-child"])
+async def test_runtime_manager_enforces_file_policy_in_x86_process(tmp_path, child, monkeypatch):
+    probe = guard_binary_directory() / "probe_x86.exe"
+    assert probe.is_file(), "Build the Windows test clients for both architectures"
+    allowed, denied = tmp_path / "allowed.txt", tmp_path / "denied.txt"
+    engine = PermissionEngine({
+        "enabled": True, "package_builtin_rules": False, "tools": {"bash": "allow"},
+        "file_guard": {
+            "enabled": True, "defaults": {"read": "allow", "write": "allow", "exec": "allow"},
+            "paths": [{"path": str(denied), "write": "deny"}],
+        },
+    }, workspace_root=tmp_path)
+    decisions = set()
+    check = WindowsGuardExecution.check_access
+
+    async def record(execution, pid, raw_path, action):
+        result = await check(execution, pid, raw_path, action)
+        if action & 2 and Path(raw_path).name in {allowed.name, denied.name}:
+            decisions.add((pid, execution.file_path(raw_path), result))
+        return result
+
+    monkeypatch.setattr(WindowsGuardExecution, "check_access", record)
+    argv = [str(probe), "check-file-policy", str(allowed), str(denied)]
+    if child:
+        launch_child = "import subprocess,sys; sys.exit(subprocess.call(sys.argv[1:]))"
+        argv = [PYTHON, "-I", "-c", launch_child, *argv]
+    manager = RuntimeGuardManager(session_id="architecture", dll=DLL, engine=engine)
     try:
-        async with manager.tool_execution(
-            tool_name="bash", inputs={}, session=None, tool_call_id="root"
-        ):
-            with pytest.raises(GuardInjectionError) as failure:
-                await create_process(asyncio.create_subprocess_exec, str(x86), "/d", "/c", "exit 0")
-            assert failure.value.__cause__.winerror == 216
-        async with manager.tool_execution(
-            tool_name="bash", inputs={}, session=None, tool_call_id="child"
-        ):
-            script = (
-                "import subprocess,sys\n"
-                "try: subprocess.run([sys.argv[1], '/d', '/c', 'exit 0'], check=True)\n"
-                "except OSError as exc: print(exc.winerror)\n"
-            )
+        async with manager.tool_execution(tool_name="bash", inputs={}, session=None, tool_call_id="probe"):
             process = await create_process(
-                asyncio.create_subprocess_exec,
-                PYTHON,
-                "-I",
-                "-c",
-                script,
-                str(x86),
-                cwd=tmp_path,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                asyncio.create_subprocess_exec, *argv, cwd=tmp_path,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(process.communicate(), 10)
-            assert process.returncode == 0 and stdout.strip() == b"216", (stdout, stderr)
+            stdout, stderr = await asyncio.wait_for(process.communicate(), 20)
+        assert process.returncode == 0, (stdout, stderr)
+        bits, pid, created = map(int, stdout.split())
+        assert bits == 32 and created > 0 and (pid != process.pid) == child
+        assert {(pid, allowed, True), (pid, denied, False)} <= decisions
+        assert allowed.is_file() and not denied.exists()
     finally:
         await manager.close(permanent=True)
 

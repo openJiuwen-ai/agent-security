@@ -15,9 +15,9 @@ plan. This file implements the complete phase-4 surface:
 - WFP + loopback proxy egress filter  (``supervisor.win_wfp`` / ``win_proxy``)
 - Restricted-token two-hop exec       (``supervisor.win_exec`` / ``win_setup``)
 
-Phase 5 soft-delete (``jiuwen_softdelete.dll``, recycle broker injection)
+Phase 5 soft-delete (``agent_security_guard.dll``, recycle broker injection)
 runs when ``JIUWENBOX_SOFT_DELETE=1``. The capability flag stays true on
-Windows; a missing broker falls through to a real delete.
+Windows. A missing broker causes sandbox recovery to return a deletion error.
 """
 
 from __future__ import annotations
@@ -421,6 +421,9 @@ class WindowsRuntime(RuntimeAdapter):
                 "jiuwenbox-logs",
                 sandbox_id,
                 "softdelete-trace.log",
+            )
+            env["JIUWENBOX_SOFT_DELETE_RESULTS"] = os.path.join(
+                os.path.dirname(env["JIUWENBOX_SOFT_DELETE_TRACE"]), "softdelete-results.jsonl",
             )
         try:
             recycle_token = prepare_runner_recycle(

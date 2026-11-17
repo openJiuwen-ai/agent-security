@@ -15,7 +15,7 @@ from setuptools import find_packages, setup
 COMPONENTS = {
     "agent_shield": "agent_shield",               # 扁平布局：目录即包
     "agent_ssas": "agent_ssas/src/agent_ssas",   # src 布局
-    "security_mask": "foundation/security_mask",
+    "security_mask": "foundation/security-mask/src/security_mask",
     "jiuwenbox": "jiuwenbox/src/jiuwenbox",      # src 布局
 }
 
@@ -38,6 +38,6 @@ setup(
         "agent_shield": ["py.typed"],
         "agent_shield.tool_permission.runtime": ["defaults.yaml"],
         "agent_ssas": ["**/*.yaml"],
-        "jiuwenbox": ["configs/*.yaml", "native/*.dll", "native/softdelete/*"],
+        "jiuwenbox": ["configs/*.yaml"],
     },
 )

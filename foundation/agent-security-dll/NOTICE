@@ -1,0 +1,8 @@
+Agent Security DLL
+Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+Windows builds statically link Microsoft Research Detours v4.0.1,
+commit e4bfd6b03e50de46b47abfbd1e46b384f0c5f833.
+Copyright (c) Microsoft Corporation. MIT License.
+See third_party/LICENSE.Detours.txt.

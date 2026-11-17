@@ -71,15 +71,12 @@ workspace/agent/memory/*.db-wal
 # Build-time Node runtime cache used by packaging scripts.
 vendor/node/
 
-# Windows process guard build outputs. Detours sources are an external
-# checkout (not a git submodule) so `uv sync` / pip install never hits GitHub.
-agent_shield/native/windows-process-guard/build/
-agent_shield/native/windows-process-guard/third_party/detours/
-agent_shield/native/windows-process-guard/python/src/agent_security_dll/bin/win_amd64/*
-!agent_shield/native/windows-process-guard/python/src/agent_security_dll/bin/win_amd64/.gitkeep
-!agent_shield/native/windows-process-guard/python/src/agent_security_dll/bin/win_amd64/jiuwen_runtime_guard.dll
-!agent_shield/native/windows-process-guard/python/src/agent_security_dll/bin/win_amd64/jiuwen_runtime_guard.manifest.json
-!agent_shield/native/windows-process-guard/python/src/agent_security_dll/bin/win_amd64/LICENSE.Detours.txt
-!agent_shield/native/windows-process-guard/python/src/agent_security_dll/bin/win_amd64/process_guard.exe
-!agent_shield/native/windows-process-guard/python/src/agent_security_dll/bin/win_amd64/process_guard_hook_x64.dll
-!agent_shield/native/windows-process-guard/python/src/agent_security_dll/bin/win_amd64/process_guard_hook_x86.dll
+# Native outputs are produced by the product build.
+*.dll
+*.exe
+*.obj
+*.exp
+*.lib
+*.pdb
+*.whl
+foundation/agent-security-dll/src/agent_security_dll/bin/

@@ -213,14 +213,35 @@ class _PipeRequest(asyncio.Protocol):
             resource = data.decode("utf-8", errors="strict")
             cache_ready = cache_request and self.owner.has_native_cache()
             cache_request = cache_ready and self.owner.fixed_engine.permission_checks_enabled
-            if action == 41:
+            if action == 45:
+                allowed = self.owner.context.active and self.owner.job.register_child_handle(
+                    self.pid, int(resource), authorize=self.owner.authorize_child_identity,
+                )
+            elif action == 49:
+                if not cache_request and resource == "ready":
+                    wait_handle = self.owner.duplicate_ready_signal(self.pid)
+            elif action == 41:
                 if not cache_request and resource == "cache" and self.owner.has_native_cache():
                     wait_handle = self.owner.duplicate_cache_wait(self.pid)
-            elif action in (16, 17):
+            elif action == 44 or 65 <= action <= 79:
+                # The runtime policy checks actual URL, endpoint and filesystem access.
+                # Connection handles and named pipes retain their OS access checks.
+                allowed = self.owner.context.active and self.owner.job.contains(self.pid)
+            elif action == 50:
+                allowed = await self.owner.check_access(self.pid, resource, 2)
+            elif action == 48:
+                _, stage, source, target, backup = resource.split("\0")
+                phase = int(stage)
+                if (phase & 255) in (2, 3):
+                    paths = [(source, 8), (target, 10 if phase & 256 else 2)]
+                    if backup:
+                        paths.append((backup, 2))
+                    allowed = await self.owner.check_file_batch(self.pid, paths)
+            elif action in (16, 17, 18, 19):
                 paths = resource.split("\0")
                 if len(paths) == 2:
                     allowed = await self.owner.check_file_batch(
-                        self.pid, [(paths[0], 8 if action == 16 else 2), (paths[1], 2)]
+                        self.pid, [(paths[0], {16: 8, 17: 2, 18: 1, 19: 1}[action]), (paths[1], 2)]
                     )
             elif action == 32:
                 allowed = await self.owner.check_resource(
@@ -281,7 +302,7 @@ class _PipeRequest(asyncio.Protocol):
             pass
         finally:
             if self.transport is not None and not self.transport.is_closing():
-                answer = wait_handle if action == 41 else (2 if cacheable else int(allowed))
+                answer = wait_handle if action in (41, 49) else (2 if cacheable else int(allowed))
                 self.transport.write(_REPLY.pack(0x44475031, sequence, answer))
                 self.transport.close()
 
@@ -360,6 +381,14 @@ class WindowsGuardExecution:
 
         try:
             self.dll = self._bundle_handles.enter_context(pin_guard_bundle(self.dll_source))
+            x86 = self.dll.parent.parent / "x86" / self.dll.name
+            manifest_path = self.dll.with_suffix(".manifest.json")
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+            targets = manifest.get("target_architectures")
+            if targets is None:
+                raise ValueError("Guard manifest has no target architectures")
+            if "x86" in targets:
+                self._bundle_handles.enter_context(pin_guard_bundle(x86, architecture="x86"))
             self.job = WindowsJob()
             nonce = secrets.token_hex(16)
             pipe = os.path.join("\\\\.\\pipe", "jiuwen-guard-" + nonce)
@@ -440,7 +469,13 @@ class WindowsGuardExecution:
             reset = self.job.api("ResetEvent", wt.BOOL, wt.HANDLE)
             try:
                 self.job.check_result(reset(self.ready), "ResetEvent")
-                self.job.inject_and_resume(process.pid, self.dll, self.bootstrap)
+                env = kwargs.get("env")
+                recovery = os.environ.get("JIUWENBOX_SOFT_DELETE") == "1" if env is None else any(
+                    os.fsdecode(key).upper() == "JIUWENBOX_SOFT_DELETE" and os.fsdecode(value) == "1"
+                    for key, value in env.items()
+                )
+                config = self.bootstrap + struct.pack("<I", not recovery)
+                self.job.inject_and_resume(process.pid, self.dll, config)
             except (OSError, ValueError) as exc:
                 raise GuardInjectionError(
                     f"Guard setup failed for PID {process.pid}: {exc}"
@@ -527,6 +562,38 @@ class WindowsGuardExecution:
         if self._cache is None:
             return 0
         return self._cache.duplicate_wait_handle(pid)
+
+    def authorize_child_identity(self, identity):
+        """Bind only the kernel-read child identity before its initial thread resumes."""
+        from .pipe_security import PipeSecurity
+
+        sid = identity["user_sid"]
+        sids = set().union(*(server.security.allowed_sids for server in self.servers))
+        if sid not in sids:
+            # The target opens the ready event during DLL initialization.
+            event_security = PipeSecurity(sids | {sid}, client_access=2)
+            try:
+                event_security.apply(self.ready)
+            finally:
+                event_security.close()
+        for server in self.servers:
+            server.allow_sid(sid)
+
+    def duplicate_ready_signal(self, pid: int) -> int:
+        if not self.context.active or self.job is None or not self.ready:
+            return 0
+        process = self.job.open_member(pid, 0x1040)
+        if process is None:
+            return 0
+        try:
+            remote = wt.HANDLE()
+            duplicate = self.job.api("DuplicateHandle", wt.BOOL, wt.HANDLE, wt.HANDLE, wt.HANDLE,
+                                     ct.POINTER(wt.HANDLE), wt.DWORD, wt.BOOL, wt.DWORD)
+            if duplicate(-1, self.ready, process, ct.byref(remote), 2, False, 0):
+                return remote.value
+            return 0
+        finally:
+            self.job.close_handle(process)
 
     def cacheable_endpoint(self, address, port):
         if self._cache is None or not self._fixed_engine.permission_checks_enabled:

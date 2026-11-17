@@ -56,8 +56,8 @@ The three can be used alone or together. For example, use `tool_permission` for 
 | `intercepts/tool_output/` | Passes tool result text to content detection |
 | `tool_permission/` | Existing action-decision components: command, path, network, host, and deletion guards, plus runtime grants |
 | `detection/` | Content detection engine for prompt injection and similar soft signals |
-| `native/windows-process-guard/` | C/C++ implementation of `process_guard.exe` and the x64 / x86 hook DLLs |
-| `native/windows-dll-guard/` | User-mode implementation of `jiuwen_runtime_guard.dll` |
+| `foundation/agent-security-dll/native/windows/` | C/C++ implementation of `process_guard.exe` and the x64 / x86 hook DLLs |
+| `foundation/agent-security-dll/native/windows/guard/` | User-mode implementation of `agent_security_guard.dll` |
 
 `policy_engine/` and `tool_permission/` share a package namespace but evolve separately: the former decides whether one event may proceed, the latter holds the concrete rules for tool calls and local access.
 
@@ -78,7 +78,7 @@ Windows offers two options with different integration models:
 | Option | Entry point | Shape | Fits |
 | --- | --- | --- | --- |
 | Process guard | `agent_shield.intercepts.native_call.wrap()` | Standalone `process_guard.exe` plus hook DLLs over a JSON `native-record/v1` pipe | Existing `Decide` / `wrap` integrations that need x86 WOW64 children and recycle-bin deletion |
-| DLL guard | `agent_shield.intercepts.native_call.dll_guard.RuntimeGuardManager` | Per-session manager inside the host process, injecting `jiuwen_runtime_guard.dll` and using binary framing | Async toolchains that need in-flight approvals, grant reuse, and foreground/background process trees |
+| DLL guard | `agent_shield.intercepts.native_call.dll_guard.RuntimeGuardManager` | Per-session manager inside the host process, injecting `agent_security_guard.dll` and using binary framing | Async toolchains that need in-flight approvals, grant reuse, and foreground/background process trees |
 
 A typical DLL guard lifecycle:
 
@@ -88,7 +88,7 @@ A typical DLL guard lifecycle:
 4. When an ask is raised, `emit` delivers an approval event and the host answers through `manager.approvals.resolve(...)`. An approval can cover one execution or be persisted.
 5. When the foreground process exits, children still in the Job become background tasks that the manager keeps tracking.
 
-DLL guard is Windows x64 only. Both guards take their binaries from the `agent-security-dll` package, and `agent_security_dll.binary_directory()` returns the binary directory: DLL guard uses `jiuwen_runtime_guard.dll`, while the process guard uses `process_guard.exe` and `process_guard_hook_x64.dll` / `_x86.dll`.
+DLL guard runs on a Windows x64 host and protects x64 and WOW64 root and child processes. Both guards take their binaries from the `agent-security-dll` package, and `agent_security_dll.binary_directory()` returns the binary directory: DLL guard uses `agent_security_guard.dll`, while the process guard uses `process_guard.exe` and `x64/agent_security_guard.dll` / `x86/agent_security_guard.dll`.
 
 ## 6. Minimal example
 
@@ -146,7 +146,7 @@ tree-sitter and its bash / pwsh / batch grammars are required dependencies; comm
 pip install -e ".[dll-guard]"
 pip install agent-security-dll
 # From a source checkout you can also install locally:
-# pip install ./native/windows-process-guard/python
+# pip install agent-security-dll==0.2.0 --find-links ../foundation/agent-security-dll/build/wheels
 ```
 
 ## 8. Continue here
@@ -154,5 +154,5 @@ pip install agent-security-dll
 | Goal | Document |
 | --- | --- |
 | Rule model, priority, protocols, and tests | [agent_shield-design.md](../../../agent_shield/docs/agent_shield-design.md) |
-| DLL guard build and validation | `agent_shield/native/windows-dll-guard/README.md`, `VALIDATION.md` |
+| DLL guard build and validation | `foundation/agent-security-dll/README.md` |
 | Component responsibilities and configuration | [Agent Shield component and configuration reference](../../zh/2.开发指南/Agent%20Shield组件与配置参考.html) (Chinese) |
