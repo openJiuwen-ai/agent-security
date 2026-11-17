@@ -1,6 +1,6 @@
 """openjiuwen-security 聚合包的动态打包配置。
 
-为什么有这个文件：pyproject.toml 的静态 packages 列表无法表达四个异构目录的
+为什么有这个文件：pyproject.toml 的静态 packages 列表无法表达五个异构目录的
 自动发现（agent_shield 是扁平布局，packages.find 拼不出 agent_shield.* 前缀），
 此前显式列 65 个包，新增子包忘了同步会静默缺包。这里改为构建时自动发现：
 
@@ -17,6 +17,7 @@ COMPONENTS = {
     "agent_ssas": "agent_ssas/src/agent_ssas",   # src 布局
     "security_mask": "foundation/security-mask/src/security_mask",
     "jiuwenbox": "jiuwenbox/src/jiuwenbox",      # src 布局
+    "security_gateway": "security_gateway/src",  # src 目录即包（同其成员 pyproject 的 package-dir）
 }
 
 # 过滤包根里的非发布内容（按发现的包名 fnmatch），如 agent_shield/ 下的 tests、native

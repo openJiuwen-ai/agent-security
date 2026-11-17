@@ -15,6 +15,7 @@ members = [
     "agent-ssas",
     "jiuwenbox",
     "openjiuwen-security",
+    "security-gateway",
     "security-mask",
 ]
 
@@ -892,6 +893,7 @@ name = "openjiuwen-security"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "mcp" },
@@ -926,6 +928,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "agent-security-dll", marker = "sys_platform == 'win32' and extra == 'dll-guard'", editable = "foundation/agent-security-dll" },
+    { name = "cryptography", specifier = ">=43" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "mcp", specifier = ">=1.27.2,<2" },
@@ -1507,6 +1510,32 @@ wheels = [
     { url = "https://repo.huaweicloud.com/repository/pypi/packages/ec/8c/e4db9ae1e0ee233c04df007ab6d0d42f799ae9abd95d352b6092ee7bc4bf/ruff-0.17.5-py3-none-win_amd64.whl", hash = "sha256:aa415d57c244299279901d776607fee3df7831c2a7435433fbfacde8632c6550" },
     { url = "https://repo.huaweicloud.com/repository/pypi/packages/e6/65/a1648bc1550e7683bf7bf1e2ce2485c9f8535cbca6cca9ec7b73cc12fb8e/ruff-0.17.5-py3-none-win_arm64.whl", hash = "sha256:64a6fd668a336df959c522991de33e9e3c8be463afc0c9ac8f029f9d19ef756e" },
 ]
+
+[[package]]
+name = "security-gateway"
+version = "0.1.0"
+source = { editable = "security_gateway" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "pyyaml" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=43" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
+    { name = "pyyaml", specifier = ">=6" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "security-mask"

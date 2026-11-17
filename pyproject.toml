@@ -1,19 +1,21 @@
 # ============================================================================
-# openjiuwen-security —— 聚合发行包（一个 wheel 包含四个组件的全部模块）
+# openjiuwen-security —— 聚合发行包（一个 wheel 包含五个组件的全部模块）
 #
 # 包含模块（导入名与各子目录独立安装时完全一致，现有代码无需改动）：
-#   - agent_shield   <- agent_shield/          （flat 布局）
-#   - agent_ssas     <- agent_ssas/src/        （src 布局）
-#   - security_mask  <- foundation/security-mask/src/security_mask/
-#   - jiuwenbox      <- jiuwenbox/src/         （src 布局）
+#   - agent_shield     <- agent_shield/                        （flat 布局）
+#   - agent_ssas       <- agent_ssas/src/                      （src 布局）
+#   - security_mask    <- foundation/security-mask/src/security_mask/
+#   - jiuwenbox        <- jiuwenbox/src/                        （src 布局）
+#   - security_gateway <- security_gateway/src/                （src 目录即包）
 #
 # 安装（git URL，注意：不需要 #subdirectory）：
 #   pip install "openjiuwen-security @ git+https://gitcode.com/openJiuwen/agent-security.git@<ref>"
 # 依赖引用（可替代 jiuwenswarm 中现在的四条 git 依赖）：
 #   "openjiuwen-security @ git+https://gitcode.com/openJiuwen/agent-security.git@develop",
 #
-# ⚠ 互斥：本包已内置四个模块，消费方不要再同时安装
-#   agent-shield / agent-ssas / security-mask / jiuwenbox 子包，否则模块重复。
+# ⚠ 互斥：本包已内置五个模块，消费方不要再同时安装
+#   agent-shield / agent-ssas / security-mask / jiuwenbox / security-gateway
+#   子包，否则模块重复。
 #
 # 开发（本仓库根目录）：
 #   uv sync --all-packages                  # 工作区成员 editable 安装 + 依赖 + dev 工具
@@ -38,7 +40,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openjiuwen-security"
 version = "0.1.0"
-description = "OpenJiuwen agent security suite: agent_shield, agent_ssas, security_mask and jiuwenbox in one distribution"
+description = "openJiuwen agent security suite: agent_shield, agent_ssas, security_gateway, security_mask and jiuwenbox in one distribution"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
@@ -58,6 +60,8 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
     "mcp>=1.27.2,<2",
+    # --- security_gateway ---（PyYAML 已含于上）
+    "cryptography>=43",
 ]
 
 [project.optional-dependencies]
@@ -101,7 +105,7 @@ members = [
     "foundation/security-mask",
     "foundation/agent-security-dll",
     "jiuwenbox",
+    "security_gateway",
 ]
-# security_gateway 不列入 members，继续按独立项目使用
 #
-# 包的发现与映射（四个异构目录）在 setup.py 里动态完成，此处不再静态枚举
+# 包的发现与映射（五个异构目录）在 setup.py 里动态完成，此处不再静态枚举
