@@ -43,7 +43,8 @@ def test_readable_program_files_dll_does_not_require_rewriting_its_dacl(tmp_path
     dll = tmp_path / 'Program Files' / 'softdelete.dll'
     dll.parent.mkdir()
     dll.write_bytes(b'not loaded by this test')
-    monkeypatch.setattr(win_softdelete, 'dll_path', lambda: dll)
+    x86 = dll.parent / 'x86' / dll.name
+    monkeypatch.setattr(win_softdelete, 'dll_path', lambda arch='x64': dll if arch == 'x64' else x86)
     monkeypatch.setattr(win_setup, 'get_sandbox_user_sid', lambda: 'S-test')
     monkeypatch.setattr(win_softdelete, 'sandbox_can_load_dll', lambda *_args: True)
     traverse = Mock()
@@ -51,7 +52,7 @@ def test_readable_program_files_dll_does_not_require_rewriting_its_dacl(tmp_path
     mutate = Mock(side_effect=AssertionError('already readable, do not rewrite DACL'))
     monkeypatch.setattr(win_acl, 'grant_ace', mutate)
     assert win_softdelete.prepare_dll_for_sandbox_user() == dll
-    traverse.assert_called_once_with(str(dll), 'S-test')
+    assert [call.args for call in traverse.call_args_list] == [(str(dll), 'S-test'), (str(x86), 'S-test')]
     mutate.assert_not_called()
 
 

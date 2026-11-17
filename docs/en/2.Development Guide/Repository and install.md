@@ -27,7 +27,7 @@ The repository root has no single install entry. Each component has its own `pyp
 
 JiuwenBox's Windows runtime needs a one-time administrator setup for accounts, WFP, and ACLs. When the environment is not ready, the service fails to start instead of reporting a successful start that cannot serve traffic. See [JiuwenBox](JiuwenBox.md) and `jiuwenbox/README.md`.
 
-agent-shield's `process_guard.exe` must be built locally or installed from the `agent-security-dll` binary package. DLL guard additionally requires x64 targets.
+agent-shield's `process_guard.exe` must be built locally or installed from the `agent-security-dll` binary package. DLL guard supports x64 and WOW64 root and child processes on a Windows x64 host.
 
 ## 3. Local install
 
@@ -69,7 +69,7 @@ For the Windows DLL guard, install the binary package as well:
 pip install -e ".[dll-guard]"
 pip install agent-security-dll
 # From a source checkout you can also install locally:
-# pip install ./native/windows-process-guard/python
+# pip install agent-security-dll==0.2.0 --find-links ../foundation/agent-security-dll/build/wheels
 ```
 
 ### Security Gateway
@@ -83,7 +83,7 @@ pytest tests -q
 ### Security Mask
 
 ```bash
-cd foundation
+cd foundation/security-mask
 pip install -e ".[dev]"
 pytest
 ```

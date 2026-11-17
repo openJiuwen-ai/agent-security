@@ -5,7 +5,7 @@ from asyncio.windows_utils import BUFSIZE, PipeHandle
 
 import _winapi
 
-from ..decide_pipe import _PIPE_REJECT_REMOTE_CLIENTS, _Security
+from .pipe_security import PIPE_REJECT_REMOTE_CLIENTS, PipeSecurity
 from .errors import GuardPipeError
 
 
@@ -18,20 +18,20 @@ class GuardPipeServer:
         self.listener = None
         self.security = None
         try:
-            self.security = _Security()
+            self.security = PipeSecurity()
             self._listen(first=True)
         except (OSError, AttributeError) as exc:
             self.close()
             raise GuardPipeError(f"Cannot create protected DLL Guard listener: {exc}") from exc
 
     def _listen(self, *, first=False):
-        flags = _winapi.PIPE_ACCESS_DUPLEX | _winapi.FILE_FLAG_OVERLAPPED
+        flags = _winapi.PIPE_ACCESS_DUPLEX | _winapi.FILE_FLAG_OVERLAPPED | 0x40000  # WRITE_DAC
         if first:
             flags |= _winapi.FILE_FLAG_FIRST_PIPE_INSTANCE
         handle = _winapi.CreateNamedPipe(
             self.name,
             flags,
-            _winapi.PIPE_TYPE_MESSAGE | _winapi.PIPE_READMODE_MESSAGE | _PIPE_REJECT_REMOTE_CLIENTS,
+            _winapi.PIPE_TYPE_MESSAGE | _winapi.PIPE_READMODE_MESSAGE | PIPE_REJECT_REMOTE_CLIENTS,
             _winapi.PIPE_UNLIMITED_INSTANCES,
             BUFSIZE,
             BUFSIZE,
@@ -73,6 +73,21 @@ class GuardPipeServer:
             finally:
                 if pipe is not None:
                     pipe.close()
+
+    def allow_sid(self, sid):
+        """Called only with an OS-read SID of a child already registered to this Job."""
+        if sid in self.security.allowed_sids:
+            return
+        replacement = PipeSecurity(self.security.allowed_sids | {sid})
+        try:
+            if self.listener is None:
+                raise GuardPipeError("No listener available while registering child identity")
+            replacement.apply(self.listener.fileno())
+        except BaseException:
+            replacement.close()
+            raise
+        previous, self.security = self.security, replacement
+        previous.close()
 
     def close(self):
         if self.pending is not None:

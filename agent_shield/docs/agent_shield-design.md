@@ -63,9 +63,9 @@ agent_shield/                       ← 本目录自身即 agent_shield 包（fl
     tool_output/                      工具结果 → 内容检测引擎
       inspect.py                          异步 inspect()：文本交 detection 后端评估
       adapters/jiuwenswarm/tool_result.py 从工具结果提取待检文本
-  native/windows-process-guard/  C/C++ 原生实现（Detours hook + 守护进程）
+  foundation/agent-security-dll/native/windows/  C/C++ 原生实现（Detours hook + 守护进程）
     src/  tests/  third_party/detours/（构建期外置 checkout，非 submodule）  build.ps1  python/（二进制分发子包）
-  native/windows-dll-guard/      DLL 防护原生实现（jiuwen_runtime_guard.dll）
+  foundation/agent-security-dll/native/windows/guard/      DLL 防护原生实现（agent_security_guard.dll）
     src/  tests/  build.ps1  README.md  VALIDATION.md
   tool_permission/                   既有动作决策组件（toolguard / fileguard / netguard / hostguard / delguard）
     runtime/                         原生适配用的运行时配置、授权与引擎（内部）
@@ -180,7 +180,7 @@ flowchart TB
 
 路径 A/B 与路径 C 的产出不同：行为引擎产出 fail-closed 的动作裁决（`agent-decision/v1`），检测引擎产出概率性软信号（`RiskAssessment`，由宿主决定如何消费——展示、降权或转人工）。
 
-Windows 上还有一套 DLL 防护（见 8.5 与 9.11）：宿主在进程内创建 `RuntimeGuardManager`，把 `jiuwen_runtime_guard.dll` 注入目标进程，DLL 在执行前经二进制管道向宿主询问。它复用的是 `tool_permission` 的运行时策略配置与授权格式（`HostPolicyAdapter` / `RuntimePermissionEngine` / `approval_overrides`），**不经过本文件描述的 PDP 规则集与十级优先级**；它也不使用 `process_guard.exe` 和 `native-record/v1` JSON 协议。两套 Windows 防护按宿主接入方式二选一。
+Windows 上还有一套 DLL 防护（见 8.5 与 9.11）：宿主在进程内创建 `RuntimeGuardManager`，把 `agent_security_guard.dll` 注入目标进程，DLL 在执行前经二进制管道向宿主询问。它复用的是 `tool_permission` 的运行时策略配置与授权格式（`HostPolicyAdapter` / `RuntimePermissionEngine` / `approval_overrides`），**不经过本文件描述的 PDP 规则集与十级优先级**；它也不使用 `process_guard.exe` 和 `native-record/v1` JSON 协议。两套 Windows 防护按宿主接入方式二选一。
 
 四层规则来源都汇入裁决内核：
 
@@ -350,7 +350,7 @@ Schema 为 `schema/agent-decision.v1.json`，`additionalProperties=false`。
 | `native-decision/v1` | 宿主 → hook | `request_id`、`operation_id`、`event_id`、`allow`、`reason`（= `winner_rule_id`） |
 | `native-operation-result/v1` | hook → 宿主 | 删除处置回报：`success` + `disposition ∈ trash/permanent/denied/failed` |
 | `process-guard-broker/v1` | hook → process_guard.exe | 子进程托管请求：`action=provision_child`、`child{pid, tid, architecture, creation_flags}`；Python 侧不解析 |
-| DLL guard 二进制帧 | `jiuwen_runtime_guard.dll` ↔ 宿主 | 5 个 `uint32` 帧头（magic `0x44475231`，上限 128 KiB），按操作码分发文件、URL、DNS、端点与程序检查；审批与执行授权走同一连接 |
+| DLL guard 二进制帧 | `agent_security_guard.dll` ↔ 宿主 | 5 个 `uint32` 帧头（magic `0x44475231`，上限 128 KiB），按操作码分发文件、URL、DNS、端点与程序检查；审批与执行授权走同一连接 |
 
 所有 spec 帧在 `message_framing.c:51-57` 白名单校验。`native-decision/v1` 的 `request_id`/`operation_id` 必须与请求双匹配，`allow` 必须是布尔，任何不符即 deny。DLL guard 的二进制帧是独立协议，不复用上面的 JSON spec。
 
@@ -808,7 +808,7 @@ process_guard.exe --decide-pipe <名> --hook-dll <x64> --hook-dll-x86 <x86>
 |---|---|---|
 | `session_id` | 是 | 会话标识，审批与授权按它隔离 |
 | `engine` | 是 | `PermissionEngine`，或返回 `PermissionEngine`/`HostPolicyAdapter` 的可调用对象 |
-| `dll` | 是 | `jiuwen_runtime_guard.dll` 的路径，或返回路径的可调用对象（通常 `locate_guard_dll`） |
+| `dll` | 是 | `agent_security_guard.dll` 的路径，或返回路径的可调用对象（通常 `locate_guard_dll`） |
 | `emit` | 条件必填 | 策略可能产生 ask 时必须提供：DLL 侧命中 ask 时用它把 `RuntimeApprovalEvent` 交给宿主渲染；缺省而命中 ask 会抛 `RuntimeError("Runtime approval requires a host emit callback")` |
 | `approval_timeout` | 否 | 等待宿主回答的秒数，默认 120 |
 | `program_decision` | 否 | 根程序启动判定为 `undetermined` 时的宿主回调；仍返回 `undetermined` 则按 ask 处理 |
@@ -822,7 +822,7 @@ process_guard.exe --decide-pipe <名> --hook-dll <x64> --hook-dll-x86 <x86>
 1. 宿主每个会话创建一个 `RuntimeGuardManager`；`enabled` 返回 False 时整个防护透传，不创建执行。
 2. 每次工具调用进入 `async with manager.tool_execution(tool_name=..., inputs=..., session=..., tool_call_id=..., channel=...)`。四个必填参数缺一或值为空（尤其 `tool_call_id`）会抛 `RuntimeError`；`channel` 是可选的连接标识，会随审批事件带给宿主。
 3. 上下文内用 `create_process()` 启动的进程才会进入注入流程；上下文外调用原样交给 factory。首次真实启动时惰性创建 `WindowsGuardExecution`：校验平台、`pin_guard_bundle` 锁定 DLL 与 manifest、创建 `WindowsJob`（`KILL_ON_JOB_CLOSE`）、随机命名管道、就绪事件与 bootstrap，然后启动管道服务。同一上下文内的并发启动串行化，只创建一个执行。
-4. `launch()` 以 `CREATE_SUSPENDED | CREATE_NO_WINDOW` 创建根进程，加入 Job，先做 `kind="program"` 策略判定；拒绝则杀掉挂起进程并抛 `GuardPolicyDenied`。允许则重置就绪事件、通过导入表注入 `jiuwen_runtime_guard.dll`、`NtResumeProcess`，最多等待 5 秒就绪。
+4. `launch()` 以 `CREATE_SUSPENDED | CREATE_NO_WINDOW` 创建根进程，加入 Job，先做 `kind="program"` 策略判定；拒绝则杀掉挂起进程并抛 `GuardPolicyDenied`。允许则重置就绪事件、通过导入表注入 `agent_security_guard.dll`、`NtResumeProcess`，最多等待 5 秒就绪。
 5. DLL 侧通过命名管道上报文件、URL、DNS、端点与程序访问；宿主核对客户端 PID 在 Job 内后按二进制帧分发。命中 ask 时 `emit` 事件并等待 `approvals.resolve`，批准后写执行级或会话级授权，可经 `persist` 永久保存。
 6. 工具返回后，若 Job 仍有进程，执行保留为后台任务并每 0.1 秒轮询；否则释放。`await manager.close(permanent=True)` 取消前后台任务并清空会话授权；不带 `permanent` 时只关闭当前活跃执行，manager 之后仍可复用。`close(permanent=True)` 后再次进入 `tool_execution` 会抛 `RuntimeError`。策略 `revision` 变化时重算版本；只有“本次仅新增该授权”的保存会保留旧授权，否则清空。
 
@@ -881,20 +881,20 @@ async def main() -> None:
 
 示例只演示接线。实际宿主应把 `emit` 接进审批 UI，把 `resolve` 放在用户点击回调里；`PermissionConfirmResponse(approved=False)` 表示拒绝，`auto_confirm=True` 配合 `persist_allow` 表示记住授权（`persist_allow=False` 为会话级，`None`/`True` 为永久级，仍需 `persist` 才能落盘）。
 
-**与进程守卫的取舍**：DLL 防护不提供回收站删除模式，删除在批准后执行真实删除；只支持 Windows x64，x86 子进程注入会失败；网络覆盖更广（含 DNS 与 WinHTTP 代理目标 URL），文件与进程 hook 更精简。需要回收站、x86 WOW64 或既有 `native-record/v1` 协议时继续用进程守卫。
+Runtime Guard 通过会话管道和 Job 管理 x64 与 WOW64 进程。Process Guard 的 `wrap()` 继续使用 `Decide` 和 `native-record/v1` 协议。
 
 ---
 
 ## 9. native Windows 防护（C/C++）
 
-本章 9.1–9.10 描述 `process_guard.exe` 与 Hook DLL，9.11 描述 `jiuwen_runtime_guard.dll`。
+本章 9.1–9.10 描述 `process_guard.exe` 与 Hook DLL，9.11 描述 `agent_security_guard.dll`。
 
 ### 9.1 产物与构建（`build.ps1`）
 
 | 产物 | 源文件 | 编译要点 |
 |---|---|---|
 | `process_guard.exe`（x64） | `process_guard_main.cpp` + 公共 C 模块 | `/W4 /WX /EHsc /MD`，链接 Detours X64 lib |
-| `process_guard_hook_x64.dll` / `_x86.dll` | `hooks.cpp` + 公共 C 模块 | `/MT /LD /DEF:process_guard_hook.def`（仅导出 `ProcessGuardAttach`）；x86 用 `vcvarsall x86` 交叉编译同一份源码 |
+| `x64/agent_security_guard.dll` / `x86/agent_security_guard.dll` | `hooks.cpp` + 公共 C 模块 | 保留 `ProcessGuardAttach` 与公共 DLL 入口；x86 用 `vcvarsall x86` 交叉编译同一份源码 |
 | `probe.exe`（x64） | `probe.cpp` | 集成测试靶 |
 | 4 个单测 exe | `tests/test_*.cpp` | `/utf-8`，编译后立即执行作为构建门禁 |
 
@@ -968,15 +968,15 @@ native 侧失败语义：Decide 管道 5 秒等待失败 → 83；注入/架构/
 
 Windows 分发包 `agent-security-dll` 可独立安装，通过 `agent_security_dll.binary_directory()` 提供两套 Guard 的原生文件。执行入口位于 SDK 的 `agent_shield.intercepts.native_call` 和 `dll_guard` 子包。
 
-### 9.11 DLL 防护原生层（`native/windows-dll-guard/`）
+### 9.11 DLL 防护原生层（`foundation/agent-security-dll/native/windows/guard/`）
 
-本节是 8.5 所述 DLL 防护的**原生侧**：8.5 讲宿主如何用 `RuntimeGuardManager` 创建会话、进入 `tool_execution` 与回应审批；本节讲被注入的 `jiuwen_runtime_guard.dll` 如何 hook、上报与执行。两者之间的二进制帧格式见 3.4（与 `process_guard.exe` 的 JSON `native-record/v1` 协议互不复用）。
+本节是 8.5 所述 DLL 防护的**原生侧**：8.5 讲宿主如何用 `RuntimeGuardManager` 创建会话、进入 `tool_execution` 与回应审批；本节讲被注入的 `agent_security_guard.dll` 如何 hook、上报与执行。两者之间的二进制帧格式见 3.4（与 `process_guard.exe` 的 JSON `native-record/v1` 协议互不复用）。
 
-`jiuwen_runtime_guard.dll` 是用户态防护 DLL，由宿主在目标进程挂起时通过导入表注入。它不依赖独立守护进程，和 9.1–9.10 的 `process_guard.exe` 是两套实现：
+`agent_security_guard.dll` 是用户态防护 DLL，由宿主在目标进程挂起时通过导入表注入。它不依赖独立守护进程，和 9.1–9.10 的 `process_guard.exe` 是两套实现：
 
 | 方面 | 实现 |
 |---|---|
-| 构建 | `native/windows-dll-guard/build.ps1` 编译 DLL，产物与 manifest（protocol 4、x64、SHA-256）一起进入 `agent_security_dll/bin/win_amd64/` |
+| 构建 | `foundation/agent-security-dll/scripts/build-windows.ps1` 编译 DLL，产物与 manifest（protocol 6、架构、SHA-256）一起进入 `agent_security_dll/bin/{x64,x86}/` |
 | 注入 | 宿主创建挂起根进程，加入 Job，读取实际映像并做程序策略判定，再注入 DLL、恢复执行；最多等待 5 秒就绪 |
 | IPC | 命名管道 `\\.\pipe\jiuwen-guard-<nonce>`，二进制帧（magic `0x44475231`，上限 128 KiB）；宿主先核对客户端 PID 在 Job 内 |
 | 文件 | `NtCreateFile`、`NtOpenFile`、`NtDeleteFile`、`NtSetInformationFile`、`DeleteFileW`、`RemoveDirectoryW`、`GetVolumeNameForVolumeMountPointW` |
@@ -985,7 +985,7 @@ Windows 分发包 `agent-security-dll` 可独立安装，通过 `agent_security_
 | 删除 | 批准后执行真实删除，不提供回收站模式 |
 | 失败语义 | DLL 缺失、manifest 不符、平台不符、注入失败、管道失败、策略拒绝均抛 `GuardError` 子类；注入失败时终止挂起进程，不退回裸执行 |
 
-DLL 防护只支持 Windows x64；x86 子进程注入会失败并拒绝启动。需要覆盖 WOW64、回收站删除或 `ShellExecute` 时使用进程守卫。
+在 Windows x64 上，Runtime Guard 为根进程和子进程选择对应架构的 DLL，二者共用会话策略。
 
 ---
 
@@ -1035,7 +1035,7 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 
 `agent_shield` 包（flat 布局，本目录即包根）内已落地的能力分三块：
 
-- **本文档覆盖**：`policy_engine/`（策略决策点）、`intercepts/tool_call/`（工具调用）、`intercepts/native_call/`（系统调用与两套 Windows 防护接入）、`intercepts/tool_output/`（工具结果交给 detection），以及两套原生实现 `native/windows-process-guard/`、`native/windows-dll-guard/`；
+- **本文档覆盖**：`policy_engine/`（策略决策点）、`intercepts/tool_call/`（工具调用）、`intercepts/native_call/`（系统调用与两套 Windows 防护接入）、`intercepts/tool_output/`（工具结果交给 detection），以及两套原生实现 `foundation/agent-security-dll/native/windows/`、`foundation/agent-security-dll/native/windows/guard/`；
 - **范围外兄弟子包**：`tool_permission/`（工具权限组件 toolguard / fileguard / netguard / hostguard / delguard，对应 W1a / W2 / W3 / W6）与 `detection/`（内容检测，对应 W4）——同包名空间、分开演进，由各自文档描述，pyproject 包清单同时列出它们；
 - **沙箱（W5）**：独立交付件 `../jiuwenbox/`（自带 pyproject、FastAPI 服务、Linux / Windows 运行时），与本包分开安装与测试。
 
@@ -1110,7 +1110,7 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 4. 注册表 API 未拦截（当前无注册表 hook）。
 5. DNS（`getaddrinfo`）未 hook；socket 级按 IP、HTTP API 级按主机名拦截。
 6. 读不存在文件、写父目录缺失、伪设备直接放行不产生 record（性能优化，语义上无风险面）。
-7. native 守卫仅支持 Windows x64 宿主（x86 DLL 只服务 WOW64 子进程），ARM64 目标拒绝。
+7. native 守卫仅支持 Windows x64 宿主（x86 DLL 用于 WOW64 根进程和子进程），ARM64 目标拒绝。
 
 **实现细节限制**：
 
@@ -1118,7 +1118,7 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 9. `Host` 回调路径的 `user_rules` 没有条数上限（HTTP/eval 路径限 500）。
 10. `Decide` 的审批去重键只含 effects 内容：无 effects 的 agentTools 事件级 ask 并发时共用一个审批门。
 11. hook 进程内决策串行（`g_decide_lock`）：单个被守护进程的裁决吞吐受一问一答时延限制。
-12. DLL 防护只支持 Windows x64，且文件/进程 hook 比进程守卫精简；需要 x86 WOW64、`ShellExecute`、回收站删除或 `NtCreateUserProcess` 无条件拒绝时，仍应使用进程守卫。
+12. Runtime Guard 支持 Windows x64 宿主上的 x64 和 WOW64 目标进程，审批和授权复用由所属会话管理。
 
 **演进方向**：数据安全 / 提示词安全 / 扩展安全能力域按需设包落地（见 12）；非 Windows 的 native 守卫；注册表拦截；审计统一与落盘；意图核对接入规则集目录。
 
@@ -1162,8 +1162,8 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 | `intercepts/native_call/dll_guard/bridge.py` | `WindowsGuardExecution`、审批通道、DLL 管道分发与授权 |
 | `intercepts/native_call/dll_guard/policy.py`、`shell_launch.py` | 运行时策略、资源授权与命令行启动判定 |
 | `intercepts/native_call/dll_guard/bundle.py`、`windows.py` | DLL 定位/校验、Job Object 与缓存撤销 |
-| `native/windows-dll-guard/src/` | `jiuwen_runtime_guard.dll` 的 hook、注入、网络与文件快照实现 |
-| `native/windows-dll-guard/build.ps1` | DLL 构建与 manifest 生成 |
+| `foundation/agent-security-dll/native/windows/` | `agent_security_guard.dll` 的 hook、注入、网络与文件快照实现 |
+| `foundation/agent-security-dll/scripts/build-windows.ps1` | DLL 构建与 manifest 生成 |
 | `policy_engine/core/intent.py` | 意图核对（纯文本） |
 | `policy_engine/errors.py` | `PolicyError`：规则或 when 加载失败 |
 | `policy_engine/builtin/policy.py` | `Policy` / `load_builtin_policy`（目录改名视图） |
@@ -1173,7 +1173,7 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 | `policy_engine/events/command_effects.py` | 命令转成 effect。分词在 `matchers/command.py` |
 | `intercepts/native_call/launch.py` | `preflight` / `wrap`、二进制定位、fail-closed |
 | `intercepts/native_call/decide_pipe.py` | `DecidePipe`：命名管道、帧协议、bind、结算分发 |
-| `native/windows-process-guard/build.ps1` | MSVC + Detours 构建（含单测门禁；Detours 经 `DETOURS_ROOT` / 外置 checkout，非 submodule） |
+| `foundation/agent-security-dll/scripts/build-windows.ps1` | MSVC + Detours 构建（含单测门禁；Detours 经 `DETOURS_ROOT` / 外置 checkout，非 submodule） |
 | `native/.../src/process_guard_main.cpp` | 守护进程：启动、注入、broker 线程 |
 | `native/.../src/hooks.cpp` | Detours hook、ask、trash 删除、子进程 spawn |
 | `native/.../src/process_guard_startup.h` | 启动配置布局：句柄、超时、删除模式、身份、tool cause（无指针、`pack(8)`，x64/x86 一致） |

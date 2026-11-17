@@ -28,7 +28,7 @@ class PreflightResult:
     intercept: bool
 
 
-_BINARIES = ("process_guard.exe", "process_guard_hook_x64.dll", "process_guard_hook_x86.dll")
+_BINARIES = ("x64/process_guard.exe", "x64/agent_security_guard.dll", "x86/agent_security_guard.dll")
 _FAIL_EXIT = 83
 _TOOL_CALL_ID_MAX = 127
 _TOOL_NAME_MAX = 255
@@ -75,13 +75,13 @@ def wrap(
     try:
         try:
             command = [
-                binaries["process_guard.exe"],
+                binaries["x64/process_guard.exe"],
                 "--decide-pipe",
                 pipe.name,
                 "--hook-dll",
-                binaries["process_guard_hook_x64.dll"],
+                binaries["x64/agent_security_guard.dll"],
                 "--hook-dll-x86",
-                binaries["process_guard_hook_x86.dll"],
+                binaries["x86/agent_security_guard.dll"],
                 "--delete-mode",
                 delete_mode,
                 "--decision-timeout-ms",

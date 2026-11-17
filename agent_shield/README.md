@@ -14,8 +14,8 @@
 | `intercepts/tool_output/` | 工具结果文本 → 内容检测 |
 | `tool_permission/` | 既有动作决策组件：toolguard / fileguard / netguard / hostguard / delguard，以及 `runtime` 授权复用 |
 | `detection/` | 内容检测引擎，输出提示词注入等概率性软信号 |
-| `native/windows-process-guard/` | `process_guard.exe` 与 x64 / x86 Hook DLL 的 C/C++ 实现 |
-| `native/windows-dll-guard/` | `jiuwen_runtime_guard.dll` 的用户态防护实现 |
+| `foundation/agent-security-dll/native/windows/` | `process_guard.exe` 与 x64 / x86 Hook DLL 的 C/C++ 实现 |
+| `foundation/agent-security-dll/native/windows/guard/` | `agent_security_guard.dll` 的用户态防护实现 |
 
 沙箱（F2）是独立交付件，见同仓 `../jiuwenbox/`。
 
@@ -26,9 +26,9 @@
 | 方案 | 入口 | 形态 |
 |---|---|---|
 | 进程守卫 | `agent_shield.intercepts.native_call.wrap()` | 独立 `process_guard.exe` + Hook DLL，JSON `native-record/v1` 管道，支持回收站删除与 x86 WOW64 子进程 |
-| DLL 防护 | `agent_shield.intercepts.native_call.dll_guard.RuntimeGuardManager` | 宿主进程内管理会话，导入表注入 `jiuwen_runtime_guard.dll`，二进制帧 IPC，支持运行中审批、授权复用与前后台进程树 |
+| DLL 防护 | `agent_shield.intercepts.native_call.dll_guard.RuntimeGuardManager` | 宿主进程内管理会话，导入表注入 `agent_security_guard.dll`，二进制帧 IPC，支持运行中审批、授权复用与前后台进程树 |
 
-新接入的异步工具链优先使用 `RuntimeGuardManager`。它只支持 Windows x64；每次工具调用在 `async with manager.tool_execution(...)` 内通过 `create_process()` 启动进程，命中 ask 时由宿主渲染事件并调用 `manager.approvals.resolve(...)` 交回决定。既有 `Decide` / `wrap` 协议保持原有行为，继续由进程守卫承载。
+新接入的异步工具链优先使用 `RuntimeGuardManager`。它运行在 Windows x64 宿主上，支持 x64 和 WOW64 根进程及子进程；每次工具调用在 `async with manager.tool_execution(...)` 内通过 `create_process()` 启动进程，命中 ask 时由宿主渲染事件并调用 `manager.approvals.resolve(...)` 交回决定。既有 `Decide` / `wrap` 协议保持原有行为，继续由进程守卫承载。
 
 ```python
 from agent_shield.intercepts.native_call.dll_guard import (
@@ -52,11 +52,11 @@ from agent_shield.intercepts.native_call.dll_guard import (
 | 工具调用接入 | `intercepts/tool_call/` |
 | 工具结果接入 | `intercepts/tool_output/` |
 | W1b 宿主进程守卫 | `intercepts/native_call/`（`wrap` + `process_guard.exe`） |
-| DLL 防护 | `intercepts/native_call/dll_guard/` + `native/windows-dll-guard/` |
+| DLL 防护 | `intercepts/native_call/dll_guard/` + `foundation/agent-security-dll/native/windows/guard/` |
 | W7 宿主接入 | 不在本仓（jiuwenswarm / agent-core 侧） |
 | W5 沙箱接线 | 服务端在 `../jiuwenbox/`，SDK 侧接线随 W6 定 |
 
-`schema/` 存放决策与 native record 的 JSON Schema。`native/windows-process-guard/` 是进程守卫的 C/C++ 实现；Microsoft Detours 是构建期外置依赖（见 `native/windows-process-guard/third_party/NOTICE.md`），安装和导入 Python 包不需要拉取。三方规则经规则集接口注册，PDP 设计见 [docs/agent_shield-design.md](docs/agent_shield-design.md)。
+`schema/` 存放决策与 native record 的 JSON Schema。`foundation/agent-security-dll/native/windows/` 是进程守卫的 C/C++ 实现；Microsoft Detours 是构建期外置依赖（见 `foundation/agent-security-dll/third_party/NOTICE.md`），安装和导入 Python 包不需要拉取。三方规则经规则集接口注册，PDP 设计见 [docs/agent_shield-design.md](docs/agent_shield-design.md)。
 
 ## 环境
 
@@ -72,7 +72,7 @@ tree-sitter 及 bash / pwsh / batch 语法包是必需依赖。需要使用 DLL 
 pip install -e ".[dll-guard]"
 pip install agent-security-dll
 # 源码检出也可从本地安装：
-# pip install ./native/windows-process-guard/python
+# pip install agent-security-dll==0.2.0 --find-links ../foundation/agent-security-dll/build/wheels
 ```
 
 ## 裁决与授权

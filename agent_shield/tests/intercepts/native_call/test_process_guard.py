@@ -10,7 +10,7 @@ from agent_shield.intercepts.native_call import preflight, wrap
 from agent_shield.intercepts.native_call import settle_native_record
 from agent_shield.tests.net_addrs import METADATA
 
-_BIN = Path(__file__).resolve().parents[3] / "native" / "windows-process-guard" / "build"
+_BIN = Path(__file__).resolve().parents[4] / "foundation" / "agent-security-dll" / "build"
 
 
 class Host:
@@ -42,7 +42,7 @@ class Host:
 
 
 def _binaries_ready() -> bool:
-    names = ("process_guard.exe", "process_guard_hook_x64.dll", "process_guard_hook_x86.dll", "probe.exe")
+    names = ("x64/process_guard.exe", "x64/agent_security_guard.dll", "x86/agent_security_guard.dll", "probe.exe")
     return all((_BIN / name).is_file() for name in names)
 
 

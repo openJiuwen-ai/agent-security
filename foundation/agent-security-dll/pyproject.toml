@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-security-dll"
+version = "0.2.0"
+description = "Windows binaries shared by the agent-security guards"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+
+license-files = ["LICENSE", "NOTICE", "third_party/LICENSE.Detours.txt"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["agent_security_dll*"]
+
+[tool.setuptools.package-data]
+agent_security_dll = ["bin/*/*.dll", "bin/*/*.exe", "bin/*/*.manifest.json"]

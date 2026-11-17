@@ -231,7 +231,7 @@ def make_execution(tmp_path, emit, registry, *, read="ask", write="ask"):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "artifact", ["jiuwen_runtime_guard.dll", "jiuwen_runtime_guard.manifest.json"]
+    "artifact", ["agent_security_guard.dll", "agent_security_guard.manifest.json"]
 )
 async def test_native_artifacts_have_no_independent_write_policy(tmp_path, artifact):
     engine = PermissionEngine({"enabled": False})
@@ -239,7 +239,7 @@ async def test_native_artifacts_have_no_independent_write_policy(tmp_path, artif
     execution = WindowsGuardExecution(
         session_id="s",
         tool_call_id="call",
-        dll=native / "jiuwen_runtime_guard.dll",
+        dll=native / "agent_security_guard.dll",
         approvals=RuntimeApprovalRequests(),
         engine=lambda: engine,
         emit=AsyncMock(),

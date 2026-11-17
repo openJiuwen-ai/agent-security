@@ -10,12 +10,18 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "agent-security-dll",
     "agent-shield",
     "agent-ssas",
     "jiuwenbox",
     "openjiuwen-security",
     "security-mask",
 ]
+
+[[package]]
+name = "agent-security-dll"
+version = "0.2.0"
+source = { editable = "foundation/agent-security-dll" }
 
 [[package]]
 name = "agent-shield"
@@ -41,6 +47,7 @@ dev = [
     { name = "tld" },
 ]
 dll-guard = [
+    { name = "agent-security-dll", marker = "sys_platform == 'win32'" },
     { name = "tld" },
     { name = "tree-sitter" },
     { name = "tree-sitter-bash" },
@@ -48,6 +55,7 @@ dll-guard = [
 
 [package.metadata]
 requires-dist = [
+    { name = "agent-security-dll", marker = "sys_platform == 'win32' and extra == 'dll-guard'", editable = "foundation/agent-security-dll" },
     { name = "cryptography", marker = "extra == 'dev'", specifier = ">=43" },
     { name = "jsonschema", marker = "extra == 'dev'", specifier = ">=4" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
@@ -806,9 +814,13 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
 ]
+soft-delete = [
+    { name = "agent-security-dll", marker = "sys_platform == 'win32'" },
+]
 
 [package.metadata]
 requires-dist = [
+    { name = "agent-security-dll", marker = "sys_platform == 'win32' and extra == 'soft-delete'", editable = "foundation/agent-security-dll" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "mcp", specifier = ">=1.27.2,<2" },
@@ -821,7 +833,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["soft-delete", "dev"]
 
 [[package]]
 name = "jsonschema"
@@ -895,6 +907,7 @@ dependencies = [
 
 [package.optional-dependencies]
 dll-guard = [
+    { name = "agent-security-dll", marker = "sys_platform == 'win32'" },
     { name = "tld" },
 ]
 
@@ -912,6 +925,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "agent-security-dll", marker = "sys_platform == 'win32' and extra == 'dll-guard'", editable = "foundation/agent-security-dll" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "mcp", specifier = ">=1.27.2,<2" },
@@ -1497,7 +1511,7 @@ wheels = [
 [[package]]
 name = "security-mask"
 version = "0.1.0"
-source = { editable = "foundation" }
+source = { editable = "foundation/security-mask" }
 
 [package.optional-dependencies]
 dev = [

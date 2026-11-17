@@ -10,9 +10,9 @@
 
 - **Agent SSAS**：Agent 安全态势感知系统（Security Situation Awareness System）。通过事件采集与可插拔检测模块框架，实时感知 Agent 行为并产出 OCSF 格式威胁报告，支持进程内与独立 HTTP 服务两种运行模式，可接入 JiuwenSwarm 等智能体运行时。详见 [agent_ssas/README.zh.md](./agent_ssas/README.zh.md)。
 - **JiuwenBox Sandbox**：轻量 Agent 安全沙箱服务，为 Agent 工具调用与代码执行提供分层隔离，支持 Linux 与 Windows。详见 [jiuwenbox/README_CN.md](./jiuwenbox/README_CN.md)。
-- **agent-shield**：进程内动作决策与内容检测，并在 Windows 上提供 `process_guard.exe` 与 `jiuwen_runtime_guard.dll` 两套原生防护。详见 [docs/zh/2.开发指南/Agent Shield.md](./docs/zh/2.开发指南/Agent%20Shield.md)。
+- **agent-shield**：进程内动作决策与内容检测，并在 Windows 上提供共用 `agent_security_guard.dll` 的 Process Guard 和 Runtime Guard。详见 [docs/zh/2.开发指南/Agent Shield.md](./docs/zh/2.开发指南/Agent%20Shield.md)。
 - **Security Gateway**：加密字段存储库，按 schema 决定字段加密并支持密钥轮换。详见 [security_gateway/README.md](./security_gateway/README.md)。
-- **Security Mask**：流式文本脱敏工具，供网页通道把命中片段替换为星号。详见 [foundation/README.md](./foundation/README.md)。
+- **Security Mask**：流式文本脱敏工具，供网页通道把命中片段替换为星号。详见 [foundation/security-mask/README.md](./foundation/security-mask/README.md)。
 
 这些组件彼此独立，不要求同时部署。常见的组合是：agent-shield 在工具调用前给出决定，JiuwenBox 提供执行环境，Agent SSAS 负责记录和检测，Security Gateway 保存加密凭据，Security Mask 处理网页通道的出站文本。第一次接触这个仓库，建议先读 [产品简介](./docs/zh/1.产品简介.md)。
 

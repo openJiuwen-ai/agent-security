@@ -18,7 +18,7 @@ from agent_shield.intercepts.native_call.dll_guard.bridge import (
 from agent_shield.tool_permission import runtime_policy
 
 PermissionEngine = runtime_policy.engine.PermissionEngine
-DLL = guard_binary_directory() / "jiuwen_runtime_guard.dll"
+DLL = guard_binary_directory() / "x64" / "agent_security_guard.dll"
 pytestmark = pytest.mark.skipif(
     sys.platform != "win32" or not DLL.is_file(), reason="Windows DLL required"
 )

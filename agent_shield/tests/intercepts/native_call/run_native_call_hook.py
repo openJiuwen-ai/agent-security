@@ -37,7 +37,7 @@ from agent_shield.tests.stdio import log_line
 
 CASES = HERE / "native_call_cases.json"
 RESULTS = HERE / "native_call_hook_results.jsonl"
-BIN = ROOT / "native" / "windows-process-guard" / "build"
+BIN = ROOT.parent / "foundation" / "agent-security-dll" / "build"
 PROBE = BIN / "probe.exe"
 
 
@@ -121,7 +121,10 @@ def primary(kind: str, decisions: list[dict]) -> dict | None:
 
 def main() -> None:
     if not PROBE.is_file():
-        raise SystemExit(f"probe is missing: {PROBE}. Build native/windows-process-guard first.")
+        raise SystemExit(
+            f"probe is missing: {PROBE}. Run "
+            "foundation/agent-security-dll/scripts/build-windows.ps1 -BuildTestClient first."
+        )
     cases = json.loads(CASES.read_text(encoding="utf-8"))
     root = Path(tempfile.mkdtemp(prefix="native-call-hook-"))
     workspace = root / "proj"
