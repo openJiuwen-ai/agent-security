@@ -8,6 +8,7 @@ tables and their columns are checked here.
 from __future__ import annotations
 
 import pytest
+
 from security_gateway.vault import (
     KEY_META_DDL,
     RECORD_DDL,
@@ -30,8 +31,23 @@ from security_gateway.vault import (
 from security_gateway.vault.store import RecordRow, SchemaEntry, table_columns
 
 
+def test_bootstrap_adds_rotation_period_to_an_old_key_table(tmp_path):
+    old_ddl = "\n".join(
+        line
+        for line in KEY_META_DDL.splitlines()
+        if "rotation_period" not in line
+    )
+    db = open_db(str(tmp_path / "vault.db"))
+    try:
+        db.execute(old_ddl)
+        assert "rotation_period" not in table_columns(db, "vault_key_metadata")
+        bootstrap_schema(db)
+        assert "rotation_period" in table_columns(db, "vault_key_metadata")
+    finally:
+        db.close()
+
+
 def test_the_four_tables_are_created(tmp_path):
-    """Opening a new store creates the four tables."""
     db = open_db(str(tmp_path / "vault.db"))
     try:
         bootstrap_schema(db)
@@ -61,6 +77,7 @@ def test_the_four_tables_are_created(tmp_path):
             "file_shard_version",
             "file_shard_rotated_at",
             "last_rotate_at",
+            "rotation_period",
             "wrapped_dek",
             "pending_wrapped_dek",
             "superseded_dek_version",
@@ -77,7 +94,6 @@ def test_the_four_tables_are_created(tmp_path):
 
 
 def test_the_bootstrap_is_idempotent(tmp_path):
-    """Test the bootstrap is idempotent."""
     db = open_db(str(tmp_path / "vault.db"))
     try:
         bootstrap_schema(db)
@@ -98,7 +114,6 @@ def test_the_ddl_is_the_go_ddl():
 
 
 def test_the_database_file_is_not_world_readable(tmp_path):
-    """Test the database file is not world readable."""
     import os
     import stat
 
@@ -118,7 +133,6 @@ def test_the_database_file_is_not_world_readable(tmp_path):
     ],
 )
 def test_prefix_upper_bound(prefix, expected):
-    """Test prefix upper bound."""
     upper, ok = prefix_upper_bound(prefix)
     assert ok is True
     assert upper == expected
@@ -141,7 +155,6 @@ def test_a_prefix_of_only_ff_bytes_has_no_upper_bound():
 
 
 def test_the_crud_round_trip(tmp_path):
-    """The record and schema helpers round-trip their rows."""
     db = open_db(str(tmp_path / "vault.db"))
     try:
         bootstrap_schema(db)
@@ -187,7 +200,6 @@ def test_the_crud_round_trip(tmp_path):
 
 
 def test_the_straggler_queries_look_at_the_dek_version(tmp_path):
-    """The straggler queries select by DEK generation."""
     db = open_db(str(tmp_path / "vault.db"))
     try:
         bootstrap_schema(db)
@@ -210,9 +222,7 @@ def test_the_straggler_queries_look_at_the_dek_version(tmp_path):
 
 
 def test_the_row_version_guard_protects_a_concurrent_write(tmp_path):
-    """A rotation that read the row must not overwrite a write that landed
-    after it read.
-    """
+    """A rotation must not overwrite a write that landed after its read."""
     db = open_db(str(tmp_path / "vault.db"))
     try:
         bootstrap_schema(db)
@@ -231,7 +241,6 @@ def test_the_row_version_guard_protects_a_concurrent_write(tmp_path):
 
 
 def test_the_schema_entries_are_read_back_in_version_order(tmp_path):
-    """Test the schema entries are read back in version order."""
     db = open_db(str(tmp_path / "vault.db"))
     try:
         bootstrap_schema(db)
@@ -244,16 +253,13 @@ def test_the_schema_entries_are_read_back_in_version_order(tmp_path):
 
 
 def test_the_prefix_scan_brackets_exactly_the_prefix_set(tmp_path):
-    """The prefix scan brackets exactly the prefix set."""
     db = open_db(str(tmp_path / "vault.db"))
     try:
         bootstrap_schema(db)
         for record_id in ["a", "ab", "abc", "b", "ba"]:
             put_record(
                 db,
-                RecordRow(
-                    id=record_id, schema_version=1, data=b"x", dek_version=1
-                ),
+                RecordRow(id=record_id, schema_version=1, data=b"x", dek_version=1),
             )
         assert [r.id for r in list_records(db, "a")] == ["a", "ab", "abc"]
         assert [r.id for r in list_records(db, "b")] == ["b", "ba"]
@@ -277,9 +283,7 @@ def test_the_prefix_scan_works_with_a_non_ascii_prefix(tmp_path):
         for record_id in ["é", "éx", "ê", "f"]:
             put_record(
                 db,
-                RecordRow(
-                    id=record_id, schema_version=1, data=b"x", dek_version=1
-                ),
+                RecordRow(id=record_id, schema_version=1, data=b"x", dek_version=1),
             )
         assert [r.id for r in list_records(db, "é")] == ["é", "éx"]
     finally:
