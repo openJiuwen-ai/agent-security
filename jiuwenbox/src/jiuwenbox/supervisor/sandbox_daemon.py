@@ -70,6 +70,7 @@ import json
 import logging
 import os
 import secrets
+import selectors
 import socket
 import stat as stat_module
 import struct
@@ -107,7 +108,6 @@ MAX_STDIN_BYTES = 64 * 1024 * 1024
 MAX_STDOUT_BYTES = 64 * 1024 * 1024
 MAX_FILE_BYTES = 256 * 1024 * 1024
 
-ACCEPT_TIMEOUT_SECONDS = 1.0
 SHUTDOWN_DRAIN_TIMEOUT_SECONDS = 30.0
 
 logger = logging.getLogger("jiuwenbox.sandbox_daemon")
@@ -190,6 +190,10 @@ class DaemonState:
         self.in_flight = 0
         self.lock = threading.Lock()
         self.completion = threading.Condition(self.lock)
+        # Wakeup channel for the accept loop. ``None`` until the loop starts,
+        # so a shutdown that arrives before the loop is up still works: the
+        # event is set and the loop's first iteration observes it.
+        self._wakeup: socket.socket | None = None
 
     def begin_request(self) -> None:
         with self.lock:
@@ -210,6 +214,41 @@ class DaemonState:
                     return False
                 self.completion.wait(timeout=remaining)
             return True
+
+    def attach_wakeup(self, wakeup: socket.socket) -> None:
+        """Register the accept loop's wakeup writer."""
+        self._wakeup = wakeup
+
+    @property
+    def wakeup(self) -> socket.socket | None:
+        """The wakeup writer, or ``None`` before the loop publishes one.
+
+        Exposed read-only so tests can wait for the loop to become ready and
+        inspect the descriptor (inheritance, fileno) without reaching into a
+        private attribute.
+        """
+        return self._wakeup
+
+    def request_shutdown(self) -> None:
+        """Set the shutdown flag and wake the accept loop immediately.
+
+        The event is the single source of truth for "should the loop exit";
+        the wakeup byte only interrupts ``select``. Setting the event first
+        means a loop that wakes up for any reason still sees the flag, and a
+        wakeup that races with the event is harmless because the byte simply
+        stays queued in the socket buffer.
+        """
+        self.shutdown_event.set()
+        wakeup = self._wakeup
+        if wakeup is None:
+            return
+        try:
+            wakeup.send(b"\0")
+        except OSError:
+            # ``BlockingIOError`` is an ``OSError``: a full buffer means a
+            # wakeup is already pending, which is all we need, and a closed
+            # socket means the loop is gone. Neither is actionable.
+            pass
 
 
 def _handle_exec(conn: socket.socket, header: dict[str, Any], state: DaemonState) -> None:
@@ -1373,7 +1412,12 @@ def _handle_connection(conn: socket.socket, state: DaemonState) -> None:
                 conn,
                 {"v": PROTOCOL_VERSION, "ok": True, "type": "shutdown_ack"},
             )
-            state.shutdown_event.set()
+            # Wake the accept loop so it exits without waiting for the accept
+            # timeout. The ack above is already written, and this request is
+            # still counted in ``in_flight`` until this handler returns, which
+            # is what keeps ``wait_drain`` from tearing the process down
+            # before the ack is on the wire.
+            state.request_shutdown()
         elif request_type == REQUEST_TYPE_WRITE_FILE:
             _handle_write_file(conn, header)
         elif request_type == REQUEST_TYPE_READ_FILE:
@@ -1447,7 +1491,9 @@ def _adopted_listener() -> Iterator[socket.socket]:
         fileno=fd,
     )
     try:
-        listener.settimeout(ACCEPT_TIMEOUT_SECONDS)
+        # ``accept_loop`` drives readiness through the selector; a socket
+        # timeout here would only add a second, redundant stall.
+        listener.settimeout(None)
         yield listener
     finally:
         try:
@@ -1456,24 +1502,104 @@ def _adopted_listener() -> Iterator[socket.socket]:
             pass
 
 
-def _accept_loop(listener: socket.socket, state: DaemonState) -> None:
-    while not state.shutdown_event.is_set():
-        try:
-            conn, _ = listener.accept()
-        except socket.timeout:
-            continue
-        except OSError as exc:
-            if exc.errno == errno.EBADF:
-                return
-            logger.warning("accept() failed: %s", exc)
-            continue
-        thread = threading.Thread(
-            target=_handle_connection,
-            args=(conn, state),
-            name="jiuwenbox-daemon-worker",
-            daemon=True,
-        )
-        thread.start()
+def accept_loop(listener: socket.socket, state: DaemonState) -> None:
+    """Accept control connections until a shutdown request arrives.
+
+    Blocking on ``accept()`` with a 1 s socket timeout meant a shutdown
+    request, which is handled on a worker thread, could only be noticed after
+    the current ``accept()`` timed out - a fixed ~1 s of latency on every
+    delete. Instead the loop waits on both the listener and a wakeup socket;
+    ``request_shutdown`` writes one byte to the latter.
+
+    A ``selectors`` selector is used rather than ``select.select`` because the
+    listener's descriptor is inherited from box-server via ``pass_fds`` and
+    keeps its parent-side number. ``select.select`` rejects any descriptor
+    >= ``FD_SETSIZE`` (1024) with ``ValueError``, so a long-running server that
+    happens to hand over a high-numbered fd would crash the daemon on entry.
+    ``DefaultSelector`` resolves to epoll/poll, which have no such ceiling.
+
+    ``shutdown_event`` remains the only source of truth for exiting. The
+    wakeup byte only interrupts the wait, so a race between "event set" and
+    "wait entered" cannot strand the loop: the byte stays queued and the next
+    iteration returns immediately.
+    """
+    wake_reader, wake_writer = socket.socketpair()
+    # ``try`` starts immediately so no setup step can leak the pair: every
+    # exit path from here on goes through the ``finally`` below.
+    try:
+        for sock in (wake_reader, wake_writer):
+            sock.setblocking(False)
+            # User commands are spawned by this process; without this the
+            # wakeup fds would leak into every exec child.
+            sock.set_inheritable(False)
+
+        # The wakeup socket now owns the "interrupt me" job, so the listener
+        # no longer needs its own timeout. Leaving it set would reintroduce a
+        # second (shorter but still nonzero) stall if accept() raced a closed
+        # peer.
+        listener.settimeout(None)
+
+        # Publish the wakeup writer only after the listener is fully prepared.
+        # Tests (and any external observer) use "wakeup attached" as the signal
+        # that the loop is ready, so the two must not be reordered.
+        state.attach_wakeup(wake_writer)
+
+        with selectors.DefaultSelector() as selector:
+            selector.register(listener, selectors.EVENT_READ, "listener")
+            selector.register(wake_reader, selectors.EVENT_READ, "wakeup")
+
+            while True:
+                # Check the flag before blocking. A shutdown that arrived
+                # before the loop started (or before the wakeup socket was
+                # registered) left no byte to read, so the wait would
+                # otherwise block forever on a flag that is already set.
+                if state.shutdown_event.is_set():
+                    return
+
+                try:
+                    events = selector.select()
+                except InterruptedError:
+                    continue
+                except OSError as exc:
+                    if exc.errno == errno.EBADF:
+                        return
+                    logger.warning("selector wait failed: %s", exc)
+                    continue
+
+                for key, _ in events:
+                    if key.data == "wakeup":
+                        try:
+                            wake_reader.recv(4096)
+                        except OSError:
+                            # The wakeup byte only interrupts the wait; the
+                            # event checked below decides whether to exit, so
+                            # a failed drain is not worth reporting.
+                            pass
+                        if state.shutdown_event.is_set():
+                            return
+                        continue
+
+                    try:
+                        conn, _ = listener.accept()
+                    except OSError as exc:
+                        if exc.errno == errno.EBADF:
+                            return
+                        logger.warning("accept() failed: %s", exc)
+                        continue
+                    thread = threading.Thread(
+                        target=_handle_connection,
+                        args=(conn, state),
+                        name="jiuwenbox-daemon-worker",
+                        daemon=True,
+                    )
+                    thread.start()
+    finally:
+        state.attach_wakeup(None)
+        for sock in (wake_reader, wake_writer):
+            try:
+                sock.close()
+            except OSError:
+                pass
 
 
 def main() -> int:
@@ -1489,7 +1615,7 @@ def main() -> int:
                 "sandbox daemon adopted listener fd; entering accept loop",
             )
             try:
-                _accept_loop(listener, state)
+                accept_loop(listener, state)
             finally:
                 # Give in-flight requests a brief window to complete cleanly
                 # before the context manager closes the listener.
