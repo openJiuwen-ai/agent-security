@@ -150,12 +150,12 @@ async def test_pending_timeout_and_cancel_cleanup(cancel):
         seen.append(event)
         await asyncio.Event().wait()  # The deadline also covers blocked output.
 
-    task = asyncio.create_task(registry.request(context, {}, emit, 0.02))
+    task = asyncio.create_task(registry.request(context, {}, emit, 10 if cancel else 0.02, channel="desktop"))
     await asyncio.sleep(0)
     if cancel:
-        task.cancel()
+        registry.cancel_channel("desktop")
     with pytest.raises(asyncio.CancelledError if cancel else TimeoutError):
-        await task
+        await asyncio.wait_for(task, 1)
     assert not registry.resolve(
         "s", seen[0]["request_id"], PermissionConfirmResponse(approved=True)
     )
@@ -231,7 +231,7 @@ def make_execution(tmp_path, emit, registry, *, read="ask", write="ask"):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "artifact", ["jiuwen_runtime_guard.dll", "jiuwen_runtime_guard.manifest.json"]
+    "artifact", ["agent_security_guard.dll", "agent_security_guard.manifest.json"]
 )
 async def test_native_artifacts_have_no_independent_write_policy(tmp_path, artifact):
     engine = PermissionEngine({"enabled": False})
@@ -239,7 +239,7 @@ async def test_native_artifacts_have_no_independent_write_policy(tmp_path, artif
     execution = WindowsGuardExecution(
         session_id="s",
         tool_call_id="call",
-        dll=native / "jiuwen_runtime_guard.dll",
+        dll=native / "agent_security_guard.dll",
         approvals=RuntimeApprovalRequests(),
         engine=lambda: engine,
         emit=AsyncMock(),
@@ -264,11 +264,16 @@ async def test_same_execution_deduplicates_and_denies_mixed_access(tmp_path):
     assert not await execution.check_access(999, str(target), 1)
     assert not await execution.check_access(123, str(target), 3)  # read ASK + write DENY
     assert cards == []
+    identifiers = ["operation-A", "operation-B", "operation-C"]
     assert (
-        await asyncio.gather(*(execution.check_access(123, str(target), 1) for _ in range(3)))
+        await asyncio.gather(*(execution.check_resource(
+            123, {"kind": "file", "accesses": [(str(target), "read")]}, operation_id=identifier,
+        ) for identifier in identifiers))
         == [True] * 3
     )
     assert len(cards) == 1
+    assert cards[0]["resource"]["operation_ids"] == identifiers
+    assert "operation_id" not in cards[0]["resource"]
     assert await execution.check_access(123, str(target), 1)
     assert len(cards) == 1
     await execution.close()
@@ -324,6 +329,7 @@ async def test_raw_approval_event_resumes_original_check(tmp_path, approved):
                 "kind": "file",
                 "accesses": [(str(target), "read")],
                 "can_remember": False,
+                "operation_ids": [],
             },
             "matched_rule": expected.matched_rule,
             "reason": expected.reason,

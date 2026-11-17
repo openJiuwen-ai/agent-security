@@ -1,15 +1,5 @@
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""box-server 上的回收站转发.
-
-沙箱进程跑在 jbx-sandbox 名下, 不能把文件放进当前登录用户看得见的回收站.
-DLL 先在沙箱进程里把相对路径变成完整路径, 再发给本服务. 本服务用
-box-server 自己的身份调用回收站接口. 接口成功且原文件消失才返回成功.
-失败时 DLL 外层钩子回落到真实删除.
-
-监听端口必须落在 WFP 已经放行的回环端口里. 沙箱出站只允许连
-127.0.0.1 上的代理端口范围, 随机端口会被直接拒绝. 转发不可用时删除
-回落到真实删除.
-"""
+"""Authenticated loopback recovery service for the sandbox account."""
 
 from __future__ import annotations
 
@@ -20,8 +10,8 @@ import socket
 import struct
 import sys
 import threading
-import time
 from collections.abc import Callable
+from functools import lru_cache
 
 from jiuwenbox.supervisor.win_softdelete import (
     ENV_ARCHIVE,
@@ -38,14 +28,7 @@ _PATH_MAX = 48 * 1024
 _OK = b"ok"
 _NO = b"no"
 
-_FO_DELETE = 3
-_FOF_SILENT = 0x0004
-_FOF_NOCONFIRMATION = 0x0010
-_FOF_ALLOWUNDO = 0x0040
-_FOF_NOCONFIRMMKDIR = 0x0200
-_FOF_NOERRORUI = 0x0400
-
-Recycler = Callable[[str], bool]
+Recycler = Callable[[str], bool | None]
 
 _broker: RecycleBroker | None = None
 _permit_ports: list[int] = []
@@ -181,7 +164,14 @@ def _write_frame(conn: socket.socket, payload: bytes) -> None:
     conn.sendall(struct.pack(">I", len(payload)) + payload)
 
 
-def _parse_request(payload: bytes) -> tuple[str, str] | None:
+def parse_request(payload: bytes) -> tuple[int, bytes, str, str] | None:
+    return _parse_request(payload)
+
+
+def _parse_request(payload: bytes) -> tuple[int, bytes, str, str] | None:
+    if len(payload) < 25 or payload[0] not in (1, 2):
+        return None
+    action, operation, payload = payload[0], payload[1:17], payload[17:]
     if len(payload) < 8:
         return None
     token_len = struct.unpack_from(">I", payload, 0)[0]
@@ -203,249 +193,25 @@ def _parse_request(payload: bytes) -> tuple[str, str] | None:
         return None
     if "\x00" in token or "\x00" in path:
         return None
-    return token, path
+    return action, operation, token, path
 
 
-def _set_hook_bypass(on: bool) -> None:
-    """已装入本进程的软删除 DLL 在这条线程上放行, 避免回收调用再次进钩子."""
-    if sys.platform != "win32":
-        return
+def recycle_with_shell(path: str) -> bool | None:
+    """Execute recovery as the desktop user using the shared native library."""
+    result = _native_recycler()(path)
+    return None if result < 0 else bool(result)
+
+
+@lru_cache(maxsize=1)
+def _native_recycler():
     import ctypes
-    from ctypes import wintypes
+    from .win_softdelete import dll_path
 
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
-    kernel.GetModuleHandleW.restype = wintypes.HMODULE
-    kernel.GetProcAddress.argtypes = [wintypes.HMODULE, ctypes.c_char_p]
-    kernel.GetProcAddress.restype = ctypes.c_void_p
-    module = kernel.GetModuleHandleW("jiuwen_softdelete.dll")
-    if not module:
-        return
-    addr = kernel.GetProcAddress(module, b"jiuwen_softdelete_set_bypass")
-    if not addr:
-        return
-    ctypes.CFUNCTYPE(None, ctypes.c_int)(addr)(1 if on else 0)
-
-
-def _shell_delete(path: str) -> bool:
-    import ctypes
-    from ctypes import wintypes
-
-    class _FileOp(ctypes.Structure):
-        _fields_ = [
-            ("hwnd", wintypes.HWND),
-            ("w_func", wintypes.UINT),
-            ("p_from", wintypes.LPCWSTR),
-            ("pTo", wintypes.LPCWSTR),
-            ("f_flags", wintypes.WORD),
-            ("fAnyOperationsAborted", wintypes.BOOL),
-            ("hNameMappings", ctypes.c_void_p),
-            ("lpszProgressTitle", wintypes.LPCWSTR),
-        ]
-
-    shell = ctypes.WinDLL("shell32", use_last_error=True)
-    shell.SHFileOperationW.argtypes = [ctypes.POINTER(_FileOp)]
-    shell.SHFileOperationW.restype = ctypes.c_int
-    source = ctypes.create_unicode_buffer(path + "\0")
-    op = _FileOp()
-    op.w_func = _FO_DELETE
-    op.p_from = ctypes.cast(source, wintypes.LPCWSTR)
-    op.f_flags = (
-        _FOF_ALLOWUNDO | _FOF_NOCONFIRMATION | _FOF_SILENT
-        | _FOF_NOERRORUI | _FOF_NOCONFIRMMKDIR
-    )
-    _set_hook_bypass(True)
-    try:
-        rc = shell.SHFileOperationW(ctypes.byref(op))
-    finally:
-        _set_hook_bypass(False)
-    if rc != 0 or op.fAnyOperationsAborted:
-        logger.warning("SHFileOperation recycle failed rc=%s path=%s", rc, path)
-        return False
-    return not os.path.exists(path)
-
-
-def _recycle_bin_ready(path: str) -> bool:
-    """回收站关掉或这个文件放不下时返回 False, 避免接口把它直接删掉."""
-    import ctypes
-    import winreg
-    from ctypes import wintypes
-
-    try:
-        root = winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Explorer\BitBucket",
-        )
-    except OSError:
-        return False
-    try:
-        try:
-            nuke, typ = winreg.QueryValueEx(root, "NukeOnDelete")
-        except OSError:
-            nuke, typ = 0, winreg.REG_DWORD
-        if typ == winreg.REG_DWORD and int(nuke) != 0:
-            return False
-        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-        kernel.GetVolumePathNameW.argtypes = [
-            wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD,
-        ]
-        kernel.GetVolumePathNameW.restype = wintypes.BOOL
-        kernel.GetVolumeNameForVolumeMountPointW.argtypes = [
-            wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD,
-        ]
-        kernel.GetVolumeNameForVolumeMountPointW.restype = wintypes.BOOL
-        kernel.GetDiskFreeSpaceExW.argtypes = [
-            wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_ulonglong),
-            ctypes.POINTER(ctypes.c_ulonglong), ctypes.POINTER(ctypes.c_ulonglong),
-        ]
-        kernel.GetDiskFreeSpaceExW.restype = wintypes.BOOL
-        vol_root = ctypes.create_unicode_buffer(32768)
-        vol_name = ctypes.create_unicode_buffer(32768)
-        if not kernel.GetVolumePathNameW(path, vol_root, 32768):
-            return False
-        if not kernel.GetVolumeNameForVolumeMountPointW(vol_root, vol_name, 32768):
-            return False
-        text = vol_name.value or ""
-        brace = text.find("{")
-        if brace < 0:
-            return False
-        subkey = "Volume\\" + text[brace:].rstrip("\\")
-        try:
-            volume = winreg.OpenKey(root, subkey)
-        except OSError:
-            return False
-        try:
-            try:
-                vol_nuke, vol_typ = winreg.QueryValueEx(volume, "NukeOnDelete")
-            except OSError:
-                vol_nuke, vol_typ = 0, winreg.REG_DWORD
-            if vol_typ == winreg.REG_DWORD and int(vol_nuke) != 0:
-                return False
-            try:
-                max_mb, max_typ = winreg.QueryValueEx(volume, "MaxCapacity")
-            except OSError:
-                max_mb, max_typ = None, None
-        finally:
-            winreg.CloseKey(volume)
-        if max_typ == winreg.REG_DWORD:
-            budget = int(max_mb) * 1024 * 1024
-        else:
-            free_bytes = ctypes.c_ulonglong()
-            total_bytes = ctypes.c_ulonglong()
-            if not kernel.GetDiskFreeSpaceExW(
-                vol_root, ctypes.byref(free_bytes), ctypes.byref(total_bytes), None,
-            ) or total_bytes.value == 0:
-                budget = 64 * 1024 * 1024
-            else:
-                budget = min(total_bytes.value // 100, 512 * 1024 * 1024)
-    finally:
-        winreg.CloseKey(root)
-    size = _tree_bytes(path)
-    if size is None:
-        return False
-    return size < budget
-
-
-def _tree_bytes(path: str) -> int | None:
-    """文件或目录的总字节数. 数不清或里面有连接点时返回 None."""
-    if os.path.isfile(path) and not os.path.islink(path):
-        try:
-            return os.path.getsize(path)
-        except OSError:
-            return None
-
-    class _TreeUnread(Exception):
-        pass
-
-    def _fail(_err: OSError) -> None:
-        raise _TreeUnread
-
-    total = 0
-    count = 0
-    try:
-        for dirpath, dirnames, filenames in os.walk(path, onerror=_fail, followlinks=False):
-            for dirname in dirnames:
-                attrs = _file_attrs(os.path.join(dirpath, dirname))
-                if attrs is not None and attrs & _REPARSE_POINT:
-                    return None
-            for filename in filenames:
-                count += 1
-                if count > 100000:
-                    return None
-                full = os.path.join(dirpath, filename)
-                attrs = _file_attrs(full)
-                if attrs is not None and attrs & _REPARSE_POINT:
-                    return None
-                try:
-                    total += os.path.getsize(full)
-                except OSError:
-                    return None
-    except _TreeUnread:
-        return None
-    return total
-
-
-def _archive_destination(archive: str, path: str) -> str | None:
-    """最外层名字后面加到秒的时间. 同一秒重名时再加序号. 目录内部的名字不动."""
-    leaf = os.path.basename(path.rstrip("\\/")) or "file"
-    safe_chars = []
-    for char in leaf[:80]:
-        if char in "\\/:*?\"<>|" or ord(char) < 32:
-            safe_chars.append("_")
-        else:
-            safe_chars.append(char)
-    safe = "".join(safe_chars) or "file"
-    stamp = time.strftime("%Y%m%d_%H%M%S")
-    for index in range(1000):
-        suffix = f"_{stamp}" if index == 0 else f"_{stamp}_{index}"
-        dest = os.path.join(archive, safe + suffix)
-        if not os.path.lexists(_filesystem_path(dest)):
-            return dest
-    return None
-
-
-def _move_to_archive(path: str) -> bool:
-    """登录用户把还在原地的文件挪进归档目录. 跨盘不挪, 避免变成复制后删除."""
-    archive = (os.environ.get(ENV_ARCHIVE) or "").strip()
-    if not archive:
-        return False
-    if _norm_key(os.path.splitdrive(os.path.abspath(path))[0]) != _norm_key(
-        os.path.splitdrive(os.path.abspath(archive))[0],
-    ):
-        logger.warning("archive skipped: different volume path=%s", path)
-        return False
-    try:
-        os.makedirs(_filesystem_path(archive), exist_ok=True)
-    except OSError:
-        logger.warning("archive directory could not be created: %s", archive, exc_info=True)
-        return False
-    dest = _archive_destination(archive, path)
-    if dest is None:
-        return False
-    try:
-        os.rename(_filesystem_path(path), _filesystem_path(dest))
-    except OSError:
-        logger.warning("archive move failed %s -> %s", path, dest, exc_info=True)
-        return False
-    logger.info("archive %s -> %s", path, dest)
-    return True
-
-
-def recycle_with_shell(path: str) -> bool:
-    """用当前登录用户的身份回收 ``path``.
-
-    回收接口成功且原文件不在, 算成功. 回收站不收但文件还在时, 挪到归档目录,
-    也算成功. 和本机进程里的软删除同一条路.
-    """
-    if sys.platform != "win32":
-        return False
-    # SHFileOperationW without the long-path prefix stops at MAX_PATH.
-    shell_ok = len(path) < 260 and _recycle_bin_ready(path) and _shell_delete(path)
-    if shell_ok:
-        return True
-    if os.path.lexists(_filesystem_path(path)):
-        return _move_to_archive(path)
-    return False
+    dll = ctypes.CDLL(str(dll_path()))
+    recover = dll.guard_recover_local
+    recover.argtypes = [ctypes.c_wchar_p]
+    recover.restype = ctypes.c_int
+    return recover
 
 
 class RecycleBroker:
@@ -455,7 +221,7 @@ class RecycleBroker:
         self._recycler = recycler or recycle_with_shell
         self._lock = threading.Lock()
         self._shell_lock = threading.Lock()
-        self._grants: set[str] = set()
+        self._receipts: dict[str, dict[bytes, tuple[str, bytes]]] = {}
         self._sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stopped = threading.Event()
@@ -528,41 +294,44 @@ class RecycleBroker:
             raise RuntimeError("回收站转发没有可写根目录, 无法登记沙箱")
         token = secrets.token_urlsafe(32)
         with self._lock:
-            self._grants.add(token)
+            self._receipts[token] = {}
         return token
 
     def unregister(self, token: str) -> None:
         with self._lock:
-            self._grants.discard(token)
+            self._receipts.pop(token, None)
 
     def handle_payload(self, payload: bytes) -> bytes:
         """处理一帧请求. 只有回收被确认后才返回 ``ok``."""
-        try:
-            if self._accept(payload):
-                return _OK
-        except Exception:  # noqa: BLE001
-            logger.exception("recycle request failed")
-        return _NO
-
-    def _accept(self, payload: bytes) -> bool:
         parsed = _parse_request(payload)
         if parsed is None:
-            return False
-        token, path = parsed
+            return _NO
+        action, operation, token, path = parsed
         with self._lock:
-            known = token in self._grants
-        if not known:
-            logger.warning("recycle broker rejected an unknown token")
-            return False
-        real = path_allowed(path)
-        if real is None:
-            logger.warning("recycle broker rejected path %s", path)
-            return False
-        with self._shell_lock:
-            ok = bool(self._recycler(real))
-        if ok:
-            logger.info("recycle broker accepted path %s", real)
-        return ok
+            receipts = self._receipts.get(token)
+            if receipts is None:
+                return _NO
+            existing = receipts.get(operation)
+            if existing is not None:
+                return existing[1] if existing[0] == path else _NO
+            if action == 2:
+                return b"??"
+            receipts[operation] = (path, b"??")
+        result = b"??"
+        try:
+            with self._shell_lock:
+                real = path_allowed(path)
+                if real is None:
+                    result = _NO
+                else:
+                    outcome = self._recycler(real)
+                    if outcome is not None:
+                        result = _OK if outcome else _NO
+        except Exception:
+            logger.exception("recovery outcome could not be confirmed")
+        with self._lock:
+            receipts[operation] = (path, result)
+        return result
 
     def _serve(self) -> None:
         sock = self._sock
@@ -657,7 +426,7 @@ def prepare_runner_recycle(env: dict[str, str], roots: list[str]) -> str | None:
 
     转发服务没起来, 或没有可登记的目录时, 不阻止沙箱启动.
     端口写成 0, 让沙箱里的 DLL 走转发而不是在沙箱内直接调用回收站.
-    转发不可用时, DLL 外层钩子回落到真实删除.
+    转发不可用时，受保护删除返回失败。
     """
     env.pop(ENV_RECYCLE_PORT, None)
     env.pop(ENV_RECYCLE_TOKEN, None)
@@ -667,11 +436,11 @@ def prepare_runner_recycle(env: dict[str, str], roots: list[str]) -> str | None:
     if broker is None or not broker.running:
         try:
             broker = _recover_broker()
-        except Exception:  # Preserve the existing deletion fallback.
+        except Exception:
             logger.exception("回收站转发未能在已放行端口恢复")
     if broker is None or not broker.running:
         logger.error(
-            "软删除已开启, 但回收站转发服务没有在监听; 沙箱仍会启动, 删除会落到真实删除"
+            "软删除已开启, 但回收站转发服务没有在监听; 沙箱仍会启动, 受保护删除将返回失败"
         )
         env[ENV_RECYCLE_PORT] = "0"
         env.pop(ENV_RECYCLE_TOKEN, None)
@@ -679,7 +448,7 @@ def prepare_runner_recycle(env: dict[str, str], roots: list[str]) -> str | None:
     try:
         token = broker.register(roots)
     except RuntimeError:
-        logger.exception("软删除回收站转发登记失败, 沙箱仍会启动, 删除会落到真实删除")
+        logger.exception("软删除回收站转发登记失败, 沙箱仍会启动, 受保护删除将返回失败")
         env[ENV_RECYCLE_PORT] = "0"
         env.pop(ENV_RECYCLE_TOKEN, None)
         return None

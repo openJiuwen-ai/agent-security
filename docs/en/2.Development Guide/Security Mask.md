@@ -2,7 +2,7 @@
 
 Security Mask (distribution name `security-mask`, import name `security_mask`) is a streaming text masking utility. The caller supplies regexes, and the tool replaces matched spans with stars as characters flow through. It does not decide what counts as sensitive and does not own the rules or the switch.
 
-The code lives under `foundation/`.
+The code lives under `foundation/security-mask/`.
 
 ---
 
@@ -72,7 +72,7 @@ Neither chunk contains a delimiter (`=` is a token character), so both `push` ca
 ## 6. Install and test
 
 ```bash
-cd foundation
+cd foundation/security-mask
 pip install -e ".[dev]"
 pytest
 ```
@@ -80,7 +80,7 @@ pytest
 It can also be installed as a `jiuwenswarm` dependency from the repository subdirectory:
 
 ```text
-security-mask @ git+https://gitcode.com/openJiuwen/agent-security.git@develop#subdirectory=foundation
+security-mask @ git+https://gitcode.com/openJiuwen/agent-security.git@develop#subdirectory=foundation/security-mask
 ```
 
-There are no third-party runtime dependencies. Python 3.11 or newer is required. Tests are in `foundation/tests/test_stream_mask.py`.
+There are no third-party runtime dependencies. Python 3.11 or newer is required. Tests are in `foundation/security-mask/tests/test_stream_mask.py`.

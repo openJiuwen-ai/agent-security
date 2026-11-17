@@ -18,11 +18,11 @@ Agent 运行时把模型输出变成真实动作：执行命令、读写文件�
 2. **`policy_engine/`——行为策略引擎**：对文件、工具、命令、网络四类行为给出 `allow`、`ask`、`deny` 或 `undetermined` 之一。工具调用在解析层拦截（命令不执行），系统调用在执行前拦截（拒绝则该 API 不执行，fail-closed）；
 3. **`detection/`——内容检测引擎**：对进入模型或工具结果的内容做提示词注入等检测，输出概率性软信号；`tool_output` 接入点调用它。
 
-行为决策与内容检测分工：行为引擎管「**能不能做**」（fail-closed 的动作裁决），检测引擎管「**内容里有什么**」（注入与敏感内容信号），两者产出不同、消费方式也不同。`tool_permission/` 是仓库内既有的动作决策组件（括号里的 W1a/W2/W3/W6 是仓库内部的工作项编号，下文的 W4/W5 同理）。不并入上述三层。**本文档详细描述接入层与行为策略引擎**：对 `detection` 只说明接入契约（见 2.2 路径 C），对 `tool_permission` 只说明它与 DLL 防护的关系（见 8.5）；两者的内部实现由各自文档描述（见 12）。
+行为决策与内容检测分工：行为引擎管「**能不能做**」（fail-closed 的动作裁决），检测引擎管「**内容里有什么**」（注入与敏感内容信号），两者产出不同、消费方式也不同。`tool_permission/` 是仓库内既有的动作决策组件（括号里的 W1a/W2/W3/W6 是仓库内部的工作项编号，下文的 W4/W5 同理）。不并入上述三层。**本文档详细描述接入层与行为策略引擎**：对 `detection` 只说明接入契约（见 2.2 路径 C），对 `tool_permission` 只说明它与 DLL 防护的关系（见第 8 节）；两者的内部实现由各自文档描述（见 12）。
 
 ### 1.2 设计目标
 
-1. **统一裁决**：一次工具调用或一条 native record，产出恰好一个决定（`agent-decision/v1` 信封）。
+1. **统一裁决**：一次工具调用或一条 原生操作，产出恰好一个决定（`agent-decision/v1` 信封）。
 2. **结构性安全**：deny 永不被任何 allow 翻转；内置/三方 ask 永不被宽匹配的用户 allow 压过——由固化的优先级表保证，不依赖运行时判断。
 3. **四层规则、十级优先级**：内置 / 三方 / 用户自定义 / 用户交互授权（grant）四层来源在同一张优先级表上裁决。
 4. **精确授权**：HITL 审批沉淀的 grant 只覆盖本次的精确资源；不可沉淀的 ask 不提供「总是允许」。
@@ -51,26 +51,20 @@ agent_shield/                       ← 本目录自身即 agent_shield 包（fl
     models/                     规则对象（BehaviorRule / ObjectRule）
     core/                       规则集加载、裁决编排、聚合
     builtin/                    随包行为规则、目录表与策略快照
-    events/                     工具调用和 native record 共用的事件构造
+    events/                     工具调用和 原生操作 共用的事件构造
     server/                     Decide / Host / RulesetRegistry / 回环 HTTP / CLI
   intercepts/                       接入层（拦截点）：把流经点编成事件或检测请求
     tool_call/                        工具调用 → 行为策略引擎
       adapters/jiuwenswarm/tool_call.py 工具调用 → 事件
     native_call/                      进程树系统调用 → 行为策略引擎（原 process_guard Python 侧）
-      launch.py / decide_pipe.py          preflight 与 wrap / Decide 管道
-      record.py / session.py              native record → 事件 / 绑定身份与结算
-      dll_guard/                          DLL 防护会话（RuntimeGuardManager、审批、注入）
+      dll_guard/                          ProcessGuard 会话、审批与原生执行
     tool_output/                      工具结果 → 内容检测引擎
       inspect.py                          异步 inspect()：文本交 detection 后端评估
       adapters/jiuwenswarm/tool_result.py 从工具结果提取待检文本
-  native/windows-process-guard/  C/C++ 原生实现（Detours hook + 守护进程）
-    src/  tests/  third_party/detours/（构建期外置 checkout，非 submodule）  build.ps1  python/（二进制分发子包）
-  native/windows-dll-guard/      DLL 防护原生实现（jiuwen_runtime_guard.dll）
-    src/  tests/  build.ps1  README.md  VALIDATION.md
   tool_permission/                   既有动作决策组件（toolguard / fileguard / netguard / hostguard / delguard）
     runtime/                         原生适配用的运行时配置、授权与引擎（内部）
     shell_structure.py               方言 AST 拆叶与结构分析
-  schema/                        7 个 JSON Schema
+  schema/                        现行 JSON Schema
   tests/                         Python 单元测试 + e2e（见 13.1）
 ```
 
@@ -86,7 +80,7 @@ agent_shield/                       ← 本目录自身即 agent_shield 包（fl
 | 主体（`subject_id`） | 宿主为当前用户/profile 填写的隔离键，grant 按它隔离 |
 | 任务（`task_id`） | 宿主生成的任务标识，与 `ruleset_id`、`subject_id` 组成任务绑定三元组 |
 | 规则集（`agent-pdp/v1`） | 三方配置：对象规则、目录追加、行为覆盖、`action_mapping`。经规则集接口注册 |
-| 事件（event） | `agent-event/v1`，一次工具调用或一条 native record 的规范化描述 |
+| 事件（event） | `agent-event/v1`，一次工具调用或一条 原生操作 的规范化描述 |
 | effect | 事件拆出的原子行为：`process.exec`、`fs.*`、`net.*`、`privilege.escalate`、`schedule.create` |
 | 行为规则 | 按风险档描述的行为分类，动作由风险换算 |
 | 对象规则 | 直接声明 allow/ask/deny 的五类对象规则（file/domain/command/agentTools/nativeTools） |
@@ -94,173 +88,36 @@ agent_shield/                       ← 本目录自身即 agent_shield 包（fl
 | grant | HITL 审批沉淀的精确资源授权，仅 allow，位于优先级位置 4 |
 | HITL | Human-in-the-loop，宿主打开的审批窗口 |
 | `unmatched` | 宿主启动时设定的无命中改写策略（none/allow/ask/deny） |
-| native record | `native-record/v1`，hook 层上报的一次被拦截 API 调用 |
 | 回环 PDP | `agent-pdp serve` 启动的独立 HTTP PDP 进程，只监听本机回环 |
 
 ---
 
 ## 2. 总体架构
 
-### 2.1 组件视图
-
-一个 Agent 应用运行**自己的**一台引擎，加载该应用的一份三方配置；另一个应用运行另一台引擎。同一应用里的多个主体共用这份配置，用 `subject_id` 隔离 grant。一个进程的注册表可以同时持有多个 `ruleset_id`（供同应用隔离与测试），但多个应用不放进同一个进程。
+工具调用由 tool_permission 和行为规则引擎裁决。Windows 原生执行统一从 `from agent_shield import ProcessGuard` 接入。SDK 持有会话、任务规则、审批、Job 和审计，Agent Shield 与 JiuwenBox 使用同一份按架构构建的公共 DLL。
 
 ```mermaid
-flowchart TB
-  subgraph host ["Agent 应用（宿主）"]
-    direction TB
-    store["用户规则与 grant 存储"]
-    hitl["HITL 审批窗口"]
-    hostproto["«Host 协议»<br/>workspace / user_intent / capabilities<br/>request_approval / user_rules / grants"]
-  end
-
-  tg["intercepts/tool_call<br/>工具调用 → 事件适配"]
-  pg["intercepts/native_call"]
-  to["intercepts/tool_output<br/>工具结果 → 待检文本"]
-  det["detection<br/>内容检测（提示词注入等）"]
-
-  subgraph engine [policy_engine]
-    builtin["内置规则与目录<br/>（29 条行为规则 + 11 个目录）"]
-    registry["规则集注册表<br/>（三方规则注册 · 任务绑定 · 审计）"]
-    judge["裁决内核<br/>（规则匹配 → 十级优先级排位 → deny/ask/allow 聚合）"]
-    builtin --> judge
-    registry --> judge
-  end
-
-  subgraph native [Windows native 层]
-    guard["process_guard.exe"]
-    hook["hook DLL（x64 / x86，注入到进程树）"]
-  end
-
-  pdp["回环 HTTP PDP（可选部署）"]
-
-  %% ── invisible edges：强制三列分离，防止 dagre 把节点挤到一起 ──
-  tg ~~~ pg
-  pg ~~~ to
-  to ~~~ det
-  det ~~~ pdp
-
-  %% 路径 A：工具调用（拦截在解析层）
-  host -->|"路径 A"| tg
-  tg --> judge
-
-  %% 路径 B：native 拦截（拦截在执行前）
-  host -->|"路径 B"| pg
-  pg --> guard
-  guard --> hook
-  hook --> pg
-  pg --> judge
-
-  %% 路径 C：工具输出检测（旁路软信号，不产决定信封）
-  host -->|"路径 C"| to
-  to --> det
-
-  %% 引擎经 Host 协议回调 Agent 应用
-  judge -.-> hostproto
-
-  %% 决定回传
-  judge -->|"agent-decision/v1"| host
-  store --> hostproto
-  hitl --> hostproto
-
-  %% 隔离 PDP（可选，同一引擎的独立进程部署；evaluate 与控制两份凭证分开，见 2.4）
-  host -.-> pdp
-  pdp -.-> judge
+flowchart TD
+    Shield["Agent Shield · ProcessGuard.spawn()"] --> Session["SDK 会话 · Job / 任务规则 / 审批 / 审计"]
+    Box["JiuwenBox · 本地执行 / 沙箱 runner"] --> DLL["agent_security_guard.dll · x64 / x86"]
+    Session --> DLL
+    DLL --> Check["操作请求 · 可信进程身份"]
+    Check --> Engine["PermissionEngine.evaluate_operation()"]
+    Engine --> Ask["ASK → host.confirm() → 策略复核"]
+    Ask --> Decision["最终 ALLOW / DENY"]
+    Engine --> Decision
+    Decision --> Recovery["获准删除 · 公共软删除处置"]
+    Box --> Recovery
+    Recovery --> Local["本地回收站 / 同卷归档"]
+    Recovery --> Broker["JiuwenBox 宿主代理 · 去重与查询"]
+    Recovery --> Permanent["宿主显式配置 permanent"]
+    Local --> Result["按 operation_ids 上报结果与结算"]
+    Broker --> Result
+    Permanent --> Result
+    Result --> Session
 ```
 
-宿主不是引擎的组件，而是**集成引擎的 Agent 应用运行时**。引擎不 import 任何 Agent 框架，只依赖 `Host` 协议（`policy_engine/server/host.py`，6 个方法的 Python `Protocol`）。谁来集成引擎，谁就实现这个协议——jiuwen 实现一份、LangChain 实现一份、测试代码实现一份（`tests/policy_engine/server/support.py` 的假 Host）。图中虚线箭头表示引擎在裁决过程中经 Host 协议回调宿主获取上下文与审批。
-
-图中三条路径的终点不同：路径 A、B 汇入同一个裁决内核，产出动作决定；路径 C 是旁路，只产出内容检测软信号，不进入裁决内核。
-
-| 路径 | 入口 | 拦截层 | 数据流 |
-|---|---|---|---|
-| **A · 工具调用** | `evaluate(request)` 或 `POST /v1/evaluate` | 解析层（命令不执行） | 宿主 → intercepts/tool_call 适配成 `agent-event/v1` → 引擎裁决 |
-| **B · native 拦截** | `Decide.settle()` | 系统调用执行前 | hook DLL 拦截 API → `native-record/v1` → intercepts/native_call 转事件 → 引擎裁决 |
-| **C · 工具输出检测** | `inspect(tool_name, text)`（异步） | 内容层（旁路软信号） | 宿主 → intercepts/tool_output 提取文本 → detection 评估，返回 `RiskAssessment`，不产决定信封 |
-
-路径 A/B 与路径 C 的产出不同：行为引擎产出 fail-closed 的动作裁决（`agent-decision/v1`），检测引擎产出概率性软信号（`RiskAssessment`，由宿主决定如何消费——展示、降权或转人工）。
-
-Windows 上还有一套 DLL 防护（见 8.5 与 9.11）：宿主在进程内创建 `RuntimeGuardManager`，把 `jiuwen_runtime_guard.dll` 注入目标进程，DLL 在执行前经二进制管道向宿主询问。它复用的是 `tool_permission` 的运行时策略配置与授权格式（`HostPolicyAdapter` / `RuntimePermissionEngine` / `approval_overrides`），**不经过本文件描述的 PDP 规则集与十级优先级**；它也不使用 `process_guard.exe` 和 `native-record/v1` JSON 协议。两套 Windows 防护按宿主接入方式二选一。
-
-四层规则来源都汇入裁决内核：
-
-- **内置规则与目录**（`builtin`）：引擎自带，不可删除、不可经接口修改，是安全底线。
-- **三方规则**（经 `registry` 注册的 `agent-pdp/v1` 规则集）：宿主注册，版本化管理。覆盖内置行为时风险不得低于 floor。
-- **用户规则与 grant**（`store`）：宿主按主体持有，每次请求随 `DecisionRequest` 或 `Host` 回调传入。
-
-进程内调用与回环 HTTP 走同一套裁决，决定信封都是 `agent-decision/v1`。隔离 PDP 只监听本机回环，evaluate 凭证与控制凭证分开。native 层拿到的决定是 `native-decision/v1`：`allow=false` 时这次 API 不执行。
-
-### 2.2 三条端到端路径
-
-**路径 A：工具调用（Agent 侧，拦截在解析层）。**
-
-1. Agent 发起工具调用，宿主用适配器（`policy_engine/events/`，或 `intercepts/tool_call/adapters/jiuwenswarm/tool_call.py`）把调用规范化为 `agent-event/v1` 与 effect 列表。命令解析**绝不执行命令**。
-2. 宿主组装 `DecisionRequest`（`ruleset_id`、`subject_id`、`task_id`、事件、`user_rules`、`grants`）。
-3. 调用进程内 `evaluate(request)`，或经回环 PDP `POST /v1/evaluate`。
-4. 引擎校验请求与事件，四层规则同场匹配，十级优先级聚合，产出 `agent-decision/v1`。
-5. 最终动作为 `ask` 时由宿主打开 HITL 审批窗口：批准放行这一次，拒绝收成 deny；可沉淀的 ask 随决定返回建议 grant，由宿主选择保存并在后续请求携带。
-
-**路径 B：native 拦截（系统调用层，拦截在执行前）。**
-
-```mermaid
-sequenceDiagram
-  participant H as 宿主 Python
-  participant DP as DecidePipe → Decide
-  participant PG as process_guard.exe
-  participant P as 被守护进程（hook DLL）
-
-  H->>DP: wrap(argv, decide=Decide, tool_call_id, tool_name)
-  DP->>DP: 创建 \\.\pipe\agent-security-<随机>（本用户 DACL）
-  H->>PG: --decide-pipe … --hook-dll … -- <argv>
-  PG->>DP: 连接并写入 process-guard-bind/v1（六字段绑定身份）
-  PG->>P: CreateProcess(CREATE_SUSPENDED) → 注入 hook DLL → ResumeThread
-  loop 每条被拦截的 Win32 API（同进程串行）
-    P->>DP: native-record/v1
-    DP->>DP: 身份比对 → 转 agent-event → settle()
-    DP-->>P: native-decision/v1（allow / reason）
-    alt allow = false
-      P->>P: 不调用真实 API，返回 ERROR_ACCESS_DENIED / WSAEACCES / 0xC0000022
-    else allow = true
-      P->>P: 执行真实 API
-    end
-  end
-  opt trash 模式删除
-    P-->>DP: native-operation-result/v1（disposition）
-  end
-  PG-->>H: 子进程退出码（83 = 守卫自身失败）
-```
-
-子进程与任意深度的孙进程同样被守护：hook 拦截 `CreateProcess` 族 API，先询问裁决，再经 broker 管道请求 `process_guard.exe` 对新进程重新注入（见 9.3）。`tool_call_id`/`tool_name` 沿进程树继承，写入每条 record 的 `cause`。
-
-**路径 C：工具输出检测（内容层，旁路软信号）。**
-
-1. 宿主拿到一次工具调用的结果，调用 `inspect(tool_name, text)`（`intercepts/tool_output/inspect.py`，异步）；
-2. 适配器 `tool_result_text`（`adapters/jiuwenswarm/tool_result.py`）从结果里取文本：纯字符串直接用；字典依次找 `content`/`output`/`text`/`result` 键；其余为空串；
-3. `inspect` 把文本连同 `tool_name` 组成 `GuardrailContext`（event=`tool_output`），交给 detection 的后端（默认 `RuleBasedPromptInjectionBackend`，可经 `backend=` 参数注入）；
-4. 后端返回 `RiskAssessment`——这是**概率性软信号**，不是动作裁决：宿主自行决定消费方式（展示、把结果降权、转人工确认），不影响 `agent-decision/v1` 的产生。
-
-路径 C 不经过任务绑定、规则集与 Host 协议；`detection` 的内部（后端族、解析器、风险模型）由其自身文档描述。
-
-### 2.3 部署形态
-
-| 形态 | 入口 | 说明 |
-|---|---|---|
-| trusted in-process | `evaluate(request)`（库嵌入宿主进程） | 安全边界是宿主进程；不抵御同进程改写 |
-| isolated PDP | `agent-pdp serve`（独立进程，回环 HTTP） | `POST /v1/evaluate` 需 evaluate 凭证；控制端点需控制凭证 |
-| native 结算 | `Decide`（宿主构造，任务级） | 每条 native record 回调宿主 `Host.user_rules()` / `Host.grants()` |
-
-工具输出检测（路径 C）没有独立部署形态：`inspect()` 是进程内异步函数，与 detection 后端同进程调用，不监听端口、不落凭证。
-
-`agent-pdp eval` 是一次性 CLI 入口：从 stdin 读一个 DecisionRequest，按内置规则裁决；`--policy` 给出这一次使用的三方规则集，不查任务，也不和已注册的规则集合并。
-
-### 2.4 信任边界
-
-- **进程内**：只有同进程宿主调用 `evaluate(request)` 或构造 `Decide`。缺 `subject_id` 时 deny（`missing_subject`）；裸事件 deny（`invalid_ruleset`）。
-- **回环 PDP**：只允许绑定 `127.0.0.1`、`localhost`、`::1`（`http.py` 的 `_LOOPBACK` 名单，非回环直接 `ValueError`）。启动时用 `secrets.token_urlsafe(32)` 生成 evaluate 与控制两份凭证，只留在进程内存；CLI 把 `{"url", evaluate_token, control_token}` 单行 JSON 打到 **stderr**，不写文件、环境变量或工作区。凭证经 `Authorization: Bearer` 或 `X-Agent-PDP-Token` 提交，比较用 `hmac.compare_digest`；缺失或错误返回 401，不进入裁决。`X-Agent-PDP-Caller` 是可选审计标签（省略记空字符串），不是凭证。
-- **宿主与 Agent 分离**：Agent 的工具子进程受 PDP 管控；grant 由宿主持有，引擎不保存、不签发 MAC、不解释有效期。`subject_id` 不一致的 grant 被剔除并审计。已认证宿主同时改写 `subject_id` 与 grants 仍在调用方信任边界内。
-- **native 管道**：Decide 管道与 broker 管道的 DACL 仅授予当前用户 SID（`D:P(A;;GA;;;<sid>)`）并设置 `PIPE_REJECT_REMOTE_CLIENTS`；启动配置经本用户 DACL 保护的文件映射传递；句柄不继承，靠 `DuplicateHandle` 精确投递。每个连接先收 `process-guard-bind/v1` 绑定记录，之后每条 record 都要过六字段身份比对（见 8.3），未绑定或不匹配即 deny。
-
----
+每次 spawn 创建一个 execution，task_id 绑定规则与删除计数。每个实际目标的文件、进程、设备、管道和网络操作均在执行前核验。复合文件操作保留各资源角色，由统一引擎综合判定。纯工具调用和回环 HTTP PDP 继续使用 agent-event/v1 与 agent-decision/v1。
 
 ## 3. 数据模型
 
@@ -283,7 +140,7 @@ sequenceDiagram
 
 事件里的 `preauth` 使事件非法（schema 层禁止）。`subject_id` 不从事件读取。
 
-适配器把一次工具调用或一条 native record 拆成 effect 列表：
+适配器把一次工具调用或一条 原生操作 拆成 effect 列表：
 
 | effect | 来源与载荷 |
 |---|---|
@@ -337,22 +194,14 @@ Schema 为 `schema/agent-decision.v1.json`，`additionalProperties=false`。
 | `missing_ruleset` | 回环 PDP 上缺 `ruleset_id` |
 | `unknown_ruleset` | 规则集不存在或已注销；HTTP 409 |
 | `unknown_task` | 任务未打开 |
-| `invalid_event` | 事件非法，或 native record 顶层夹带 `user_rules`/`grants`/`rules`/`preauth` |
+| `invalid_event` | 事件非法，或 原生操作 顶层夹带 `user_rules`/`grants`/`rules`/`preauth` |
 | `host_context_unavailable` | Decide 的宿主回调失败或返回非法内容 |
-| `process_identity_mismatch` | native record 与绑定身份不符（native 通道） |
+| `process_identity_mismatch` | 原生操作 与绑定身份不符（native 通道） |
 
-### 3.4 native 协议族
+### 3.4 原生运行时 IPC
 
-| spec | 方向 | 内容 |
-|---|---|---|
-| `process-guard-bind/v1` | 守护进程 → Decide 管道 | 进程身份：`pid`、`parent_pid`、`process_instance_id`（`pid:创建FILETIME`，抗 PID 复用）、`image`、`user_sid`、`integrity_level` |
-| `native-record/v1` | hook → 宿主 | 一次被拦截调用：`request_id`、`operation_id`、`time`、`process{…, identity{…}}`、`operation{category: file/process/network, kind, access, resources[{path, role, device_class?}] 或 {role:peer, host, ip, port}}`、可选 `cause{tool_call_id, name}` |
-| `native-decision/v1` | 宿主 → hook | `request_id`、`operation_id`、`event_id`、`allow`、`reason`（= `winner_rule_id`） |
-| `native-operation-result/v1` | hook → 宿主 | 删除处置回报：`success` + `disposition ∈ trash/permanent/denied/failed` |
-| `process-guard-broker/v1` | hook → process_guard.exe | 子进程托管请求：`action=provision_child`、`child{pid, tid, architecture, creation_flags}`；Python 侧不解析 |
-| DLL guard 二进制帧 | `jiuwen_runtime_guard.dll` ↔ 宿主 | 5 个 `uint32` 帧头（magic `0x44475231`，上限 128 KiB），按操作码分发文件、URL、DNS、端点与程序检查；审批与执行授权走同一连接 |
+公共 DLL 使用统一的协议 13 清单和受限二进制帧。任务规则消费转换后的 agent-event/v1，SDK 在原生 API 执行前返回最终裁决。删除从登记到策略复核、回收与结算沿用 operation_id。result 记录旧目标处置，operation_result 分别记录 handle_close、rename、replace 的实际返回状态，对外事件只输出 operation_ids 数组，单项为 [id]，合并审批为去重后的多个 ID，无关联操作为 []。两者关联审计而独立结算。详见第 8、9 节。
 
-所有 spec 帧在 `message_framing.c:51-57` 白名单校验。`native-decision/v1` 的 `request_id`/`operation_id` 必须与请求双匹配，`allow` 必须是布尔，任何不符即 deny。DLL guard 的二进制帧是独立协议，不复用上面的 JSON spec。
 
 ### 3.5 Schema 清单
 
@@ -362,10 +211,6 @@ Schema 为 `schema/agent-decision.v1.json`，`additionalProperties=false`。
 | `schema/agent-event.v1.json` | `agent-event/v1` | 事件；禁止 `preauth` |
 | `policy_engine/core/request.py`（代码内建校验，无 JSON 文件） | `agent-decision-request/v1` | 请求信封（闭集校验） |
 | `schema/audit-event.v1.json` | `audit-event/v1` | 文件审计记录 |
-| `schema/native-record.v1.json` | `native-record/v1` | hook 上报 |
-| `schema/native-decision.v1.json` | `native-decision/v1` | 管道回传裁决 |
-| `schema/native-operation-result.v1.json` | `native-operation-result/v1` | 删除处置回报 |
-| `schema/process-guard-broker.v1.json` | `process-guard-broker/v1` | native 内部 broker 消息 |
 
 `schema/test_schema_contracts.py` 保证 schema 始终接受 PDP 与适配器的实际产物。
 
@@ -571,7 +416,7 @@ grant 胜出时：summary「命中已批准的具体资源，已放行」，cont
 
 ```mermaid
 flowchart TD
-  start[工具调用或 native record] --> entry{入口}
+  start[工具调用或 原生操作] --> entry{入口}
 
   entry -->|evaluate 或 agent-pdp eval| parse[解析 DecisionRequest]
   entry -->|POST /v1/evaluate| auth[核对 evaluate 凭证]
@@ -615,7 +460,7 @@ flowchart TD
 
 1. 解析 DecisionRequest，格式错误在此结束（CLI 退出码 2）。
 2. 隔离 PDP 核对规则集与任务；进程内 `evaluate()` 使用调用方传入的规则集，缺省为内置规则。`eval --policy` 只替换这一次的三方规则集。
-3. 校验事件：非法 deny（`invalid_event`）；`model_call` 直通 allow；native record 夹带规则字段即 deny。
+3. 校验事件：非法 deny（`invalid_event`）；`model_call` 直通 allow；原生操作 夹带规则字段即 deny。
 4. 四层规则进同一次匹配；`nativeTools` 名单按事件 OS 展开；shell_meta 标记在匹配前盖到 effect 上。
 5. 事件级与每个 effect 分别匹配，各取优先级最小命中。
 6. `unmatched` 只改写 undetermined，聚合序 deny > ask > undetermined > allow。
@@ -677,7 +522,6 @@ Decide(host: Host, *, source: dict, registry: RulesetRegistry,
        isolated: bool = False, delete_threshold: int = 20)
 ```
 
-要求三元组已打开。方法：`settle(event) -> dict`（已经生成的事件）、`begin_delete(operation_id) -> bool`（删除预约，超阈值时返回 True）、`handle_operation_result(result)`（接收 `native-operation-result/v1`，释放删除预约、累计成功数）、`host_context() -> dict`（宿主的 `user_intent()`/`workspace()`/`capabilities()` 拼装为事件上下文，回调异常时兜底为无意图、无 HITL、空工作区）、`close()`（关闭任务、否决在飞审批并清空删除预约与计数）。native record 由 `intercepts.native_call.settle_native_record` 转成事件后再调用 `settle`。ask 永不离开 Decide。
 
 **宿主协议**（`policy_engine.server.host.Host`，`Protocol`）：
 
@@ -696,15 +540,7 @@ Decide(host: Host, *, source: dict, registry: RulesetRegistry,
 
 **进程守卫**（`intercepts.native_call`）：
 
-```python
-preflight() -> PreflightResult(ok, reason, intercept)
-wrap(argv: list[str], *, decide, delete_mode: str = "trash",
-     decision_timeout_s: float = 300, process_timeout_s: float | None = None,
-     bin_dir: str | None = None, tool_call_id: str | None = None,
-     tool_name: str | None = None) -> int
-```
 
-返回子进程退出码；守卫自身失败抛 `ProcessGuardUnavailable(reason)`（见第 8 章）。
 
 ### 7.2 HTTP API（回环 PDP）
 
@@ -737,7 +573,6 @@ agent-pdp serve --host 127.0.0.1 --port 0 --unmatched none
 | `policy_engine/events/envelope.py` · `build_event` | 组装 `agent-event/v1`：缺省 id `evt_<uuid4>`、UTC 时间、`host_capabilities{hitl,auto_intent}=true`、`execution{plane=host, provider=host, intercept=false, escaped=false}` |
 | `policy_engine/events/command_effects.py` · `normalize_command` | 命令规范化（**绝不执行命令**）：混淆检测（PowerShell `-encodedcommand`/`-enc` 不透明编码、解码管道进 shell、`\x`+eval/iex、`[char]`+eval、空引号、`${IFS}`、token 内 2 处以上反斜杠转义）→ 剥 `cmd /c`、`pwsh/powershell -Command/-c` 外壳（命令本身是不透明编码时不剥）→ 按 `&& \|\| ; \|` 分段，检测引号不平衡/heredoc/未展开替换，产出 ok/partial/failed → 每段一个 `process.exec`（带 shell_meta），重定向→fs 读写，`cd` 更新后续 cwd，删除工具→fs.delete（force、bulk=false），网络工具→net.*，管道 sink 追加 `__compound__` 合成 effect；`stamp_tokens` 时给每段盖 `command_tokens`；内嵌脚本最多读一层、须在 workspace/trusted_dirs 内、≤256 KiB，内嵌参数带 `-encodedcommand`/`-enc` 时直接 partial |
 | `intercepts/tool_call/adapters/jiuwenswarm/tool_call.py` · `tool_call_to_event` | 工具名 `-`→`_` 后 casefold 分派：shell 类/带 command 的未知工具走命令规范化；read/write/delete 生成单个 fs effect（force 取 `args.force`）；fetch 按方法与载荷分 `net.fetch`/`net.egress`；注入 workspace、execution、`source.framework=jiuwenswarm` |
-| `intercepts/native_call/record.py` · `native_record_to_event` | native record → 事件与 effect（见 3.4 与 8.3）：`create_process` 从 resources 取映像与命令行，映像盖入每个 process.exec 的 `image`，首个命令 token 与映像程序名不一致记 `image_command_mismatch`；connect 只产 `net.connect`；伪设备（nul/con/conin$/conout$）豁免；copy/move/replace/symlink/hardlink 按 source/target/backup 展开资源；未知 kind 产 `unknown_operation` failed；`cause` 双字段非空才保留 |
 | `intercepts/tool_output/adapters/jiuwenswarm/tool_result.py` · `tool_result_text` | 从工具结果提取待检文本：纯字符串直接用；字典依次取 `content`/`output`/`text`/`result` 键；其余为空串 |
 | `intercepts/tool_output/inspect.py` · `inspect` | 异步检测入口（见 2.2 路径 C）：文本 + `tool_name` 组成 `GuardrailContext{event=tool_output}`，交 detection 后端（默认 `RuleBasedPromptInjectionBackend`，`backend=` 可注入），返回 `RiskAssessment` 软信号 |
 
@@ -745,249 +580,44 @@ agent-pdp serve --host 127.0.0.1 --port 0 --unmatched none
 
 ## 8. Windows 防护（Python 侧）
 
-本章 8.1–8.4 描述 `wrap()` 接入的进程守卫，8.5 描述 DLL 防护会话。
-
-### 8.1 preflight 与 wrap
-
-`preflight()` 依次检查平台 win32、架构 amd64/x86_64、三件二进制齐备，返回 `PreflightResult(ok, reason, intercept)`。`wrap()` 校验顺序：`tool_call_id`/`tool_name` 成对（非空、无控制字符、UTF-8 长度 ≤127/≤255，违反 `invalid_tool_cause`）→ 可用性 → `decide` 必须提供（`decide_required`）→ `delete_mode ∈ {trash, permanent}` → 超时 > 0 → argv 非空 → 二进制齐全。任一不满足抛 `ProcessGuardUnavailable`，**不启动裸进程**。
-
-显式传入 `bin_dir` 时优先使用该目录。默认通过两套 Guard 共用的定位入口，从 `agent_security_dll.binary_directory()` 查找 `process_guard.exe` 和 x64、x86 两个 Hook DLL。源码检出也可使用本地构建产物。
-
-随后创建 `DecidePipe(decide)` 并启动监听线程，`subprocess.run` 执行：
-
-```text
-process_guard.exe --decide-pipe <名> --hook-dll <x64> --hook-dll-x86 <x86>
-  --delete-mode <m> --decision-timeout-ms <ms>
-  [--tool-call-id <id> --tool-name <name>] -- <argv>
-```
-
-`process_timeout_s` 超时 → `ProcessGuardUnavailable("process_guard_timeout")`；退出码 83 → `ProcessGuardUnavailable("process_guard_start_failed")`；其余退出码原样返回。`delete_threshold` 不在 `wrap()`，在 `Decide` 构造（默认 20）。
-
-### 8.2 DecidePipe
-
-- 管道名 `\\.\pipe\agent-security-<32位随机hex>`；DUPLEX、`PIPE_REJECT_REMOTE_CLIENTS`、DACL 仅当前用户（`D:P(A;;GA;;;<sid>)`）；创建于目标进程之前。`start()` 中 DACL 构造失败或监听 5 秒内未就绪 → `ProcessGuardUnavailable("decide_pipe_unavailable")`，不启动裸进程。
-- 帧协议：4 字节小端长度前缀 + UTF-8 JSON，上限 1 MiB。
-- 每个连接 = 一个被守护进程：连接上先收 `process-guard-bind/v1` 记录绑定（`ProcessBinding`）；之后每条 `native-record/v1` 触发一次结算并把 `native-decision/v1` 写回；`native-operation-result/v1` 交给 `handle_operation_result`。结算分发有扩展点：`Decide` 子类定义 `handle_native_record(decide, message, binding=)` 可截获原始 record（记录、改写等），默认走 `settle_native_record(decide, record, binding)`。
-- 未绑定就发 record：直接回 `allow=false, reason=process_identity_mismatch`。
-- `close()`：用 `CreateFile` 唤醒阻塞监听并 `CancelIoEx` 取消所有客户端——关闭管道即取消所有挂起裁决（回答 deny）。
-
-### 8.3 native 结算
-
-`settle_native_record(decide, record, binding)`（`intercepts/native_call/session.py`，`binding` 为 `ProcessBinding` 数据类）：
-
-1. record 顶层夹带 `user_rules`/`grants`/`rules`/`preauth`，或结构校验不过（缺 spec/request_id/operation_id/time、process/operation 形状、category 不在 file/process/network）→ `invalid_event`，不进入结算。
-2. 与绑定身份六字段比对（`pid`、`parent_pid`、`process_instance_id`、`image`（Windows 路径等价比较）、`user_sid`、`integrity_level`（忽略大小写））；不符 → `process_identity_mismatch`。
-3. `native_record_to_event` 转事件与 effect：事件上下文取 `decide.host_context()`（宿主的 user_intent/workspace/capabilities 回调，异常兜底），并盖 `execution{plane=host, provider=windows-process-guard, intercept=true, escaped=false}`——native 事件恒有运行时拦截。
-4. 删除操作先预约配额：`decide.begin_delete(operation_id)` 返回 True（已成功 + 已预约 ≥ `delete_threshold`）时把 `fs.delete` effect 标 `bulk=true`。
-5. `settle()`：内部回调宿主 `user_rules()`/`grants()`（`VersionedRules` 版本未变则复用编译缓存与指纹；变化或普通列表则重新加载、逐条核对 grant 主体、重算指纹；回调异常或非法 → `host_context_unavailable`）。deny 直通；allow 直通；ask 且任务已关闭或无 HITL → deny；相同 in-flight ask（按 effects 内容为键）共用一个审批门，leader 调 `request_approval`，close 后一律拒绝。
-6. 返回 `native-decision/v1{allow = action=="allow", reason = winner_rule_id}`。被拒的删除操作以 `success=false` 回报 `native-operation-result/v1`（预约随之释放）。结算前的 PDP 动作存 `pdp_action`，结算值写 `action`，两者都进审计。
-
-### 8.4 Python 侧 fail-closed 清单
-
-平台/架构不支持、二进制缺失、`decide` 缺失、参数非法、启动超时、守卫退出码 83 —— 全部抛 `ProcessGuardUnavailable`，绝不启动裸进程；管道断开/关闭、宿主回调失败、身份不匹配 —— 该条 record deny；任务未打开 —— 构造 Decide 即失败。
-
-### 8.5 DLL 防护会话（Python 侧）
-
-`intercepts/native_call/dll_guard/` 是面向异步宿主的第二套 Windows 防护接入。它与 8.1–8.4 的 `wrap()` 并列，不替换既有协议：进程守卫面向同步工具循环，DLL 防护面向 `async` 工具循环，二者按宿主接入方式二选一。
-
-**公开面**（`dll_guard/__init__.py`）：
-
-| 名字 | 作用 |
-|---|---|
-| `RuntimeGuardManager` | 会话级入口。持有 `session_id`、策略引擎、DLL 定位器、审批通道与后台任务 |
-| `RuntimeApprovalRequests` | 审批窗口：`request()` 发事件并等待，`resolve(session_id, request_id, answer)` 交回决定 |
-| `RuntimeGuardContext`（`dll_guard.context`） | 单次工具调用的上下文：`session_id`、`tool_call_id`、策略版本、执行 id；不作为包根导出 |
-| `create_process`（`dll_guard.launcher`） | 在会话上下文内绑定启动器并创建进程；上下文外原样透传 |
-| `locate_guard_dll` / `validate_guard_bundle` / `validate_guard_platform` | 定位并校验 `agent-security-dll` 里的 DLL、manifest 与平台；`pin_guard_bundle` 在 `bundle.py` 内部使用 |
-| `HostPolicyAdapter` / `RuntimePermissionEngine` / `scope_options` | 把宿主已有 `tool_permission` 配置接成运行时策略，并生成授权范围 |
-| `GuardError` 及子类 | 启动、注入、管道、策略拒绝等失败（见附录 B） |
-
-**构造参数**。`RuntimeGuardManager` 的参数除首三个外都是可选的：
-
-| 参数 | 必填 | 说明 |
-|---|---|---|
-| `session_id` | 是 | 会话标识，审批与授权按它隔离 |
-| `engine` | 是 | `PermissionEngine`，或返回 `PermissionEngine`/`HostPolicyAdapter` 的可调用对象 |
-| `dll` | 是 | `jiuwen_runtime_guard.dll` 的路径，或返回路径的可调用对象（通常 `locate_guard_dll`） |
-| `emit` | 条件必填 | 策略可能产生 ask 时必须提供：DLL 侧命中 ask 时用它把 `RuntimeApprovalEvent` 交给宿主渲染；缺省而命中 ask 会抛 `RuntimeError("Runtime approval requires a host emit callback")` |
-| `approval_timeout` | 否 | 等待宿主回答的秒数，默认 120 |
-| `program_decision` | 否 | 根程序启动判定为 `undetermined` 时的宿主回调；仍返回 `undetermined` 则按 ask 处理 |
-| `persist` | 否 | 把“总是允许”的授权写回宿主配置；不提供时只能做本次/会话级授权 |
-| `notify` | 否 | 授权持久化结果的通知回调 |
-| `revision` | 否 | 返回策略版本（字符串或整数）；版本变化时重算授权版本 |
-| `take_approval` / `approvals` / `enabled` / `execution_factory` / `bind_launcher` | 否 | 预置审批回执、共享审批通道、开关与测试注入点 |
-
-**生命周期**：
-
-1. 宿主每个会话创建一个 `RuntimeGuardManager`；`enabled` 返回 False 时整个防护透传，不创建执行。
-2. 每次工具调用进入 `async with manager.tool_execution(tool_name=..., inputs=..., session=..., tool_call_id=..., channel=...)`。四个必填参数缺一或值为空（尤其 `tool_call_id`）会抛 `RuntimeError`；`channel` 是可选的连接标识，会随审批事件带给宿主。
-3. 上下文内用 `create_process()` 启动的进程才会进入注入流程；上下文外调用原样交给 factory。首次真实启动时惰性创建 `WindowsGuardExecution`：校验平台、`pin_guard_bundle` 锁定 DLL 与 manifest、创建 `WindowsJob`（`KILL_ON_JOB_CLOSE`）、随机命名管道、就绪事件与 bootstrap，然后启动管道服务。同一上下文内的并发启动串行化，只创建一个执行。
-4. `launch()` 以 `CREATE_SUSPENDED | CREATE_NO_WINDOW` 创建根进程，加入 Job，先做 `kind="program"` 策略判定；拒绝则杀掉挂起进程并抛 `GuardPolicyDenied`。允许则重置就绪事件、通过导入表注入 `jiuwen_runtime_guard.dll`、`NtResumeProcess`，最多等待 5 秒就绪。
-5. DLL 侧通过命名管道上报文件、URL、DNS、端点与程序访问；宿主核对客户端 PID 在 Job 内后按二进制帧分发。命中 ask 时 `emit` 事件并等待 `approvals.resolve`，批准后写执行级或会话级授权，可经 `persist` 永久保存。
-6. 工具返回后，若 Job 仍有进程，执行保留为后台任务并每 0.1 秒轮询；否则释放。`await manager.close(permanent=True)` 取消前后台任务并清空会话授权；不带 `permanent` 时只关闭当前活跃执行，manager 之后仍可复用。`close(permanent=True)` 后再次进入 `tool_execution` 会抛 `RuntimeError`。策略 `revision` 变化时重算版本；只有“本次仅新增该授权”的保存会保留旧授权，否则清空。
-
-**最小可运行示例**（宿主侧；`emit` 与 `resolve` 必须成对，否则 ask 会等到 `approval_timeout`）：
+唯一受保护启动入口为 ProcessGuard.spawn()。构造参数为 session_id、host、delete_mode（默认 recover）和 approval_timeout_s（默认 120）。host 提供 policy_snapshot、confirm、save_grant 与 audit。快照必须包含 revision 和 config，任务规则启用时还需 ruleset 与 tasks。规则及授权按版本、主体、任务和资源范围校验。
 
 ```python
-import asyncio
-
-from agent_shield.intercepts.native_call.dll_guard import (
-    PermissionConfirmResponse,
-    RuntimeGuardManager,
-    create_process,
-    locate_guard_dll,
-)
-from agent_shield.tool_permission.runtime.engine import PermissionEngine
+from agent_shield import ProcessGuard
 
 
-async def run_tool(manager: RuntimeGuardManager) -> int:
-    async with manager.tool_execution(
-        tool_name="bash",
-        inputs={"command": "echo hello"},
-        session=None,
-        tool_call_id="call-1",
-    ):
-        process = await create_process(
-            asyncio.create_subprocess_exec,
-            "cmd.exe", "/c", "echo hello",
+async def execute(host, argv):
+    async with ProcessGuard(session_id="session", host=host) as guard:
+        process = await guard.spawn(
+            argv, task_id="task", tool_call_id="call", tool_name="shell",
         )
         return await process.wait()
-
-
-async def approval_loop(manager: RuntimeGuardManager, event_queue: asyncio.Queue) -> None:
-    while True:
-        event = await event_queue.get()
-        # 真实宿主在这里渲染审批窗口；示例一律批准本次。
-        answer = PermissionConfirmResponse(approved=True, auto_confirm=False)
-        manager.approvals.resolve(event["session_id"], event["request_id"], answer)
-
-
-async def main() -> None:
-    events: asyncio.Queue = asyncio.Queue()
-    manager = RuntimeGuardManager(
-        session_id="session-1",
-        engine=PermissionEngine(workspace_root="C:/work"),
-        dll=locate_guard_dll(),
-        emit=events.put,  # Queue.put 与 emit 的异步签名一致
-        approval_timeout=120,
-    )
-    reviewer = asyncio.create_task(approval_loop(manager, events))
-    try:
-        await run_tool(manager)
-    finally:
-        reviewer.cancel()
-        await manager.close(permanent=True)
 ```
 
-示例只演示接线。实际宿主应把 `emit` 接进审批 UI，把 `resolve` 放在用户点击回调里；`PermissionConfirmResponse(approved=False)` 表示拒绝，`auto_confirm=True` 配合 `persist_allow` 表示记住授权（`persist_allow=False` 为会话级，`None`/`True` 为永久级，仍需 `persist` 才能落盘）。
+spawn 支持 cwd、env、stdio、channel、timeout_s 和结构化 approval_receipt。返回对象提供 pid、execution_id、returncode、wait、communicate 与 cancel。根进程退出后仍保护后代，直到 Job 为空、取消、超时或关闭会话。会话关闭保留清理失败的 Job，允许重试清理。
 
-**与进程守卫的取舍**：DLL 防护不提供回收站删除模式，删除在批准后执行真实删除；只支持 Windows x64，x86 子进程注入会失败；网络覆盖更广（含 DNS 与 WinHTTP 代理目标 URL），文件与进程 hook 更精简。需要回收站、x86 WOW64 或既有 `native-record/v1` 协议时继续用进程守卫。
+一次逻辑操作最多出现一次合并确认。策略或成员身份在审批期间变化时重新判定。任务删除计数由所有 execution 共用，在裁决前预留，仅确认成功后累计。拒绝和确定失败释放预留，未知保留至执行收尾，重复回报不重复计数。
 
----
+Windows 管道使用当前用户专属的受保护 DACL，拒绝远程连接。宿主读取管道真实对端 PID，并验证 Job 成员及 PID:创建时间。凭据 API 返回的子进程还须通过调用方句柄和实际父 PID 验证后加入同一 Job。审计保存任务、工具、execution、命中规则、操作资源与从系统读取的进程身份。
 
-## 9. native Windows 防护（C/C++）
+## 9. Windows 公共原生实现
 
-本章 9.1–9.10 描述 `process_guard.exe` 与 Hook DLL，9.11 描述 `jiuwen_runtime_guard.dll`。
+源码和构建脚本位于 foundation/agent-security-dll。每种架构只有 agent_security_guard.dll 及构建时生成的协议 13 清单。Hook 后端固定 Microsoft Detours v4.0.1。SDK 校验清单、架构和 SHA-256，并在执行期间固定文件和目录。
 
-### 9.1 产物与构建（`build.ps1`）
-
-| 产物 | 源文件 | 编译要点 |
-|---|---|---|
-| `process_guard.exe`（x64） | `process_guard_main.cpp` + 公共 C 模块 | `/W4 /WX /EHsc /MD`，链接 Detours X64 lib |
-| `process_guard_hook_x64.dll` / `_x86.dll` | `hooks.cpp` + 公共 C 模块 | `/MT /LD /DEF:process_guard_hook.def`（仅导出 `ProcessGuardAttach`）；x86 用 `vcvarsall x86` 交叉编译同一份源码 |
-| `probe.exe`（x64） | `probe.cpp` | 集成测试靶 |
-| 4 个单测 exe | `tests/test_*.cpp` | `/utf-8`，编译后立即执行作为构建门禁 |
-
-MSVC 由 vswhere 定位最新 VC.Tools.x86.x64；Detours（源码在 `third_party/detours/`）先 nmake 双架构重建。产物拷贝进 Python 分发子包 `bin/win_amd64/`。公共 C 模块：`pipe_io.c`（管道读写与事务）、`message_framing.c`（帧编解码与 spec 白名单）、`record_json.c`（记录构造与严格解析）、`operation_mapping.c`（API → operation）、`path_classification.c`（设备/管道/裸盘分类）。
-
-hook DLL 用 `/MT` 静态 CRT 避免分发依赖；x86 DLL 只为服务 WOW64 子进程（守卫自身只出 x64；ARM64 目标拒绝）。
-
-### 9.2 启动与注入
-
-`process_guard.exe` 命令行参数即全部配置（未知参数直接失败，不用环境变量传参）：`--decide-pipe`、`--hook-dll`、`--hook-dll-x86`、`--delete-mode`、`--decision-timeout-ms`（不允许 0）、`--tool-call-id/--tool-name`（必须同时出现或同时省略，单给其一即失败）、`--` 后接目标命令；缺 `--`、缺 decide 管道名或缺任一 hook DLL 同样失败。
-
-流程（`process_guard_main.cpp`）：
-
-1. `WaitNamedPipeW` 5 秒等 Decide 管道 → `CreateFileW` 打开客户端连接。
-2. `CreateProcessW(..., CREATE_SUSPENDED, inherit=TRUE)` 挂起启动目标。
-3. `attach_process()`：抓取身份（pid、父 pid、`instance_id = pid:创建FILETIME`、镜像路径、用户 SID、完整性级别）→ 先把 `process-guard-bind/v1` 写入 decide 连接（保证宿主先见绑定后见记录）→ 创建 broker 管道对 → `DuplicateHandle` 把 decide 客户端句柄与 broker 客户端句柄复制进子进程 → 组装 `ProcessGuardStartup`（句柄 + 超时 + 删除模式 + 身份 + tool cause；无指针、`pack(8)`，x64/x86 布局一致）写入 `Local\agent-security-<pid>` 文件映射（DACL 限本用户）→ **`DetourUpdateProcessWithDll`** 注入按目标架构选择的 hook DLL（`IsWow64Process2` 判 x64/x86）→ 起 broker 线程 → `ResumeThread`。
-4. 等子进程退出并透传退出码。任何一步失败 → `TerminateProcess(子,1)` + 退出码 83。
-
-Hook DLL 侧：`DllMain` 打开文件映射，`ProcessGuardAttach(view)` 校验句柄、初始化锁、`install_hooks()`；失败返回非 0 → `DllMain` 返回 FALSE，进程无法启动。
-
-### 9.3 子进程递归守护
-
-hook 对 `CreateProcess` 族调用：先问 decide，再强制 `CREATE_SUSPENDED` 创建，然后经 broker 管道（`g_broker_lock` 串行、同超时）向 `process_guard.exe` 发 `provision_child`（携带 pid/tid/architecture/creation_flags 与继承的 tool cause，id 与 name 同空或同非空）。`process_guard.exe` 的 broker 线程校验 spec 与全部字段后 `OpenProcess`，用 `IsWow64Process2` **实测**目标架构、必须与请求声称一致（防伪造），再对新进程**重跑完整 attach**（新 decide 连接、新 broker 对、新映射、再注入；DLL 路径经 `WideCharToMultiByte(CP_ACP)` 转 ANSI 后交给 Detours）。任一步失败 → 杀掉子进程，spawn 返回 FALSE + `ERROR_ACCESS_DENIED`；成功回 `{"spec":"process-guard-broker/v1","action":"provision_child","ok":true}`。tool cause 沿进程树继承写入每条 record。
-
-### 9.4 拦截清单与操作映射
-
-Detours 事务式 hook（`DetourTransactionBegin/Attach/Commit`）。kernel 类 API 优先 hook kernelbase.dll 再 kernel32.dll；advapi32/shell32/ws2_32/winhttp/wininet 未加载时通过 hook `ntdll!LdrLoadDll` 在 DLL 加载时补装，失败则进程自杀退出 83。`NtCreateUserProcess` 无法可靠控制，**无条件拒绝**。
-
-| 类别 | 拦截的 API（W/A 双版本） | 映射 |
-|---|---|---|
-| 文件 | `CreateFile`、`GetFileAttributes`、`FindFirstFile`、`CreateDirectory`、`SetFileAttributes`、`DeleteFile`、`RemoveDirectory`、`CopyFile(Ex)`、`MoveFile(Ex)`、`ReplaceFile`、`CreateHardLink`、`CreateSymbolicLink`、`SetFileInformationByHandle`（Disposition/Rename） | `open`(读)/`write`/`create`；删除→`delete`/`rmdir`；复制移动替换链接→同名 kind（资源 role：source/target/backup）；命名管道→`pipe_open`；裸盘/卷/设备→`device_open`+`device_class` |
-| 进程 | `CreateProcess`、`CreateProcessAsUser`、`CreateProcessWithToken`、`CreateProcessWithLogon`、`NtCreateUserProcess`、`ShellExecute(W/A/ExW/ExA)` | →`create_process`（access=execute，资源含映像与命令行）；ShellExecute 仅接受 open 动词、无 IDLIST 的 `.exe` 文件，URL/文档一律拒绝；`NtCreateUserProcess` 拒绝 |
-| 网络 | `connect`、`WSAConnect`（按 IP）、`WinHttpConnect`、`InternetConnect`（按主机名） | →`connect`（资源 `{host 或 ip, port}`） |
-| NT 层 | `NtCreateFile`（放行 `\Device\Afd`）、`NtSetInformationFile`（Rename/Disposition）、`NtDeleteFile` | 同文件语义；Disposition 改写为回收站并伪造成功 |
-
-### 9.5 决策流
-
-每次被拦截调用**执行前同步**询问（`ask()`）：生成 `req_<pid>_<序号>`/`op_<pid>_<序号>`，组 `native-record/v1` JSON（≤64 KiB），在 `g_decide_lock` 内完成一问一答（写一帧读一帧），超时 = `--decision-timeout-ms`（默认 300000ms）。`decision_allows` 严格校验回包 spec、双 id 匹配与 `allow` 布尔——任何不符即 deny。deny/超时/管道断 → 不调真实 API，返回 `ERROR_ACCESS_DENIED`（socket 为 `WSAEACCES`，NT 为 `0xC0000022`）。
-
-放行不询问的优化路径（不产生 record）：读不存在文件、写父目录缺失、伪设备（MAP_EXEMPT）。
-
-### 9.6 删除与回收站
-
-`--delete-mode trash`（默认）：删除不调真实 `DeleteFile`，改用 `SHFileOperationW` + `FO_DELETE` + `FOF_ALLOWUNDO` 送回收站，随后异步回报 `native-operation-result/v1{disposition: trash/permanent/failed}`；回收失败 → `ERROR_ACCESS_DENIED`。`permanent` 模式直接删除，同样回报。NT 路径的 Disposition 删除同样改写为回收站并伪造成功。回收站失败不会回退成永久删除，`delete_mode` 也不改变风险档。
-
-### 9.7 IPC 与记录格式
-
-- 帧：4 字节小端长度 + JSON，帧上限 1 MiB；native 侧记录 JSON ≤64 KiB。
-- 管道：Decide 管道（宿主建，随机名）；broker 管道 `\\.\pipe\agent-security-broker-<pid>-<序号>`（process_guard.exe 建）。
-- 记录字段见 3.4；spec 白名单在 `message_framing.c:51-57`。
-- 回包解析是自制朴素扫描器，只信任宿主回包，解析失败一律 fail-closed。
-
-### 9.8 路径分类（`path_classification.c`，大小写不敏感）
-
-| 类别 | 判定 |
+| 能力 | 统一实现 |
 |---|---|
-| PSEUDO_DEVICE（豁免） | 精确 `nul`、`con`、`conin$`、`conout$`（含 `\\.\`、`\\?\` 前缀形式）；`C:\foo\NUL` 不算 |
-| NAMED_PIPE | `\\.\pipe\`、`\\?\pipe\` |
-| RAW_DISK | physicaldrive、`\\.\Harddisk`（非 volume） |
-| VOLUME | HarddiskVolume、`\\.\C:` 式 6 字符盘符设备 |
-| OTHER_DEVICE | 其余 `\\.\`、`\\?\` |
-| NORMAL | 普通路径 |
+| 文件访问 | NtCreateFile、NtOpenFile，保留目录、元数据、链接、设备和命名管道语义 |
+| 元数据与枚举 | NtQueryAttributesFile、NtQueryFullAttributesFile；目录枚举的底层打开仍受检查 |
+| 复合变更 | 复制、重命名、移动、替换、硬链接、符号链接，按源、目标及备份一起裁决 |
+| 进程 | CreateProcessInternalW 覆盖 Win32 创建族；凭据 API 显式保护返回的挂起子进程；直接未受管理的 NtCreateUserProcess 拒绝 |
+| ShellExecute | W/A 和 ExW/ExA 统一启动实际可执行文件，只接受默认或 open verb，拒绝代理 verb、IDList 和类名启动 |
+| 网络 | DNS、Winsock、WinHTTP、WinINet，包含地址、域名、URL 和代理目标 |
+| x86 与 x64 | Windows x64 宿主支持两种目标及后代，跨位数加载使用 Detours 的同位数 helper，共用原会话 |
+| 删除 | 路径删除、句柄置删除、关闭时删除和重命名覆盖，共用 softdelete 处置器 |
 
-### 9.9 fail-closed 与反重入
+recover 只接受已确认的回收或归档，失败与未知均返回错误。沙箱仅使用绑定的 JiuwenBox 代理，回执丢失按相同操作 ID 查询。permanent 仅在宿主显式配置且本次策略允许时执行。JiuwenBox 独立软删除继续提供 guard_open/guard_close、guard_prepare_process 和 guard_recover_local；独立软删除的宿主授权职责保持原有边界。公共 guard_open/guard_close 以独立持有句柄复用同一执行绑定，最后一个关闭时卸钩并释放 native 状态。Git Bash 独立链路在调试 CREATE_PROCESS 事件中准备子工具导入，失败阻断执行。MSYS 的 unlink、unlinkat、rmdir、remove 同步调用公共回收器，以运行库 errno 返回失败。Token/Logon 的挂起子进程经 OS 父子关系和 Job 核验后，只为实际 TokenUser SID 增加管道客户端 I/O 与初始化事件权限，保留已核验句柄用于后续查询。管道连接仍校验 OS 客户端 PID 和 Job。WithToken 在本机 UAC 过滤令牌下无 DLL 基线返回 1314；完整管理员令牌启用 SeImpersonatePrivilege 后，当前账户 x86/x64 的 allow/deny 四项实测通过，无跳过。产品验收以同一账户的受保护进程树为边界，不要求树内再次切换账户。JiuwenBox 在宿主层用 WithLogon 启动 jbx-sandbox runner 的必要链路继续保留。额外跨账户验收脚手架已删除；凭据创建 API 的安全拦截继续保留，身份核验或 Job 登记失败时拒绝创建。就绪由消息 49 复制仅含 EVENT_MODIFY_STATE 的句柄。
 
-native 侧失败语义：Decide 管道 5 秒等待失败 → 83；注入/架构/映射失败 → 杀子进程 + 83；每次 ask 管道断/超时/取消 → deny；回包格式或 id 不符 → deny；DLL 加载失败 → 子进程起不来；延迟 hook 补装失败 → 自杀 83；`NtCreateUserProcess` 无条件拒绝。反重入：`HookGuard`（线程本地深度）让守卫自身的嵌套调用直通真实 API，避免 hook 内部文件操作死锁。
-
-### 9.10 probe 与分发
-
-`probe.exe`：集成测试靶，子命令 `read|write|mkdir|delete|copy|move|replace|symlink|hardlink|open|connect|exec`；退出码 0 成功、2 用法错、3/6 其它失败、4 连接成功（网络探针特意非 0）、5 `ACCESS_DENIED`。Python 集成测试把它放进守卫内跑，验证拦截真实生效。
-
-Windows 分发包 `agent-security-dll` 可独立安装，通过 `agent_security_dll.binary_directory()` 提供两套 Guard 的原生文件。执行入口位于 SDK 的 `agent_shield.intercepts.native_call` 和 `dll_guard` 子包。
-
-### 9.11 DLL 防护原生层（`native/windows-dll-guard/`）
-
-本节是 8.5 所述 DLL 防护的**原生侧**：8.5 讲宿主如何用 `RuntimeGuardManager` 创建会话、进入 `tool_execution` 与回应审批；本节讲被注入的 `jiuwen_runtime_guard.dll` 如何 hook、上报与执行。两者之间的二进制帧格式见 3.4（与 `process_guard.exe` 的 JSON `native-record/v1` 协议互不复用）。
-
-`jiuwen_runtime_guard.dll` 是用户态防护 DLL，由宿主在目标进程挂起时通过导入表注入。它不依赖独立守护进程，和 9.1–9.10 的 `process_guard.exe` 是两套实现：
-
-| 方面 | 实现 |
-|---|---|
-| 构建 | `native/windows-dll-guard/build.ps1` 编译 DLL，产物与 manifest（protocol 4、x64、SHA-256）一起进入 `agent_security_dll/bin/win_amd64/` |
-| 注入 | 宿主创建挂起根进程，加入 Job，读取实际映像并做程序策略判定，再注入 DLL、恢复执行；最多等待 5 秒就绪 |
-| IPC | 命名管道 `\\.\pipe\jiuwen-guard-<nonce>`，二进制帧（magic `0x44475231`，上限 128 KiB）；宿主先核对客户端 PID 在 Job 内 |
-| 文件 | `NtCreateFile`、`NtOpenFile`、`NtDeleteFile`、`NtSetInformationFile`、`DeleteFileW`、`RemoveDirectoryW`、`GetVolumeNameForVolumeMountPointW` |
-| 进程 | `CreateProcessInternalW`，子进程同样做导入表注入，沿进程树继承会话与工具调用上下文 |
-| 网络 | `getaddrinfo` / `GetAddrInfoEx` / `gethostbyname` / `gethostbyaddr` / `WSALookupServiceBegin` / `DnsQuery_*`，`ConnectEx` / `sendto` / `WSASendTo` / `WSASendMsg` / `send` / `WSASend` / `closesocket`，WinHTTP 各阶段及代理目标 URL |
-| 删除 | 批准后执行真实删除，不提供回收站模式 |
-| 失败语义 | DLL 缺失、manifest 不符、平台不符、注入失败、管道失败、策略拒绝均抛 `GuardError` 子类；注入失败时终止挂起进程，不退回裸执行 |
-
-DLL 防护只支持 Windows x64；x86 子进程注入会失败并拒绝启动。需要覆盖 WOW64、回收站删除或 `ShellExecute` 时使用进程守卫。
-
----
+原生 IPC 使用长度受限的二进制帧。操作 40 检查实际程序，42 请求删除授权，43 回报删除处置，45 验证并登记返回的子进程句柄。宿主决定 allow/deny，应用线程等待结果。构建产物仅由脚本生成，源码归档不含 DLL、EXE 或其他编译产物。
 
 ## 10. 审计与可观测性
 
@@ -1018,7 +648,7 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 | 3 | 用户规则夹带 `action_mapping`/`user_grantable`/`source` | 加载即拒绝；宽匹配盖不住内置 ask、三方 ask、敏感文件与受保护写 |
 | 4 | `userFiles`/allowlist 追加放宽越界 | 放宽类追加单独审计；落在 `protectedFiles`/`sensitiveFiles` 的路径仍命中高风险行为 |
 | 5 | 未知条件键静默不命中 | `when` 词汇表封闭，加载期按 effect 校验，`PolicyError` 不留到裁决期 |
-| 6 | 规则注入面 | 三方只经规则集接口进入；`eval --policy` 只作用于这一次。用户规则与 grant 只由已认证宿主经 DecisionRequest 或 Host 回调进入；native record 管道不接受任何规则字段（顶层夹带即 `invalid_event`） |
+| 6 | 规则注入面 | 三方只经规则集接口进入；`eval --policy` 只作用于这一次。用户规则与 grant 只由已认证宿主经 DecisionRequest 或 Host 回调进入；原生操作 管道不接受任何规则字段（顶层夹带即 `invalid_event`） |
 | 7 | 未认证调用 PDP | 回环 only；双凭证分立、内存生成、`hmac.compare_digest`、不落盘；401 不进入裁决，不按空规则裁决 |
 | 8 | 规则集更新攻击面（一次更新影响后续所有决定） | 控制通道独立凭证；版本化整体替换 + `expected_version`；语义比较，无法证明更严算放宽且只作用新任务；`runtime_relax` 可禁运行时放宽；更新失败保留旧版本；注册/更新全审计 |
 | 9 | 句柄失效降级 | 重启后 `unknown_ruleset`，不退回只用内置规则；宿主回调失败该条 record deny |
@@ -1035,7 +665,6 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 
 `agent_shield` 包（flat 布局，本目录即包根）内已落地的能力分三块：
 
-- **本文档覆盖**：`policy_engine/`（策略决策点）、`intercepts/tool_call/`（工具调用）、`intercepts/native_call/`（系统调用与两套 Windows 防护接入）、`intercepts/tool_output/`（工具结果交给 detection），以及两套原生实现 `native/windows-process-guard/`、`native/windows-dll-guard/`；
 - **范围外兄弟子包**：`tool_permission/`（工具权限组件 toolguard / fileguard / netguard / hostguard / delguard，对应 W1a / W2 / W3 / W6）与 `detection/`（内容检测，对应 W4）——同包名空间、分开演进，由各自文档描述，pyproject 包清单同时列出它们；
 - **沙箱（W5）**：独立交付件 `../jiuwenbox/`（自带 pyproject、FastAPI 服务、Linux / Windows 运行时），与本包分开安装与测试。
 
@@ -1051,14 +680,9 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 
 | 测试文件 | 覆盖 |
 |---|---|
-| `intercepts/native_call/test_launch.py` | preflight fail-closed；wrap 拒绝半截 tool_cause 与超长 id |
-| `intercepts/native_call/test_decide_pipe.py` | 命名管道结算 allow/deny、绑定不匹配、批量删除 |
-| `intercepts/native_call/test_process_guard.py` | **真实挂钩进程 E2E**（二进制未构建则 skip）：工作区读 allow、metadata connect deny（退出码 5）、子进程继承 tool cause |
-| `intercepts/native_call/test_native_record.py` | native-record 转换、绑定校验、批量删除、镜像与命令行审计 |
-| `intercepts/dll_guard/test_runtime_guard_manager.py`、`test_runtime_guard_context.py`、`test_runtime_guard_policy.py` | DLL 防护会话生命周期、上下文、策略判定与授权 |
+| `intercepts/dll_guard/test_process_guard_session.py`、`test_runtime_guard_context.py`、`test_runtime_guard_policy.py` | DLL 防护会话生命周期、上下文、策略判定与授权 |
 | `intercepts/dll_guard/test_runtime_guard_ipc.py`、`test_runtime_decision_cache.py`、`test_dll_guard_long_requests.py` | 管道帧、决策缓存与长请求 |
 | `intercepts/dll_guard/test_dll_guard_compatibility.py`、`test_dll_guard_domains.py`、`test_dll_guard_process.py`、`test_dll_guard_resources.py`、`test_dll_guard_python_execution.py`、`test_runtime_guard_bridge.py`、`test_runtime_guard_shared_config.py` | 兼容性、域名与资源检查、进程注入与 Python 执行路径 |
-| `intercepts/native_call/generate_native_call_cases.py` / `run_native_call_batch.py` | 批处理脚本（非单测）：生成 100 条 native-record/v1 用例；经 `native_record_to_event` 转 `agent-event` 后逐条走 `evaluate()` 裁决并存结果 |
 | `intercepts/tool_call/test_adapters.py` | jiuwen 工具调用转成事件 |
 | `intercepts/tool_output/test_inspect.py` | 工具结果提取文本；检测后端对注入样例给出信号 |
 | `policy_engine/core/test_decision.py` | 内置层级 → allow/ask/deny 映射 |
@@ -1082,18 +706,12 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 | `policy_engine/_factory.py` | 测试事件构造器（非测试） |
 | `policy_engine/server/support.py` | Decide 测试用的假 Host（非测试） |
 
-`e2e_tests/`：`generate_events.py`（100 个 agent-event）、`generate_sandbox_records.py`（100 个 native-record）、`post_evaluate.py`、`run_sandbox_decide.py`、`run_sandbox_e2e.py`（真实挂钩进程跑场景）与对应数据文件。
 
 范围外测试（属 `tool_permission/` 与 `detection/`，由各自文档描述）：`tests/tool_permission/`（根下 `test_permission_*.py`、`test_deletion_guard.py`、`test_sandbox_projection.py`、`test_w1b_w2_engine_pipeline.py`，及 `toolguard/`、`fileguard/`、`hostguard/`、`netguard/` 子目录）与 `tests/detection/`——与本表 39 个单测互不重叠，共用同一个 `conftest.py`。`tests/test_import_rules.py` 守 jiuwenbox 等外部项目的导入规则，留在 `tests/` 根下。
 
-### 13.2 C++ 测试（构建门禁）
+### 13.2 原生验收
 
-| 测试 | 覆盖 |
-|---|---|
-| `test_message_framing.cpp` | 帧编解码、短帧不完整、异常长度拒绝、id 匹配与 spec 白名单 |
-| `test_operation_mapping.cpp` | 各 API → kind/access/role 映射、NUL 豁免、设备/管道分类、replace 三资源、shell 拒 URL/非 exe、connect ip/host、架构判定 |
-| `test_path_classification.cpp` | 伪设备精确匹配、RAW_DISK/VOLUME/NAMED_PIPE/OTHER/NORMAL |
-| `test_record_json.cpp` | record 的 cause 字段、provision JSON 转义与往返解析 |
+build-windows.ps1 -BuildTestClient 构建两种位数的 probe、x64 API client 和 x86 直接会话客户端。ProcessGuard.spawn() 的真实验收覆盖两种位数根进程、四种父子位数组合、文件角色、程序规则、网络、删除处置和实际 PID。100 项冻结操作及其期望规则 ID 位于 tests/intercepts/dll_guard/operation_cases.json 与 operation_results.jsonl。身份伪造、管道 DACL、审批生命周期和删除预留结算由统一会话测试覆盖。
 
 ---
 
@@ -1110,7 +728,7 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 4. 注册表 API 未拦截（当前无注册表 hook）。
 5. DNS（`getaddrinfo`）未 hook；socket 级按 IP、HTTP API 级按主机名拦截。
 6. 读不存在文件、写父目录缺失、伪设备直接放行不产生 record（性能优化，语义上无风险面）。
-7. native 守卫仅支持 Windows x64 宿主（x86 DLL 只服务 WOW64 子进程），ARM64 目标拒绝。
+7. 当前 SDK 在 Windows x64 宿主上保护 x64 和 WOW64 进程树，ARM64 目标拒绝。
 
 **实现细节限制**：
 
@@ -1118,7 +736,7 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 9. `Host` 回调路径的 `user_rules` 没有条数上限（HTTP/eval 路径限 500）。
 10. `Decide` 的审批去重键只含 effects 内容：无 effects 的 agentTools 事件级 ask 并发时共用一个审批门。
 11. hook 进程内决策串行（`g_decide_lock`）：单个被守护进程的裁决吞吐受一问一答时延限制。
-12. DLL 防护只支持 Windows x64，且文件/进程 hook 比进程守卫精简；需要 x86 WOW64、`ShellExecute`、回收站删除或 `NtCreateUserProcess` 无条件拒绝时，仍应使用进程守卫。
+12. SDK 宿主要求 Windows x64；受保护目标支持 x64 与 x86。两种目标共用任务规则和软删除，未受管理的原生创建进程请求返回拒绝。
 
 **演进方向**：数据安全 / 提示词安全 / 扩展安全能力域按需设包落地（见 12）；非 Windows 的 native 守卫；注册表拦截；审计统一与落盘；意图核对接入规则集目录。
 
@@ -1152,18 +770,12 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 | `policy_engine/server/http.py` / `cli.py` | 回环 HTTP 与 `agent-pdp` |
 | `policy_engine/server/decide.py` | `Decide.settle`、审批门、删除计数 |
 | `policy_engine/server/host.py` | `Host` 协议与 `VersionedRules` |
-| `policy_engine/events/` | 工具调用和 native record 共用的事件构造 |
+| `policy_engine/events/` | 工具调用和 原生操作 共用的事件构造 |
 | `intercepts/tool_call/adapters/jiuwenswarm/` | jiuwen 工具调用 → 事件与 effect |
 | `intercepts/tool_output/inspect.py` | 异步检测入口：工具结果文本 → detection 后端 → `RiskAssessment`（见 2.2 路径 C） |
 | `intercepts/tool_output/adapters/jiuwenswarm/tool_result.py` | 从工具结果提取待检文本 |
-| `intercepts/native_call/record.py` | native record → 事件与 effect（见 7.4） |
-| `intercepts/native_call/session.py` | `ProcessBinding` 六字段绑定身份、`settle_native_record` 结算（见 8.3） |
-| `intercepts/native_call/dll_guard/manager.py` | `RuntimeGuardManager`：会话、工具执行上下文与后台进程跟踪 |
-| `intercepts/native_call/dll_guard/bridge.py` | `WindowsGuardExecution`、审批通道、DLL 管道分发与授权 |
-| `intercepts/native_call/dll_guard/policy.py`、`shell_launch.py` | 运行时策略、资源授权与命令行启动判定 |
-| `intercepts/native_call/dll_guard/bundle.py`、`windows.py` | DLL 定位/校验、Job Object 与缓存撤销 |
-| `native/windows-dll-guard/src/` | `jiuwen_runtime_guard.dll` 的 hook、注入、网络与文件快照实现 |
-| `native/windows-dll-guard/build.ps1` | DLL 构建与 manifest 生成 |
+| `foundation/agent-security-dll/native/windows/` | `agent_security_guard.dll` 的 hook、注入、网络与文件快照实现 |
+| `foundation/agent-security-dll/scripts/build-windows.ps1` | DLL 构建与 manifest 生成 |
 | `policy_engine/core/intent.py` | 意图核对（纯文本） |
 | `policy_engine/errors.py` | `PolicyError`：规则或 when 加载失败 |
 | `policy_engine/builtin/policy.py` | `Policy` / `load_builtin_policy`（目录改名视图） |
@@ -1171,20 +783,12 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 | `policy_engine/matchers/network.py` | 主机模式与 CIDR 匹配 |
 | `policy_engine/audit.py` | 文件 JSONL 审计与脱敏。内存审计在注册表 |
 | `policy_engine/events/command_effects.py` | 命令转成 effect。分词在 `matchers/command.py` |
-| `intercepts/native_call/launch.py` | `preflight` / `wrap`、二进制定位、fail-closed |
-| `intercepts/native_call/decide_pipe.py` | `DecidePipe`：命名管道、帧协议、bind、结算分发 |
-| `native/windows-process-guard/build.ps1` | MSVC + Detours 构建（含单测门禁；Detours 经 `DETOURS_ROOT` / 外置 checkout，非 submodule） |
-| `native/.../src/process_guard_main.cpp` | 守护进程：启动、注入、broker 线程 |
-| `native/.../src/hooks.cpp` | Detours hook、ask、trash 删除、子进程 spawn |
-| `native/.../src/process_guard_startup.h` | 启动配置布局：句柄、超时、删除模式、身份、tool cause（无指针、`pack(8)`，x64/x86 一致） |
-| `native/.../src/operation_mapping.c` | Win32 API → operation 映射 |
-| `native/.../src/message_framing.c` | 帧编解码与 spec 白名单 |
-| `native/.../src/pipe_io.c` | 管道事务（超时/取消 → deny） |
-| `native/.../src/record_json.c` | 记录构造与回包严格解析 |
-| `native/.../src/path_classification.c` | 设备/管道/裸盘分类 |
-| `native/.../src/probe.cpp` | 集成测试靶 |
+| `foundation/agent-security-dll/scripts/build-windows.ps1` | MSVC + Detours 构建（含单测门禁；Detours 经 `DETOURS_ROOT` / 外置 checkout，非 submodule） |
+| `foundation/agent-security-dll/native/windows/process/hooks.cpp` | Detours hook、ask、trash 删除、子进程 spawn |
+| `foundation/agent-security-dll/native/windows/guard/message_framing.c` | 帧编解码与 spec 白名单 |
+| `foundation/agent-security-dll/tests/probe.cpp` | 集成测试靶 |
 | `native/.../python/` | 两套 Guard 的公共二进制分发包 `agent-security-dll` |
-| `schema/` | 7 个 JSON Schema |
+| `schema/` | 现行 JSON Schema |
 
 ### B. 错误码总表
 
@@ -1197,11 +801,7 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 | `unknown_task` | 任务未打开 | deny / 构造 `Decide` 失败 |
 | `invalid_event` | 事件非法或 record 夹带规则字段 | deny |
 | `host_context_unavailable` | 宿主回调失败/非法 | 该条 record deny |
-| `process_identity_mismatch` | native record 身份不符或未绑定 | allow=false |
-| `invalid_tool_cause` | wrap 参数非法 | 抛 `ProcessGuardUnavailable`，不启动 |
-| `process_guard_start_failed` | 守卫退出码 83 | 抛 `ProcessGuardUnavailable` |
-| `decide_pipe_unavailable` | DecidePipe 启动失败（DACL 构造失败或监听 5 秒未就绪） | 抛 `ProcessGuardUnavailable`，不启动裸进程 |
-| `unsupported_platform` / `unsupported_architecture` / `process_guard_binary_missing` / `decide_required` / `invalid_delete_mode` / `invalid_decision_timeout` / `empty_command` / `process_guard_timeout` | wrap/preflight | 抛 `ProcessGuardUnavailable`，不启动裸进程 |
+| `process_identity_mismatch` | 原生操作 身份不符或未绑定 | allow=false |
 | `GuardPlatformError` | DLL 防护：非 Windows x64 | 抛异常，不创建执行 |
 | `GuardBundleMissingError` / `GuardBundleError` | DLL 防护：DLL 或 manifest 缺失/校验不过 | 抛异常，不创建执行 |
 | `GuardStartupError`（含 `GuardPipeError`、`GuardInjectionError`） | DLL 防护：管道或注入失败 | 抛异常；注入失败时挂起进程被终止 |
@@ -1213,7 +813,6 @@ HTTP evaluate 的解析级失败不写注册表审计（只有规则可加载时
 
 | 包 | 内容 |
 |---|---|
-| `agent-shield` 0.1.0（根 `pyproject.toml`） | Python ≥3.11；flat 布局（`package-dir` 把本目录映射为 `agent_shield`）；描述为「behavior policy, intercepts, tool permission, and content detection」；依赖 `PyYAML>=6`、`tree-sitter>=0.25,<0.26`、`tree-sitter-bash`、`tree-sitter-pwsh`、`tree-sitter-batch`（方言 AST 为硬依赖，不再回退字符扫描）；`dll-guard` extra 增加 `tld`；dev extras：`pytest>=8.0`、`pytest-asyncio>=0.24`、`pytest-cov>=5.0`、`ruff>=0.6`、`jsonschema>=4`、`tld`、`requests`、`cryptography`；入口点 `agent-pdp = agent_shield.policy_engine.server.cli:main`；package-data 含 `py.typed` 与 `tool_permission/runtime/defaults.yaml`。包清单同时列出 `detection`、`tool_permission.*` 与 `intercepts.native_call.dll_guard`（见 12） |
-| `agent-security-dll` 0.1.0 | 独立的 Windows x64 wheel，交付进程守卫 EXE、x64/x86 Hook DLL 和运行时防护 DLL 及其 manifest，无 Python 运行时依赖 |
+| `agent-shield` 0.1.0（根 `pyproject.toml`） | Python ≥3.11；flat 布局（`package-dir` 把本目录映射为 `agent_shield`）；描述为「behavior policy, intercepts, tool permission, and content detection」；依赖 `PyYAML>=6`、`tree-sitter>=0.25,<0.26`、`tree-sitter-bash`、`tree-sitter-pwsh`、`tree-sitter-batch`（方言 AST 为硬依赖，不再回退字符扫描）；`dll-guard` extra 增加 `tld` 与 Windows 专用的 `agent-security-dll==0.3.2`；dev extras：`pytest>=8.0`、`pytest-asyncio>=0.24`、`pytest-cov>=5.0`、`ruff>=0.6`、`jsonschema>=4`、`tld`、`requests`、`cryptography`；入口点 `agent-pdp = agent_shield.policy_engine.server.cli:main`；package-data 含 `py.typed` 与 `tool_permission/runtime/defaults.yaml`。包清单同时列出 `detection`、`tool_permission.*` 与 `intercepts.native_call.dll_guard`（见 12） |
 
 `jiuwenbox` 为独立包（自带 `pyproject.toml`、FastAPI 服务、Linux / Windows 运行时），与 `agent_shield` 分开安装与测试；`execution.plane=sandbox` 不代表调用运行在其中，也不降低风险档。

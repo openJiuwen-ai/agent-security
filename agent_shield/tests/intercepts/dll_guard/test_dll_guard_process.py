@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import json
 import os
 import shutil
 import struct
@@ -11,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from agent_shield import ProcessGuard
 from agent_shield.intercepts.native_call._binary_location import guard_binary_directory
 from agent_shield.intercepts.native_call.dll_guard import (
     GuardBundleError,
@@ -18,8 +20,6 @@ from agent_shield.intercepts.native_call.dll_guard import (
     GuardInjectionError,
     GuardPipeError,
     GuardPolicyDenied,
-    RuntimeGuardManager,
-    create_process,
 )
 from agent_shield.intercepts.native_call.dll_guard.bridge import (
     RuntimeApprovalRequests,
@@ -30,15 +30,27 @@ from agent_shield.tool_permission.runtime.models import PermissionConfirmRespons
 
 ROOT = Path(__file__).resolve().parents[4]
 
-DLL = guard_binary_directory() / "jiuwen_runtime_guard.dll"
+DLL = guard_binary_directory() / "x64" / "agent_security_guard.dll"
 
-CLIENT = ROOT / "agent_shield/native/windows-dll-guard/build/client.exe"
+CLIENT = guard_binary_directory() / "client.exe"
 PYTHON = getattr(sys, "_base_executable", sys.executable)
 
 pytestmark = pytest.mark.skipif(
     sys.platform != "win32" or not DLL.is_file() or not CLIENT.is_file(),
     reason="Build the Windows x64 integration client and DLL first",
 )
+
+
+class GuardHost:
+    def __init__(self, config, workspace, confirm=None):
+        self.snapshot = {"revision": 1, "config": config, "workspace_root": workspace}
+        self.confirm = confirm
+
+    def policy_snapshot(self):
+        return self.snapshot
+
+    def audit(self, event):
+        pass
 
 
 @pytest.mark.parametrize("image", [DLL, CLIENT], ids=["packaged-dll", "client"])
@@ -123,43 +135,29 @@ def test_native_address_snapshot_survives_cross_thread_updates():
 
 
 @pytest.mark.asyncio
-async def test_x86_start_reports_architecture_for_root_and_descendant(tmp_path):
+async def test_x86_root_and_descendant_run_in_guard_session(tmp_path):
     x86 = Path(os.environ["SystemRoot"]) / "SysWOW64" / "cmd.exe"
     if not x86.is_file():
         pytest.skip("WOW64 system executable unavailable")
-    manager = RuntimeGuardManager(
-        session_id="architecture", dll=DLL, engine=PermissionEngine({"enabled": False})
-    )
-    try:
-        async with manager.tool_execution(
-            tool_name="bash", inputs={}, session=None, tool_call_id="root"
-        ):
-            with pytest.raises(GuardInjectionError) as failure:
-                await create_process(asyncio.create_subprocess_exec, str(x86), "/d", "/c", "exit 0")
-            assert failure.value.__cause__.winerror == 216
-        async with manager.tool_execution(
-            tool_name="bash", inputs={}, session=None, tool_call_id="child"
-        ):
-            script = (
-                "import subprocess,sys\n"
-                "try: subprocess.run([sys.argv[1], '/d', '/c', 'exit 0'], check=True)\n"
-                "except OSError as exc: print(exc.winerror)\n"
-            )
-            process = await create_process(
-                asyncio.create_subprocess_exec,
-                PYTHON,
-                "-I",
-                "-c",
-                script,
-                str(x86),
-                cwd=tmp_path,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(process.communicate(), 10)
-            assert process.returncode == 0 and stdout.strip() == b"216", (stdout, stderr)
-    finally:
-        await manager.close(permanent=True)
+    host = GuardHost({"enabled": False}, tmp_path)
+    async with ProcessGuard(session_id="architecture", host=host) as guard:
+        root = await guard.spawn(
+            [x86, "/d", "/c", "exit 0"], task_id="task", tool_call_id="root", tool_name="bash",
+        )
+        assert await root.wait() == 0
+
+        script = (
+            "import subprocess,sys\n"
+            "try: subprocess.run([sys.argv[1], '/d', '/c', 'exit 0'], check=True)\n"
+            "except OSError as exc: print(exc.winerror)\n"
+        )
+        process = await guard.spawn(
+            [PYTHON, "-I", "-c", script, str(x86)], task_id="task", tool_call_id="child",
+            tool_name="bash", cwd=tmp_path,
+            stdio={"stdout": asyncio.subprocess.PIPE, "stderr": asyncio.subprocess.PIPE},
+        )
+        stdout, stderr = await asyncio.wait_for(process.communicate(), 10)
+        assert process.returncode == 0 and not stdout.strip(), (stdout, stderr)
 
 
 @pytest.mark.asyncio
@@ -307,67 +305,42 @@ async def test_real_process_waits_and_resumes_once(tmp_path, approved, depth):
     target.write_text("RUNTIME_CONTENT", encoding="utf-8")
     marker = tmp_path / "starts.txt"
     cards = []
-    engine = PermissionEngine(
-        {
+    config = {
+        "enabled": True,
+        "package_builtin_rules": False,
+        "tools": {"bash": "allow"},
+        "file_guard": {
             "enabled": True,
-            "package_builtin_rules": False,
-            "tools": {"bash": "allow"},
-            "file_guard": {
-                "enabled": True,
-                "defaults": {"read": "allow", "write": "allow", "exec": "allow"},
-                "paths": [{"path": str(target), "read": "ask", "write": "ask", "exec": "ask"}],
-            },
+            "defaults": {"read": "allow", "write": "allow", "exec": "allow"},
+            "paths": [{"path": str(target), "read": "ask", "write": "ask", "exec": "ask"}],
         },
-        workspace_root=tmp_path / "workspace",
-    )
+    }
 
-    async def emit(card):
+    async def confirm(card):
         cards.append(card)
         await asyncio.sleep(0.05)
         assert marker.read_text() == "START\n"
-        assert not manager.approvals.resolve(
-            "other-session", card["request_id"], PermissionConfirmResponse(approved=True)
-        )
-        assert manager.approvals.resolve(
-            "session", card["request_id"], PermissionConfirmResponse(approved=approved)
-        )
+        return {"action": "allow_once" if approved else "deny"}
 
-    manager = RuntimeGuardManager(
-        session_id="session",
-        dll=DLL,
-        engine=lambda: engine,
-        emit=emit,
-    )
-    try:
-        async with manager.tool_execution(
-            tool_name="bash", inputs={}, session=None, tool_call_id="real-call"
-        ):
-            process = await create_process(
-                asyncio.create_subprocess_exec,
-                str(CLIENT),
-                str(target),
-                str(marker),
-                str(depth),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            execution = next(iter(manager.active))
-            assert execution.job.contains(process.pid)
-            out, err = await asyncio.wait_for(process.communicate(), 10)
-        assert process.returncode == (0 if approved else 5), (out, err)
-        assert (b"RUNTIME_CONTENT" in out) is approved
-        assert len(cards) == 1
-        if approved:
-            lines = out.splitlines()
-            assert len(lines) == 3
-            assert lines[1] == lines[2]
-            # PID/TID was printed before ASK and is unchanged after approval.
-            assert lines[0].removeprefix(b"START_") == lines[1].split(b" CONTENT=")[0]
-            assert (f"PID={process.pid} ".encode() in out) is (depth == 0)
-    finally:
-        await manager.close(permanent=True)
+    host = GuardHost(config, tmp_path / "workspace", confirm)
+    async with ProcessGuard(session_id="session", host=host) as guard:
+        process = await guard.spawn(
+            [str(CLIENT), str(target), str(marker), str(depth)],
+            task_id="task", tool_call_id="real-call", tool_name="bash",
+            stdio={"stdout": asyncio.subprocess.PIPE, "stderr": asyncio.subprocess.PIPE},
+        )
+        out, err = await asyncio.wait_for(process.communicate(), 10)
+    assert process.returncode == (0 if approved else 5), (out, err)
+    assert (b"RUNTIME_CONTENT" in out) is approved
+    assert len(cards) == 1
+    if approved:
+        lines = out.splitlines()
+        assert len(lines) == 3
+        assert lines[1] == lines[2]
+        # PID/TID was printed before ASK and is unchanged after approval.
+        assert lines[0].removeprefix(b"START_") == lines[1].split(b" CONTENT=")[0]
+        assert (f"PID={process.pid} ".encode() in out) is (depth == 0)
     assert marker.read_text() == "START\n"
-    assert not execution.context.active
 
 
 @pytest.mark.asyncio
@@ -496,65 +469,27 @@ async def test_os_peer_pid_rejects_forged_job_member(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_context_reports_unbound_popen_only(caplog):
-    manager = RuntimeGuardManager(
-        session_id="audit", dll=DLL, engine=PermissionEngine({"enabled": False})
-    )
-    try:
-        async with manager.tool_execution(
-            tool_name="bash", inputs={}, session=None, tool_call_id="c"
-        ):
-            await asyncio.to_thread(
-                subprocess.run, [PYTHON, "-I", "-c", "pass"], check=True
-            )
-            proc = await create_process(
-                asyncio.create_subprocess_exec, PYTHON, "-I", "-c", "pass"
-            )
-            assert await proc.wait() == 0
-        await asyncio.to_thread(
-            subprocess.run, [PYTHON, "-I", "-c", "pass"], check=True
-        )
-        messages = [event for event in caplog.messages if "outside the DLL Guard launcher" in event]
-        assert len(messages) == 1
-    finally:
-        await manager.close(permanent=True)
-
-
-@pytest.mark.asyncio
 async def test_later_denied_launch_preserves_running_background_process(tmp_path):
-    engine = PermissionEngine(
-        {
+    config = {
+        "enabled": True,
+        "package_builtin_rules": False,
+        "tools": {"bash": "allow"},
+        "file_guard": {
             "enabled": True,
-            "package_builtin_rules": False,
-            "tools": {"bash": "allow"},
-            "file_guard": {
-                "enabled": True,
-                "defaults": {"read": "allow", "write": "allow", "exec": "allow"},
-                "paths": [{"path": str(CLIENT), "exec": "deny"}],
-            },
+            "defaults": {"read": "allow", "write": "allow", "exec": "allow"},
+            "paths": [{"path": str(CLIENT), "exec": "deny"}],
         },
-        workspace_root=tmp_path,
-    )
-    manager = RuntimeGuardManager(session_id="background", dll=DLL, engine=engine)
-    try:
+    }
+    async with ProcessGuard(session_id="background", host=GuardHost(config, tmp_path)) as guard:
+        background = await guard.spawn(
+            [PYTHON, "-I", "-c", "import sys; print(sys.stdin.readline().strip())"],
+            task_id="task", tool_call_id="c", tool_name="bash",
+            stdio={"stdin": asyncio.subprocess.PIPE, "stdout": asyncio.subprocess.PIPE},
+        )
         with pytest.raises(GuardPolicyDenied):
-            async with manager.tool_execution(
-                tool_name="bash", inputs={}, session=None, tool_call_id="c"
-            ):
-                background = await create_process(
-                    asyncio.create_subprocess_exec,
-                    PYTHON,
-                    "-I",
-                    "-c",
-                    "import sys; print(sys.stdin.readline().strip())",
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                )
-                await create_process(asyncio.create_subprocess_exec, str(CLIENT))
+            await guard.spawn([str(CLIENT)], task_id="task", tool_call_id="c", tool_name="bash")
         stdout, _ = await asyncio.wait_for(background.communicate(b"still running\n"), 10)
         assert stdout.strip() == b"still running" and background.returncode == 0
-    finally:
-        await manager.close(permanent=True)
 
 
 @pytest.mark.asyncio
@@ -597,6 +532,33 @@ async def test_validated_bundle_stays_pinned_and_releases_on_failure(tmp_path):
     manifest = guard_manifest_path(dll)
     shutil.copyfile(DLL, dll)
     shutil.copyfile(guard_manifest_path(DLL), manifest)
+    metadata = json.loads(manifest.read_text(encoding="utf-8-sig"))
+    metadata["target_architectures"] = ["x64"]
+    manifest.write_text(json.dumps(metadata), encoding="utf-8")
+
+    from agent_security_dll import validate_library
+    from agent_shield.intercepts.native_call.dll_guard.bundle import validate_guard_bundle
+    image = dll.read_bytes()
+    invalid = [
+        ({**metadata, "platform": "linux"}, image),
+        ({**metadata, "capabilities": []}, image),
+        ({**metadata, "host_architecture": "x86"}, image),
+        ({**metadata, "hook_backend": "unknown"}, image),
+        ({**metadata, "target_architectures": []}, image),
+    ]
+    missing_export = image.replace(b"guard_close\0", b"guard_gone_\0")
+    invalid.append(({**metadata, "sha256": hashlib.sha256(missing_export).hexdigest()}, missing_export))
+    fake = image[:512]
+    invalid.append(({**metadata, "sha256": hashlib.sha256(fake).hexdigest()}, fake))
+    for info, content in invalid:
+        dll.write_bytes(content)
+        manifest.write_text(json.dumps(info), encoding="utf-8")
+        with pytest.raises(ValueError):
+            validate_library(dll, "x64")
+        with pytest.raises(GuardBundleError):
+            validate_guard_bundle(dll)
+    dll.write_bytes(image)
+    manifest.write_text(json.dumps(metadata), encoding="utf-8")
 
     def execution():
         return WindowsGuardExecution(
@@ -621,7 +583,7 @@ async def test_validated_bundle_stays_pinned_and_releases_on_failure(tmp_path):
         async with execution():
             pytest.fail("An existing writer must prevent validation")
     manifest.write_text("{}", encoding="utf-8")
-    with pytest.raises(GuardBundleError, match="mismatch"):
+    with pytest.raises(GuardBundleError, match="invalid"):
         async with execution():
             pytest.fail("Invalid bundle reached runtime")
     directory.rename(tmp_path / "moved")
@@ -634,7 +596,9 @@ async def test_pipe_instances_use_protected_current_user_dacl(monkeypatch):
     from ctypes import wintypes as wt
     from unittest.mock import Mock
 
-    from agent_shield.intercepts.native_call.decide_pipe import _dlls, _TokenUser
+    class TokenUser(ct.Structure):
+        _fields_ = [("Sid", ct.c_void_p), ("Attributes", wt.DWORD)]
+
     from agent_shield.intercepts.native_call.dll_guard.pipe import GuardPipeServer
 
     create = Mock(wraps=_winapi.CreateNamedPipe)
@@ -648,7 +612,13 @@ async def test_pipe_instances_use_protected_current_user_dacl(monkeypatch):
         emit=None,
     ) as execution:
         server = execution.servers[0]
-        kernel, security = _dlls()
+        kernel = ct.WinDLL("kernel32", use_last_error=True)
+        kernel.GetCurrentProcess.restype = wt.HANDLE
+        kernel.CloseHandle.argtypes = [wt.HANDLE]
+        kernel.LocalFree.argtypes = [ct.c_void_p]
+        security = ct.WinDLL("advapi32", use_last_error=True)
+        security.OpenProcessToken.argtypes = [wt.HANDLE, wt.DWORD, ct.POINTER(wt.HANDLE)]
+        security.GetTokenInformation.argtypes = [wt.HANDLE, ct.c_int, ct.c_void_p, wt.DWORD, ct.POINTER(wt.DWORD)]
         ptr = ct.c_void_p
         get_security = security.GetSecurityInfo
         get_security.argtypes = [wt.HANDLE, ct.c_int, wt.DWORD, ptr, ptr, ptr, ptr, ct.POINTER(ptr)]
@@ -666,7 +636,7 @@ async def test_pipe_instances_use_protected_current_user_dacl(monkeypatch):
             security.GetTokenInformation(token, 1, None, 0, ct.byref(size))
             user = ct.create_string_buffer(size.value)
             assert security.GetTokenInformation(token, 1, user, size, ct.byref(size))
-            sid = _TokenUser.from_buffer_copy(user).Sid
+            sid = TokenUser.from_buffer_copy(user).Sid
         finally:
             kernel.CloseHandle(token)
         for _ in range(2):
@@ -699,6 +669,33 @@ async def test_pipe_instances_use_protected_current_user_dacl(monkeypatch):
             finally:
                 _winapi.CloseHandle(client)
 
+        from agent_shield.intercepts.native_call.dll_guard.pipe_security import PIPE_CLIENT_ACCESS
+        execution.authorize_child_identity({"user_sid": "S-1-5-19", "process_instance_id": "acl-probe"})
+        for handle, expected_mask in ((server.listener.fileno(), PIPE_CLIENT_ACCESS), (execution.ready, 2)):
+            acl, sd, ace = ptr(), ptr(), ptr()
+            assert get_security(handle, 1, 4, None, None, ct.byref(acl), None, ct.byref(sd)) == 0
+            try:
+                assert wt.WORD.from_address(acl.value + 4).value == 2
+                assert security.GetAce(acl, 1, ct.byref(ace))
+                mask = wt.DWORD.from_address(ace.value + 4).value
+                assert mask == expected_mask and not mask & 4
+            finally:
+                kernel.LocalFree(sd)
+        assert "S-1-5-19" in server.security.allowed_sids
+        accepted = server.pending
+        client = _winapi.CreateFile(execution.pipe_name, 0xC0000000, 0, 0, 3, 0, 0)
+        try:
+            await asyncio.wait_for(asyncio.shield(accepted), 2)
+            await asyncio.sleep(0)
+            acl, sd = ptr(), ptr()
+            assert get_security(server.listener.fileno(), 1, 4, None, None, ct.byref(acl), None, ct.byref(sd)) == 0
+            try:
+                assert wt.WORD.from_address(acl.value + 4).value == 2
+            finally:
+                kernel.LocalFree(sd)
+        finally:
+            _winapi.CloseHandle(client)
+
 
 @pytest.mark.asyncio
 async def test_native_codepage_install_path_with_descendants(tmp_path):
@@ -712,6 +709,9 @@ async def test_native_codepage_install_path_with_descendants(tmp_path):
     shutil.copyfile(DLL, installed)
     manifest = installed.with_suffix(".manifest.json")
     shutil.copyfile(DLL.with_suffix(".manifest.json"), manifest)
+    metadata = json.loads(manifest.read_text(encoding="utf-8-sig"))
+    metadata["target_architectures"] = ["x64"]
+    manifest.write_text(json.dumps(metadata), encoding="utf-8")
     target, marker = tmp_path / "数据.txt", tmp_path / "starts"
     target.write_text("UNICODE_GUARDED")
     async with WindowsGuardExecution(

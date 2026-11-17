@@ -33,9 +33,8 @@ from .errors import (
     GuardPlatformError,
     GuardPolicyDenied,
     GuardStartupError,
+    GuardTargetArchitectureError,
 )
-from .launcher import create_process
-from .manager import RuntimeGuardManager
 
 __all__ = [
     "ApprovalGrant",
@@ -49,6 +48,7 @@ __all__ = [
     "GuardPlatformError",
     "GuardPolicyDenied",
     "GuardStartupError",
+    "GuardTargetArchitectureError",
     "HostPolicyAdapter",
     "PermissionConfirmResponse",
     "PermissionLevel",
@@ -59,11 +59,9 @@ __all__ = [
     "ProgramSubject",
     "RuntimeApprovalEvent",
     "RuntimeApprovalRequests",
-    "RuntimeGuardManager",
     "RuntimePermissionEngine",
     "RuntimePersistenceEvent",
     "TakeApproval",
-    "create_process",
     "locate_guard_dll",
     "scope_options",
     "validate_guard_bundle",

@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import os
 import ssl
+import shutil
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -19,9 +20,9 @@ from agent_shield.tool_permission.runtime.engine import PermissionEngine
 
 ROOT = Path(__file__).resolve().parents[4]
 
-DLL = guard_binary_directory() / "jiuwen_runtime_guard.dll"
+DLL = guard_binary_directory() / "x64" / "agent_security_guard.dll"
 
-CLIENT = ROOT / "agent_shield/native/windows-dll-guard/build/client.exe"
+CLIENT = guard_binary_directory() / "client.exe"
 
 pytestmark = pytest.mark.skipif(
     sys.platform != "win32" or not DLL.is_file() or not CLIENT.is_file(),
@@ -133,6 +134,9 @@ async def test_git_bash_cd_into_skill_directory(tmp_path):
         Path(os.environ.get("GIT_BASH_PATH", "missing")),
         Path(os.environ.get("ProgramFiles", ".")) / "Git/bin/bash.exe",
     ]
+    git = shutil.which("git.exe")
+    if git:
+        candidates.append(Path(git).resolve().parent.parent / "bin/bash.exe")
     bash = next((path for path in candidates if path.is_file()), None)
     if not bash:
         pytest.skip("Git Bash not installed")

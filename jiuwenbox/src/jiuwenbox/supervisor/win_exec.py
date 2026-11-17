@@ -128,6 +128,12 @@ _soft_trace_lock = _threading.Lock()
 def _drain_soft_trace() -> None:
     """把 DLL 写在沙箱跟踪文件里的行转发到 runner 日志。"""
     global _soft_trace_offset
+    if not _log_subscribers:
+        return
+    from jiuwenbox.supervisor.win_softdelete import collect_win_soft_delete_results
+    for record in collect_win_soft_delete_results():
+        _push_log("INFO", "softdelete-result: " + json.dumps(record, ensure_ascii=False),
+                  soft_delete_result=record)
     path = os.environ.get("JIUWENBOX_SOFT_DELETE_TRACE")
     if not path or not os.path.isfile(path) or not _log_subscribers:
         return
@@ -154,7 +160,7 @@ def _soft_trace_loop() -> None:
         _time.sleep(0.3)
 
 
-def _push_log(level: str, msg: str, exc: str | None = None) -> None:
+def _push_log(level: str, msg: str, exc: str | None = None, *, soft_delete_result: dict | None = None) -> None:
     """往所有日志订阅连接 push 一个 log 帧 (best-effort, 不抛). 同时落盘+本地 logger."""
     import json as _json  # noqa: A004
     import time as _time
@@ -167,6 +173,8 @@ def _push_log(level: str, msg: str, exc: str | None = None) -> None:
     }
     if exc:
         payload[LOG_FIELD_TRACEBACK] = exc
+    if soft_delete_result is not None:
+        payload["soft_delete_result"] = soft_delete_result
     blob = _json.dumps(payload, ensure_ascii=False).encode("utf-8")
     dead: list = []
     # send_frame 在 _log_sub_lock 内串行: 并发化后多个 worker 可能同时 _push_log,
@@ -748,19 +756,9 @@ def two_hop_spawn_and_authorize(
             )
         from jiuwenbox.supervisor import win_softdelete
         if win_softdelete.enabled_from_environ():
-            try:
-                dll = win_softdelete.prepare_dll_for_sandbox_user()
-                win_softdelete.inject_suspended(int(proc_handle))
-                logger.info(
-                    "软删除导入表注入完成 sandbox=%s pid=%s dll=%s",
-                    sandbox_id, runner_pid, dll,
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.error(
-                    "软删除 DLL 注入失败, runner 仍按原方式启动 (sandbox=%s, pid=%s): %s",
-                    sandbox_id, runner_pid, exc,
-                    exc_info=True,
-                )
+            dll = win_softdelete.prepare_dll_for_sandbox_user()
+            win_softdelete.inject_suspended(int(proc_handle))
+            logger.info("软删除已就绪 sandbox=%s pid=%s dll=%s", sandbox_id, runner_pid, dll)
         else:
             logger.info(
                 "软删除注入跳过 sandbox=%s pid=%s: JIUWENBOX_SOFT_DELETE=%s",

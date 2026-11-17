@@ -35,6 +35,9 @@ class ObjectRule:
     names: tuple[str, ...] = field(default_factory=tuple)
     enabled: bool = True
     user_grantable: bool = False
+    scope: str = "exact"
+    url_scheme: str = ""
+    url_port: int | None = None
 
     def validate(self) -> None:
         if self.object == "domain" and not self.hosts and not self.cidrs:
@@ -43,6 +46,16 @@ class ObjectRule:
             return
         if self.action != "allow":
             raise PolicyError("grant action must be allow")
+        if self.scope == "parent":
+            if self.object != "file" or self.ops not in {("read",), ("write",)}:
+                raise PolicyError("parent grants require a file read or write")
+        elif self.scope == "domain":
+            if self.object != "domain" or self.url_scheme not in {"http", "https"}:
+                raise PolicyError("domain scope requires an HTTP(S) URL")
+            if self.url_port is not None and (type(self.url_port) is not int or not 0 < self.url_port < 65536):
+                raise PolicyError("invalid URL grant port")
+        elif self.scope != "exact":
+            raise PolicyError("unknown task grant scope")
         if self.object == "domain":
             host = self.hosts[0] if len(self.hosts) == 1 else ""
             if len(self.hosts) != 1 or self.cidrs or "*" in host:

@@ -1152,7 +1152,7 @@ def test_empty_accesses_skip_snapshot_but_operation_still_refreshes(tmp_path):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("permanent", [False, True])
 @pytest.mark.parametrize("outcome", ["failed", "not_visible", "visible"])
-async def test_save_result_and_session_fallback(tmp_path, permanent, outcome):
+async def test_save_failure_allows_only_current_operation(tmp_path, permanent, outcome):
     registry = RuntimeApprovalRequests()
     cards = []
 
@@ -1184,29 +1184,31 @@ async def test_save_result_and_session_fallback(tmp_path, permanent, outcome):
             "execution_id": execution.context.execution_id,
             "tool_call_id": "call",
             "persisted": outcome != "failed",
+            "operation_ids": [],
+            "kind": "authorization_saved",
             "scope": "permanent" if permanent else "session",
         }
     )
     assert memory.matches(
         {"kind": "file", "accesses": [(str(target), "read")]}, execution.context.policy_version
-    ) is (outcome != "visible")
+    ) is (outcome == "not_visible")
     # The execution-local grant never widens read to write.
     assert await execution.check_access(123, str(target), 2)
     assert len(cards) == 2
     await execution.close()
 
-    # A subsequent execution must reuse either the refreshed snapshot or the
-    # in-memory fallback; an explicit DENY still takes precedence over both.
+    # An unsaved grant requires a new approval in the next execution.
     _, following = make_execution(tmp_path, emit, registry)
     following.engine = execution.engine
     following.session_grants = memory
+    following.persist = persist
     assert await following.check_access(123, str(target), 1)
-    assert len(cards) == 2
+    assert len(cards) == (3 if outcome == "failed" else 2)
     config = deepcopy(following.engine().config)
     config["file_guard"]["paths"][0]["read"] = "deny"
     following.engine().update_config(config)
     assert not await following.check_access(123, str(target), 1)
-    assert len(cards) == 2
+    assert len(cards) == (3 if outcome == "failed" else 2)
     await following.close()
 
 

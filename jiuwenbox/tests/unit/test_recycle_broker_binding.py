@@ -79,7 +79,7 @@ def test_dead_broker_recovers_only_on_recorded_permitted_ports(tmp_path, monkeyp
     assert env == {soft.ENV_RECYCLE_PORT: "32124", soft.ENV_RECYCLE_TOKEN: "current-test-token"}
 
 
-def test_recovery_failure_preserves_existing_deletion_fallback(monkeypatch):
+def test_unavailable_broker_prevents_physical_delete_fallback(monkeypatch):
     monkeypatch.setenv(soft.ENV_ENABLED, "1")
     monkeypatch.setattr(recycle, "_permit_ports", [32124])
     start = Mock(side_effect=OSError("occupied"))
@@ -155,11 +155,12 @@ def test_live_broker_serves_a_frame_and_rejects_unknown_credentials(tmp_path):
         port = broker.start()
         token = broker.register([str(tmp_path)])
         # Exercise the actual accept thread and wire framing without deleting a file.
-        for credential, expected in ((token, b"ok"), ("unknown-test-token", b"no")):
+        for action, credential, expected in ((1, token, b"ok"), (2, token, b"ok"),
+                                             (1, token, b"ok"), (2, "unknown-test-token", b"no")):
             with socket.create_connection(("127.0.0.1", port), timeout=3) as client:
                 encoded_token = credential.encode("utf-8")
                 encoded_path = str(target).encode("utf-8")
-                payload = (struct.pack(">I", len(encoded_token)) + encoded_token
+                payload = (bytes([action]) + bytes(range(16)) + struct.pack(">I", len(encoded_token)) + encoded_token
                            + struct.pack(">I", len(encoded_path)) + encoded_path)
                 client.sendall(struct.pack(">I", len(payload)) + payload)
                 size = struct.unpack(">I", client.recv(4))[0]

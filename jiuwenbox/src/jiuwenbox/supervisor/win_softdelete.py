@@ -2,9 +2,9 @@
 """Windows 软删除 DLL 的路径、沙箱 ACL 和挂起进程注入.
 
 DLL 本体在普通 Windows 进程里用 Detours 挂钩删除和创建进程。
-Git Bash 不注入；它拉起的 rm 等仍由 DLL 的调试循环装入，装钩与普通进程一样用 DetourAttach。
+Git Bash 不注入；它拉起的 rm 等由调试循环在加载器启动前准备公共 DLL 导入，装钩与普通进程一样用 DetourAttach。
 本模块负责:
-- 找到 ``jiuwen_softdelete.dll``
+- 找到 ``agent_security_guard.dll``
 - 给 jbx-sandbox 读和执行权限
 - 在 CREATE_SUSPENDED 的 runner 上改导入表，让加载器在主线程起来前映射 DLL
 
@@ -13,11 +13,14 @@ Git Bash 不注入；它拉起的 rm 等仍由 DLL 的调试循环装入，装�
 
 from __future__ import annotations
 
+import atexit
 import ctypes
+import json
 import logging
 import os
 import sys
 import threading
+import tempfile
 from ctypes import wintypes
 from pathlib import Path
 
@@ -27,16 +30,26 @@ ENV_DLL = "JIUWENBOX_SOFT_DELETE_DLL"
 ENV_RECYCLE_PORT = "JIUWENBOX_SOFT_DELETE_RECYCLE_PORT"
 ENV_RECYCLE_TOKEN = "JIUWENBOX_SOFT_DELETE_RECYCLE_TOKEN"
 ENV_TRACE = "JIUWENBOX_SOFT_DELETE_TRACE"
+ENV_RESULTS = "JIUWENBOX_SOFT_DELETE_RESULTS"
 _LOG_LAYOUT_KEYS = (
     "JIUWENSWARM_LOG_DIR",
     "JIUWENSWARM_LOG_DATE_ROOT",
     "JIUWENSWARM_DATA_DIR",
 )
-_DLL_NAME = "jiuwen_softdelete.dll"
-_PATCH_ONLY = "JIUWENBOX_SOFT_DELETE_PATCH_ONLY"
 _ERROR_ACCESS_DENIED = 5
 logger = logging.getLogger(__name__)
 _LOADED = False
+_NATIVE = None
+_ARCHIVE = None
+_RESULT_LOCK = threading.Lock()
+_RESULT_OFFSETS: dict[str, int] = {}
+
+
+class _GuardOpenConfig(ctypes.Structure):
+    _fields_ = [("size", wintypes.DWORD), ("capabilities", wintypes.DWORD),
+                ("delete_mode", wintypes.DWORD), ("session", ctypes.c_void_p),
+                ("archive_directory", ctypes.c_wchar_p), ("broker_port", ctypes.c_wchar_p),
+                ("broker_token", ctypes.c_wchar_p), ("result_file", ctypes.c_wchar_p)]
 _LOAD_LOCK = threading.Lock()
 
 
@@ -45,37 +58,14 @@ def enabled_from_environ() -> bool:
     return os.environ.get(ENV_ENABLED) == "1"
 
 
-def _frozen_dll_candidates(meipass: str) -> list[Path]:
-    """冻结包里的查找顺序. 新包在 jiuwenbox_native, 旧包在改名后的目录."""
-    root = Path(meipass)
-    return [
-        root / "jiuwenbox_native" / "native" / _DLL_NAME,
-        root / "jiuwenbox_legacy_overlay" / "native" / _DLL_NAME,
-    ]
+def dll_path(architecture: str = "x64") -> Path:
+    """Resolve the same architecture-specific library as Agent Shield."""
+    from agent_security_dll import validated_library
 
-
-def dll_path() -> Path:
-    """返回软删除 DLL 路径。
-
-    环境变量优先。开发布局用本包 ``native`` 目录。
-    冻结包不能把 DLL 留在 ``jiuwenbox`` 目录里, 那个目录会盖住 PYZ 里的同名包,
-    打包脚本把它放到 ``jiuwenbox_native/native``。
-    ``jiuwenbox_legacy_overlay`` 只留给已经把整个目录改名的旧安装包。
-    """
-    raw = (os.environ.get(ENV_DLL) or "").strip()
-    if raw:
-        return Path(raw)
-    packaged = Path(__file__).resolve().parents[1] / "native" / _DLL_NAME
-    if packaged.is_file():
-        return packaged
-    meipass = getattr(sys, "_MEIPASS", None)
-    frozen = _frozen_dll_candidates(meipass) if meipass else []
-    for candidate in frozen:
-        if candidate.is_file():
-            return candidate
-    if frozen:
-        return frozen[0]
-    return packaged
+    try:
+        return validated_library(architecture, required_protocol=13, standalone_recovery=True)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("JiuwenBox requires agent-security-dll protocol 13") from exc
 
 
 def merge_host_log_layout_env(env: dict[str, str]) -> None:
@@ -103,7 +93,7 @@ def merge_soft_delete_env(env: dict[str, str]) -> None:
 def merge_soft_delete_spawn_env(env: dict[str, str]) -> None:
     """Copy runner settings to exec; broker credentials always belong to the runner."""
     _merge_soft_delete_runner_env(env)
-    for key in (ENV_RECYCLE_PORT, ENV_RECYCLE_TOKEN):
+    for key in (ENV_RECYCLE_PORT, ENV_RECYCLE_TOKEN, ENV_RESULTS):
         value = os.environ.get(key)
         if value:
             env[key] = value
@@ -114,7 +104,7 @@ def merge_soft_delete_spawn_env(env: dict[str, str]) -> None:
 def _merge_soft_delete_runner_env(env: dict[str, str]) -> None:
     """Copy server settings without importing a different broker's credentials."""
     merge_host_log_layout_env(env)
-    for key in (ENV_ENABLED, ENV_ARCHIVE, ENV_DLL, ENV_TRACE):
+    for key in (ENV_ENABLED, ENV_ARCHIVE, ENV_DLL, ENV_TRACE, ENV_RESULTS):
         value = os.environ.get(key)
         if value:
             env.setdefault(key, value)
@@ -182,20 +172,27 @@ def prepare_dll_for_sandbox_user() -> Path:
     """让 jbx-sandbox 能 LoadLibrary 这支 DLL. 失败直接抛出."""
     if sys.platform != "win32":
         raise RuntimeError("soft-delete DLL injection is Windows-only")
-    from jiuwenbox.supervisor import win_acl, win_constants, win_setup
+    from jiuwenbox.supervisor import win_setup
 
     dll = dll_path()
-    if not dll.is_file():
-        raise FileNotFoundError(f"soft-delete DLL not found: {dll}")
+    x86 = dll_path("x86")
     sid = win_setup.get_sandbox_user_sid()
     if not sid:
         raise RuntimeError("jbx-sandbox SID is missing; cannot grant DLL access")
+    for library in (dll, x86):
+        _grant_sandbox_dll_access(library, sid)
+    return dll
+
+
+def _grant_sandbox_dll_access(dll: Path, sid: str) -> None:
+    from jiuwenbox.supervisor import win_acl, win_constants
+
     if sandbox_can_load_dll(dll, sid):
         logger.debug("软删除 DLL 已对沙箱用户可读, 跳过 DACL 改写 dll=%s", dll)
         # 读权限已经有了, 仍补一次父目录 traverse (best-effort, 内部吞异常):
         # 自定义安装目录下可能只有 DLL 可读而祖先目录不可穿越.
         win_acl.grant_parent_traverse(str(dll), sid)
-        return dll
+        return
     try:
         win_acl.grant_parent_traverse(str(dll), sid)
         win_acl.grant_ace(
@@ -215,14 +212,12 @@ def prepare_dll_for_sandbox_user() -> Path:
             "改软删除 DLL DACL 被拒, 但沙箱用户已具备读执行权限, 继续注入 dll=%s: %s",
             dll, exc,
         )
-    return dll
 
 
 def inject_suspended(process_handle: int) -> None:
     """往仍处于挂起状态的进程改导入表，让加载器映射软删除 DLL.
 
-    不恢复主线程. 导入表改失败或目标是 32 位进程时直接返回,
-    调用方仍按原方式 ResumeThread.
+    调用方仅在导入表配置成功后恢复主线程。
     """
     if sys.platform != "win32":
         logger.error("软删除注入被跳过: 非 Windows")
@@ -243,38 +238,33 @@ def inject_suspended(process_handle: int) -> None:
     kernel.IsWow64Process.restype = wintypes.BOOL
     process = wintypes.HANDLE(process_handle)
     wow = wintypes.BOOL()
-    if kernel.IsWow64Process(process, ctypes.byref(wow)) and wow.value:
-        logger.warning(
-            "软删除跳过 32 位进程, 进程将不带软删除继续启动 dll=%s", dll,
-        )
-        return
-    already = kernel.GetModuleHandleW(_DLL_NAME)
+    if not kernel.IsWow64Process(process, ctypes.byref(wow)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    if wow.value:
+        raise RuntimeError("JiuwenBox runner requires a Windows x64 process")
+    already = kernel.GetModuleHandleW(str(dll))
     loaded_here = None
     if not already:
-        os.environ[_PATCH_ONLY] = "1"
-        try:
-            loaded_here = kernel.LoadLibraryW(str(dll))
-        finally:
-            os.environ.pop(_PATCH_ONLY, None)
+        loaded_here = kernel.LoadLibraryW(str(dll))
         if not loaded_here:
             err = ctypes.get_last_error()
             logger.error(
-                "软删除 DLL 无法在监督进程加载, 子进程将不带软删除启动 winerror=%s dll=%s",
+                "软删除 DLL 无法在监督进程加载, 终止受保护启动 winerror=%s dll=%s",
                 err, dll,
             )
             raise ctypes.WinError(err)
     module = already or loaded_here
     try:
-        addr = kernel.GetProcAddress(module, b"jiuwen_softdelete_patch_process")
+        addr = kernel.GetProcAddress(module, b"guard_prepare_process")
         if not addr:
-            logger.error("软删除 DLL 缺少 jiuwen_softdelete_patch_process, dll=%s", dll)
-            raise RuntimeError("jiuwen_softdelete_patch_process is missing")
+            logger.error("软删除 DLL 缺少 guard_prepare_process, dll=%s", dll)
+            raise RuntimeError("guard_prepare_process is missing")
         patch_type = ctypes.WINFUNCTYPE(ctypes.c_int, wintypes.HANDLE, use_last_error=True)
         patch = patch_type(addr)
         if not patch(process):
             err = ctypes.get_last_error()
             logger.error(
-                "软删除导入表注入失败, 子进程将不带软删除启动 winerror=%s dll=%s",
+                "软删除导入表注入失败, 终止受保护启动 winerror=%s dll=%s",
                 err, dll,
             )
             raise RuntimeError(
@@ -302,19 +292,26 @@ def install_win_soft_delete(archive_dir: str) -> None:
     ``archive_dir`` 是回收站不可用时的同卷归档目录，必须非空。
     子进程由 DLL 的 CreateProcessInternalW 钩子继续装入。
     """
-    global _LOADED
+    global _LOADED, _NATIVE, _ARCHIVE
     if sys.platform != "win32":
         return
     with _LOAD_LOCK:
-        if _LOADED:
-            return
         raw = (archive_dir or "").strip()
         if not raw:
             raise RuntimeError("soft-delete archive directory is empty")
         archive = os.path.abspath(raw)
+        if _LOADED:
+            if os.path.normcase(archive) != os.path.normcase(_ARCHIVE):
+                raise RuntimeError("Guard recovery archive is already bound")
+            return
         dll = dll_path()
+        dll_path("x86")  # Descendants use the sibling Guard without returning to Python.
         if not dll.is_file():
-            raise FileNotFoundError(f"jiuwen_softdelete.dll not found: {dll}")
+            raise FileNotFoundError(f"agent_security_guard.dll not found: {dll}")
+        if not os.environ.get(ENV_RESULTS):
+            descriptor, result_path = tempfile.mkstemp(prefix="jiuwenbox-softdelete-", suffix=".jsonl")
+            os.close(descriptor)
+            os.environ[ENV_RESULTS] = result_path
         os.environ[ENV_ENABLED] = "1"
         os.environ[ENV_ARCHIVE] = archive
         os.environ[ENV_DLL] = str(dll)
@@ -332,4 +329,70 @@ def install_win_soft_delete(archive_dir: str) -> None:
             if detail:
                 message = f"{message}: {detail}"
             raise RuntimeError(message)
-        _LOADED = True
+        api = ctypes.CDLL(str(dll), handle=handle)
+        api.guard_open.argtypes = [ctypes.POINTER(_GuardOpenConfig)]
+        api.guard_open.restype = ctypes.c_void_p
+        api.guard_close.argtypes = [ctypes.c_void_p]
+        api.guard_close.restype = wintypes.BOOL
+        options = _GuardOpenConfig(ctypes.sizeof(_GuardOpenConfig), 2, 0, None, archive,
+                                  os.environ.get(ENV_RECYCLE_PORT), os.environ.get(ENV_RECYCLE_TOKEN),
+                                  os.environ.get(ENV_RESULTS))
+        lease = api.guard_open(ctypes.byref(options))
+        if not lease:
+            kernel.FreeLibrary.argtypes = [ctypes.c_void_p]
+            kernel.FreeLibrary(handle)
+            raise RuntimeError("Could not open Guard recovery binding")
+        _NATIVE, _ARCHIVE, _LOADED = (api, lease, kernel, handle), archive, True
+
+
+def collect_win_soft_delete_results() -> list[dict]:
+    """Read completed native result records once, including records from children.
+
+    The JSONL file is retained after closing the lease so final close results
+    remain readable. A runner supplies its execution log path; local installs
+    use a temporary file whose path is available in ENV_RESULTS.
+    """
+    path = os.environ.get(ENV_RESULTS)
+    if not path:
+        return []
+    with _RESULT_LOCK:
+        records = []
+        try:
+            with open(path, "rb") as stream:
+                offset = _RESULT_OFFSETS.get(path, 0)
+                stream.seek(offset)
+                for line in stream:
+                    if not line.endswith(b"\n"):
+                        break
+                    if line.strip():
+                        try:
+                            record = json.loads(line)
+                            if not isinstance(record, dict):
+                                raise ValueError("expected a JSON object")
+                        except (ValueError, RecursionError) as exc:
+                            logger.warning("Skipping invalid soft-delete result at %s byte %d: %s", path, offset, exc)
+                        else:
+                            records.append(record)
+                    offset += len(line)
+        except FileNotFoundError:
+            return []
+        _RESULT_OFFSETS[path] = offset
+        return records
+
+
+def uninstall_win_soft_delete() -> None:
+    """Release this installer's lease; other native owners remain active."""
+    global _NATIVE, _ARCHIVE, _LOADED
+    with _LOAD_LOCK:
+        if _NATIVE is None:
+            return
+        api, lease, kernel, handle = _NATIVE
+        if not api.guard_close(lease):
+            raise RuntimeError("Could not close Guard recovery binding")
+        kernel.FreeLibrary.argtypes = [ctypes.c_void_p]
+        kernel.FreeLibrary.restype = wintypes.BOOL
+        kernel.FreeLibrary(handle)
+        _NATIVE, _ARCHIVE, _LOADED = None, None, False
+
+
+atexit.register(uninstall_win_soft_delete)

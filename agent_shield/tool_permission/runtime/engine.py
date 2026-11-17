@@ -199,6 +199,33 @@ class PermissionEngine:
     existing host engines keep their own configuration semantics.
     """
 
+    async def evaluate_operation(self, operation, context, *, task=None, approved_transport=False,
+                                 resolve_program=None):
+        from .operations import evaluate_resource
+
+        local = await evaluate_resource(self, operation, **context)
+        decision = self.task_rules.check(operation, *task) if self.task_rules is not None else None
+        if decision is not None and approved_transport and local.matched_rule == "net_guard:defaults":
+            local = PermissionResult(PermissionLevel.ALLOW)
+        if local.is_denied:
+            return local
+        if decision is not None and decision.is_denied:
+            return decision
+        if resolve_program is not None and operation["kind"] == "program" and local.is_undetermined:
+            local = await resolve_program(operation, local)
+        if decision is None or local.is_denied:
+            return local
+        if decision.needs_approval:
+            # A behavior grant covers only its own rules. An independent
+            # runtime ASK still needs to be satisfied on every later call.
+            if local.needs_approval or local.is_undetermined:
+                decision.grants.clear()
+                decision.runtime_ask = local
+            return decision
+        if local.is_allowed and decision.is_allowed and decision.matched_rule:
+            return decision
+        return local
+
     def __init__(
         self, config=None, *, workspace_root=None, trusted_dirs=None, immutable_control_roots=None
     ):
@@ -206,6 +233,7 @@ class PermissionEngine:
         self.trusted_dirs = list(trusted_dirs or [])
         self.immutable_control_roots = list(immutable_control_roots or [])
         self._active = None
+        self.task_rules = None
         self._native_cache_lock = RLock()
         self._native_caches = WeakSet()
         self.config = {}
@@ -237,9 +265,16 @@ class PermissionEngine:
     def register_native_cache(self, cache):
         return self._register_native_cache(cache)
 
+    def revoke_native_cache(self, cache):
+        """Synchronize host policy publication with execution teardown."""
+        with self._native_cache_lock:
+            if cache in self._native_caches:
+                cache.revoke()
+                self._native_caches.discard(cache)
+
     def _register_native_cache(self, cache):
         with self._native_cache_lock:
-            if self._active is not None or not self.permission_checks_enabled:
+            if self._active is not None or self.task_rules is not None or not self.permission_checks_enabled:
                 return False
             self._native_caches.add(cache)
             return True
@@ -391,6 +426,14 @@ class HostPolicyAdapter:
     The optional binding function is supplied by the host; importing this SDK
     never imports a framework or its command evaluator.
     """
+
+    async def evaluate_operation(self, operation, context, *, resolve_program=None):
+        from .operations import evaluate_resource
+
+        local = await evaluate_resource(self, operation, **context)
+        if resolve_program is not None and operation["kind"] == "program" and local.is_undetermined:
+            return await resolve_program(operation, local)
+        return local
 
     def __init__(self, engine, *, native_command=None):
         self.engine = engine

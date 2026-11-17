@@ -38,10 +38,7 @@ class Decide:
         subject_id: str,
         task_id: str,
         isolated: bool = False,
-        delete_threshold: int = 20,
     ) -> None:
-        if delete_threshold < 1:
-            raise ValueError("delete_threshold must be at least 1")
         if isolated and (not isinstance(subject_id, str) or not subject_id):
             raise RulesetRejected("missing_subject", "subject_id is required")
         if not isinstance(subject_id, str) or not subject_id:
@@ -58,13 +55,9 @@ class Decide:
         self._subject_id = subject_id
         self._task_id = task_id
         self._isolated = isolated
-        self._threshold = delete_threshold
         self._lock = threading.Lock()
         self._closed = False
         self._inflight: dict[str, _Gate] = {}
-        self._delete_success = 0
-        self._delete_reserved = 0
-        self._pending_deletes: set[str] = set()
         self._rule_cache: tuple | None = None
 
     @property
@@ -79,8 +72,6 @@ class Decide:
                 gate.result = False
                 gate.event.set()
             self._inflight.clear()
-            self._pending_deletes.clear()
-            self._delete_reserved = 0
         try:
             self.registry.close_task(self.ruleset_id, self._subject_id, self._task_id)
         except RulesetRejected:
@@ -119,27 +110,6 @@ class Decide:
                     settled = _settle(result, "allow" if allowed else "deny")
         self._audit_decision(resolved, event, settled, request_fingerprint)
         return settled
-
-    def handle_operation_result(self, result: dict) -> None:
-        if not isinstance(result, dict) or result.get("spec") != "native-operation-result/v1":
-            return
-        operation_id = result.get("operation_id")
-        if not isinstance(operation_id, str):
-            return
-        with self._lock:
-            if operation_id not in self._pending_deletes:
-                return
-            self._pending_deletes.remove(operation_id)
-            self._delete_reserved = max(0, self._delete_reserved - 1)
-            if result.get("success") is True:
-                self._delete_success += 1
-
-    def begin_delete(self, operation_id: str) -> bool:
-        with self._lock:
-            bulk = self._delete_success + self._delete_reserved >= self._threshold
-            self._delete_reserved += 1
-            self._pending_deletes.add(operation_id)
-            return bulk
 
     def host_context(self) -> dict:
         try:

@@ -261,8 +261,14 @@ async def test_host_permission_activation_applies_to_program_checks():
     assert (await engine.check_permission("bash", args)).is_denied
 
 
+@pytest.mark.parametrize("command,structure_rule", [
+    ("cd child && echo literal", None),
+    ("cat <<'END'\nliteral\nEND", "shell_structure:complex:heredoc"),
+])
 @pytest.mark.asyncio
-async def test_native_program_arguments_are_literal_but_tool_text_keeps_structure_checks(tmp_path):
+async def test_native_program_arguments_are_literal_but_tool_text_keeps_structure_checks(
+    tmp_path, command, structure_rule
+):
     engine = PermissionEngine(
         {
             "enabled": True,
@@ -278,13 +284,14 @@ async def test_native_program_arguments_are_literal_but_tool_text_keeps_structur
     subject = {
         "kind": "program",
         "exe": str(tmp_path / "bash.exe"),
-        # Heredoc is a structure-floor ASK on the tool-text path. Native binding
-        # skips structure analysis, so the same argv stays allow for evaluate_resource.
-        # (``echo $(...)`` is a hard DENY via injection rules, not an ASK.)
-        "argv": ["-c", "cat <<EOF\nhello\nEOF"],
+        "argv": ["-c", command],
         "cwd": str(tmp_path),
     }
-    assert (await engine.check_permission("bash", program_policy_args(subject))).needs_approval
+    textual = await engine.check_permission("bash", program_policy_args(subject))
+    if structure_rule:
+        assert textual.needs_approval and textual.matched_rule == structure_rule
+    else:
+        assert textual.is_allowed
     assert (await evaluate_resource(engine, subject, source_tool="bash")).is_allowed
 
 

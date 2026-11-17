@@ -22,6 +22,7 @@ class _TemporaryGrant:
     source_tool: str
     grant: ApprovalGrant
     policy_version: str
+    from_receipt: bool
 
 
 @dataclass
@@ -53,7 +54,7 @@ class RuntimeGuardContext:
     def bind_cache_revoker(self, revoke: Callable) -> None:
         self._revoke_cache = revoke
 
-    def remember(self, source_tool: str, grant: ApprovalGrant, *, policy_version: str) -> None:
+    def remember(self, source_tool: str, grant: ApprovalGrant, *, policy_version: str, from_receipt=False) -> None:
         """Store a host-confirmed resource grant, never a caller-supplied tool identity."""
         if not self._active or policy_version != self.policy_version:
             raise ValueError("Execution ended or approval policy version is stale")
@@ -63,12 +64,13 @@ class RuntimeGuardContext:
             or grant.get("tools") != [source_tool]
         ):
             raise ValueError("Approval source tool does not match its grant")
-        item = _TemporaryGrant(source_tool, deepcopy(grant), policy_version)
+        item = _TemporaryGrant(source_tool, deepcopy(grant), policy_version, from_receipt)
         if item not in self._grants:
             self._grants.append(item)
 
     def matches(
-        self, subject: dict[str, Any], *, execution_id: str, policy_version: str, exact_only=False
+        self, subject: dict[str, Any], *, execution_id: str, policy_version: str, exact_only=False,
+        receipt_only=False,
     ) -> bool:
         """Match only within this active execution and the current policy version."""
         if (
@@ -77,10 +79,17 @@ class RuntimeGuardContext:
             or policy_version != self.policy_version
         ):
             return False
-        return any(
-            item.policy_version == policy_version
-            and resource_grant_matches(item.grant, subject, exact_only=exact_only)
-            for item in self._grants
+        eligible = [item for item in self._grants if item.policy_version == policy_version
+                    and (not receipt_only or item.from_receipt)]
+        if any(resource_grant_matches(item.grant, subject, exact_only=exact_only) for item in eligible):
+            return True
+        # Only the application receipt may combine grants across operands.
+        accesses = subject.get("accesses", ()) if subject["kind"] == "file" else ()
+        receipt = [item.grant for item in eligible if item.from_receipt]
+        return len(accesses) > 1 and bool(receipt) and all(
+            any(resource_grant_matches(grant, {"kind": "file", "accesses": [access]}, exact_only=exact_only)
+                for grant in receipt)
+            for access in accesses
         )
 
     def update_policy_version(self, version: str, *, preserve_grants=False) -> None:

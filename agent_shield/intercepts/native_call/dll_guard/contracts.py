@@ -18,6 +18,8 @@ class RuntimeApprovalEvent(TypedDict):
 
 
 class RuntimePersistenceEvent(TypedDict):
+    kind: Literal["authorization_saved"]
+    operation_ids: list[str]
     tool_call_id: str
     execution_id: str
     session_id: str

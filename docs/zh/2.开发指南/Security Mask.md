@@ -2,7 +2,7 @@
 
 Security Mask（发行名 `security-mask`，导入名 `security_mask`）是一个流式文本脱敏工具。调用方传入正则列表，工具在字符流经过时把命中片段替换成星号。它不判断什么是敏感数据，也不持有规则和开关。
 
-代码位于仓库的 `foundation/` 目录。
+代码位于仓库的 `foundation/security-mask/` 目录。
 
 ---
 
@@ -72,7 +72,7 @@ masker.finish()                  # "token=sk-＊＊＊＊mnop"
 ## 6. 安装与测试
 
 ```bash
-cd foundation
+cd foundation/security-mask
 pip install -e ".[dev]"
 pytest
 ```
@@ -80,7 +80,7 @@ pytest
 也可以作为 `jiuwenswarm` 的依赖从仓库子目录安装：
 
 ```text
-security-mask @ git+https://gitcode.com/openJiuwen/agent-security.git@develop#subdirectory=foundation
+security-mask @ git+https://gitcode.com/openJiuwen/agent-security.git@develop#subdirectory=foundation/security-mask
 ```
 
-运行时没有第三方依赖，要求 Python 3.11 及以上。测试见 `foundation/tests/test_stream_mask.py`。
+运行时没有第三方依赖，要求 Python 3.11 及以上。测试见 `foundation/security-mask/tests/test_stream_mask.py`。

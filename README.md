@@ -10,9 +10,9 @@ The repository currently contains the following components. Each is installed an
 
 - **Agent SSAS**: Agent Security Situation Awareness System. It senses Agent behavior in real time through event collection and a pluggable detection-module framework, produces OCSF-format threat reports, supports both in-process and standalone HTTP service modes, and integrates with agent runtimes such as JiuwenSwarm. See [agent_ssas/README.md](./agent_ssas/README.md).
 - **JiuwenBox Sandbox**: A lightweight Agent security sandbox service that provides layered isolation for Agent tool calls and code execution on Linux and Windows. See [jiuwenbox/README.md](./jiuwenbox/README.md).
-- **agent-shield**: In-process action decisions and content detection, plus two native Windows guards (`process_guard.exe` and `jiuwen_runtime_guard.dll`). See [docs/en/2.Development Guide/Agent Shield.md](./docs/en/2.Development%20Guide/Agent%20Shield.md).
+- **agent-shield**: In-process action decisions and content detection, plus the shared native Windows Guard (`agent_security_guard.dll`). See [docs/en/2.Development Guide/Agent Shield.md](./docs/en/2.Development%20Guide/Agent%20Shield.md).
 - **Security Gateway**: An encrypted field store library with schema-driven encryption and key rotation. See [security_gateway/README.md](./security_gateway/README.md).
-- **Security Mask**: A streaming text masking utility used by web channels to redact matched spans. See [foundation/README.md](./foundation/README.md).
+- **Security Mask**: A streaming text masking utility used by web channels to redact matched spans. See [foundation/security-mask/README_EN.md](./foundation/security-mask/README_EN.md).
 
 The components are independent and do not have to be deployed together. A common combination is: agent-shield decides before a tool call, JiuwenBox provides the execution environment, Agent SSAS records and detects, Security Gateway stores encrypted credentials, and Security Mask handles outbound web-channel text. If you are new to the repository, start with the [product overview](./docs/en/1.%20Product%20Overview.md).
 

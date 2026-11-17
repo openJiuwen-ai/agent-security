@@ -6,7 +6,7 @@ from jsonschema import Draft202012Validator
 
 from agent_shield.policy_engine.core.envelope import evaluate_event
 from agent_shield.policy_engine.evaluate import evaluate
-from agent_shield.intercepts.native_call import native_record_to_event
+from agent_shield.intercepts.native_call.dll_guard.events import operation_to_event
 from agent_shield.tests.paths import SCHEMA_DIR
 
 ROOT = SCHEMA_DIR
@@ -84,39 +84,14 @@ def test_suggested_grant_matches_the_decision_schema():
     assert decision["winner_rule_id"] == "tp.read.note"
 
 
-def test_native_record_and_audit_schemas():
-    record = {
-        "spec": "native-record/v1",
-        "request_id": "req",
-        "operation_id": "op",
-        "time": "2026-10-19T00:00:00Z",
-        "process": {"pid": 1, "tid": 2, "process_instance_id": "1:2"},
-        "operation": {
-            "category": "file",
-            "kind": "read",
-            "access": "read",
-            "resources": [{"path": "C:/Users/me/proj/README.md", "role": "subject"}],
-        },
-    }
-    _validator("native-record.v1.json").validate(record)
-    event = native_record_to_event(
-        record,
-        {
-            "workspace": {"root": "C:/Users/me/proj", "os": "windows", "trusted_dirs": []},
-            "source": {"framework": "jiuwenswarm"},
-        },
+def test_operation_event_and_audit_schemas():
+    event = operation_to_event(
+        {"category": "file", "kind": "read", "access": "read",
+         "resources": [{"path": "C:/Users/me/proj/README.md", "role": "subject"}]},
+        {"workspace": {"root": "C:/Users/me/proj", "os": "windows", "trusted_dirs": []},
+         "source": {"framework": "jiuwenswarm"}},
     )
     _validator("agent-event.v1.json").validate(event)
-    _validator("native-decision.v1.json").validate(
-        {
-            "spec": "native-decision/v1",
-            "request_id": "req",
-            "operation_id": "op",
-            "event_id": "evt",
-            "allow": True,
-            "reason": "fs.read.workspace",
-        }
-    )
     _validator("audit-event.v1.json").validate(
         {
             "time": "2026-10-19T00:00:00Z",
@@ -127,24 +102,5 @@ def test_native_record_and_audit_schemas():
             "raw_action": "allow",
             "winner_rule_id": "fs.read.userFiles",
             "tool_raw_name": "read_file",
-        }
-    )
-
-
-def test_broker_and_operation_result_schemas():
-    _validator("process-guard-broker.v1.json").validate(
-        {
-            "spec": "process-guard-broker/v1",
-            "action": "provision_child",
-            "child": {"pid": 4, "tid": 5, "architecture": "x64"},
-        }
-    )
-    _validator("native-operation-result.v1.json").validate(
-        {
-            "spec": "native-operation-result/v1",
-            "request_id": "req",
-            "operation_id": "op",
-            "success": True,
-            "disposition": "trash",
         }
     )

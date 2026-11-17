@@ -221,7 +221,8 @@ def _objects(raw: list, source: str) -> list[ObjectRule]:
 
 
 def _one_object(item: dict, source: str) -> ObjectRule:
-    if not isinstance(item, dict) or set(item) - _OBJECT_FIELDS - {"subject_id", "provenance"}:
+    grant_fields = {"scope", "url_scheme", "url_port"} if source == "user_grant" else set()
+    if not isinstance(item, dict) or set(item) - _OBJECT_FIELDS - {"subject_id", "provenance"} - grant_fields:
         raise PolicyError("object rule has an unknown field")
     rule_id = item.get("id")
     kind = item.get("object")
@@ -249,6 +250,9 @@ def _one_object(item: dict, source: str) -> ObjectRule:
         names=_strings(item.get("names")),
         enabled=_enabled(item),
         user_grantable=source == "user_custom" or _flag(item, "user_grantable", False),
+        scope=item.get("scope", "exact"),
+        url_scheme=item.get("url_scheme", ""),
+        url_port=item.get("url_port"),
     )
     _check_object_shape(rule, source)
     return rule

@@ -59,12 +59,15 @@ def test_invalid_header_closes_before_policy(magic, pid, length):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("action,source_mask", [(16, 8), (17, 2)])
-async def test_rename_and_link_keep_distinct_source_actions(action, source_mask):
+@pytest.mark.parametrize(
+    "action,kind,source_mask",
+    [(16, "rename", 8), (17, "hardlink", 2), (18, "copy", 1), (19, "symlink", 1)],
+)
+async def test_pair_operations_keep_distinct_source_actions(action, kind, source_mask):
     owner, protocol = request()
     owner.check_file_batch = AsyncMock(return_value=True)
     await getattr(protocol, "_respond")(7, action, b"C:/source.txt\0C:/target.txt")
     owner.check_file_batch.assert_awaited_once_with(
-        123, [("C:/source.txt", source_mask), ("C:/target.txt", 2)]
+        123, [("C:/source.txt", source_mask), ("C:/target.txt", 2)], operation=kind
     )
     assert _REPLY.unpack(protocol.transport.write.call_args.args[0]) == (0x44475031, 7, 1)

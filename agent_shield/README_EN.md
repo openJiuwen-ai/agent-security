@@ -2,7 +2,7 @@
 
 English | [简体中文](./README.md)
 
-An in-process security decision SDK (pure rules, no LLM calls, no network IO). It returns a deterministic allow / ask / deny before a tool call or a local access happens, and on Windows it ships two native guards that intercept file, process, and network access before execution.
+An in-process security decision SDK (pure rules, no LLM calls, no network IO). It returns a deterministic allow / ask / deny before a tool call or a local access happens, and on Windows it uses a shared native DLL to intercept file, process, and network access before execution.
 
 ## Layers
 
@@ -14,29 +14,15 @@ An in-process security decision SDK (pure rules, no LLM calls, no network IO). I
 | `intercepts/tool_output/` | Tool result text → content detection |
 | `tool_permission/` | Existing action-decision components: toolguard / fileguard / netguard / hostguard / delguard, plus `runtime` grant reuse |
 | `detection/` | Content detection engine for prompt injection and similar soft signals |
-| `native/windows-process-guard/` | C/C++ implementation of `process_guard.exe` and the x64 / x86 hook DLLs |
-| `native/windows-dll-guard/` | User-mode implementation of `jiuwen_runtime_guard.dll` |
+| `../foundation/agent-security-dll/` | Shared Windows hook and file recovery implementation for Agent Shield and JiuwenBox |
 
 The sandbox (F2) is a separate deliverable: see `../jiuwenbox/` in this repository.
 
 ## Native guards on Windows
 
-Both options share the binaries from the `agent-security-dll` package, but they integrate differently:
+Import `ProcessGuard` from `agent_shield`. The host supplies `policy_snapshot`, `confirm`, `save_grant`, and `audit`. Start a protected process tree with `await guard.spawn(argv, task_id=..., tool_call_id=..., tool_name=...)` and await `proc.wait()` for the root exit code. The default `recover` mode uses the same native file recovery implementation as JiuwenBox.
 
-| Option | Entry point | Shape |
-|---|---|---|
-| Process guard | `agent_shield.intercepts.native_call.wrap()` | Standalone `process_guard.exe` plus hook DLLs over a JSON `native-record/v1` pipe; supports recycle-bin deletion and x86 WOW64 children |
-| DLL guard | `agent_shield.intercepts.native_call.dll_guard.RuntimeGuardManager` | A per-session manager inside the host process, injecting `jiuwen_runtime_guard.dll` with binary framing; supports in-flight approvals, grant reuse, and foreground/background process trees |
-
-New async toolchains should prefer `RuntimeGuardManager`. It is Windows x64 only; each tool call enters `async with manager.tool_execution(...)` and starts processes with `create_process()`. When an ask is raised, the host renders the event and calls `manager.approvals.resolve(...)` with the answer. The existing `Decide` / `wrap` protocol keeps its behavior and continues to run on the process guard.
-
-```python
-from agent_shield.intercepts.native_call.dll_guard import (
-    RuntimeGuardManager,
-    create_process,
-    locate_guard_dll,
-)
-```
+Protected launch on a Windows x64 host supports x64 and x86 targets. See the [DLL build and architecture tests](../foundation/agent-security-dll/README.md).
 
 ## Directory ↔ work item
 
@@ -51,12 +37,11 @@ from agent_shield.intercepts.native_call.dll_guard import (
 | Behavior policy engine | `policy_engine/` |
 | Tool-call integration | `intercepts/tool_call/` |
 | Tool-result integration | `intercepts/tool_output/` |
-| W1b host process guard | `intercepts/native_call/` (`wrap` + `process_guard.exe`) |
-| DLL guard | `intercepts/native_call/dll_guard/` + `native/windows-dll-guard/` |
+| W1b host process guard | `intercepts/native_call/dll_guard/process_guard.py` (`ProcessGuard.spawn()`) |
 | W7 host integration | Outside this repository (jiuwenswarm / agent-core side) |
 | W5 sandbox wiring | Server in `../jiuwenbox/`; SDK wiring follows W6 |
 
-`schema/` holds the JSON Schemas for decisions and native records. `native/windows-process-guard/` holds the process guard's C/C++ implementation; Microsoft Detours is a build-time external dependency (see `native/windows-process-guard/third_party/NOTICE.md`), and installing or importing the Python package does not require it. Third-party rules register through the ruleset interface. See [docs/agent_shield-design.md](docs/agent_shield-design.md) for the PDP design.
+`schema/` holds the JSON Schemas for decisions, events, and audit records. `../foundation/agent-security-dll/` holds the process guard's C/C++ implementation; Microsoft Detours is a build-time external dependency (see `../foundation/agent-security-dll/third_party/NOTICE.md`), and installing or importing the Python package does not require it. Third-party rules register through the ruleset interface. See [docs/agent_shield-design.md](docs/agent_shield-design.md) for the PDP design.
 
 ## Environment
 
@@ -66,13 +51,10 @@ pip install -e ".[dev]"
 pytest
 ```
 
-tree-sitter and its bash / pwsh / batch grammars are required dependencies. For DLL guard, install the optional pieces:
+tree-sitter and its bash / pwsh / batch grammars are required dependencies. On Windows, first build and install the wheel from the [DLL source package](../foundation/agent-security-dll/README.md), then install the SDK extra:
 
 ```bash
 pip install -e ".[dll-guard]"
-pip install agent-security-dll
-# From a source checkout you can also install locally:
-# pip install ./native/windows-process-guard/python
 ```
 
 ## Decisions and grants
@@ -83,7 +65,7 @@ pip install agent-security-dll
 
 ## Rules
 
-- Import from submodule roots, for example `from agent_shield.tool_permission import get_permission_manager`. The `agent_shield` package root exports nothing. Hosts should not depend directly on `tool_permission.runtime`; use `agent_shield.tool_permission.runtime_policy` for standalone runtime helpers.
+- Import from submodule roots, for example `from agent_shield.tool_permission import get_permission_manager`. The `agent_shield` package root lazily exports `ProcessGuard`. Hosts should not depend directly on `tool_permission.runtime`; use `agent_shield.tool_permission.runtime_policy` for standalone runtime helpers.
 - Permission checks: production code must use `get_permission_manager()` for the process-wide singleton. Tests or isolated instances use `new_permission_manager()`; constructing `PermissionManager()` directly raises `RuntimeError`.
 - `PermissionEngine` lives in `agent_shield.tool_permission.engine` and is internal; the facade does not export it.
 - `approval_overrides` take precedence over command rules and tool baselines:

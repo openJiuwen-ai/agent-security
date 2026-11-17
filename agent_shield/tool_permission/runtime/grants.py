@@ -197,6 +197,8 @@ def _registrable_domain(url: str) -> str | None:
 
 def scope_options(subject: dict) -> list[dict[str, str]]:
     options = [{"value": "exact", "label": "仅当前对象"}]
+    if subject.get("allowed_scopes") == ["exact"]:
+        return options
     if subject["kind"] == "file" and not any(
         action == "delete" for _, action in subject["accesses"]
     ):

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import ipaddress
+import ntpath
+import posixpath
+from urllib.parse import urlsplit
 
 from agent_shield.policy_engine.matchers.command import (
     argv_of,
@@ -49,6 +52,9 @@ def _file(rule: ObjectRule, effect: dict, event: dict) -> bool:
     path = str(effect.get("path") or "")
     os_name = event_os(event)
     if rule.path:
+        if rule.scope == "parent":
+            normalize = ntpath.normpath if os_name == "windows" else posixpath.normpath
+            return bool(path) and is_within(normalize(path), normalize(rule.path), os_name=os_name)
         return paths_equal(rule.path, path, os_name=os_name)
     return any(_path_matches(pattern, path, event) for pattern in rule.pattern)
 
@@ -58,6 +64,15 @@ def _domain(rule: ObjectRule, effect: dict) -> bool:
     if op is None or not _op_allowed(rule, op):
         return False
     if rule.source == "user_grant":
+        if rule.scope == "domain":
+            try:
+                url = urlsplit(effect.get("url") or "")
+                host = url.hostname or ""
+                domain = rule.hosts[0]
+                return (url.scheme == rule.url_scheme and url.port == rule.url_port
+                        and (host == domain or host.endswith("." + domain)))
+            except ValueError:
+                return False
         return _exact_endpoint(rule.hosts[0] if rule.hosts else "", effect)
     host = endpoint_host(effect)
     ip = endpoint_ip(effect)

@@ -2,7 +2,7 @@
 
 [English](./README_EN.md) | 简体中文
 
-进程内安全判定 SDK（纯规则、不调大模型、不做网络 IO）。它在工具调用和本机访问发生前给出确定性的 allow / ask / deny，并在 Windows 上提供两套原生防护把文件、进程和网络访问拦在执行前。
+进程内安全判定 SDK（纯规则、不调大模型、不做网络 IO）。它在工具调用和本机访问发生前给出确定性的 allow / ask / deny，并在 Windows 上通过公共 DLL 把文件、进程和网络访问拦在执行前。
 
 ## 能力分层
 
@@ -14,29 +14,34 @@
 | `intercepts/tool_output/` | 工具结果文本 → 内容检测 |
 | `tool_permission/` | 既有动作决策组件：toolguard / fileguard / netguard / hostguard / delguard，以及 `runtime` 授权复用 |
 | `detection/` | 内容检测引擎，输出提示词注入等概率性软信号 |
-| `native/windows-process-guard/` | `process_guard.exe` 与 x64 / x86 Hook DLL 的 C/C++ 实现 |
-| `native/windows-dll-guard/` | `jiuwen_runtime_guard.dll` 的用户态防护实现 |
+| `../foundation/agent-security-dll/` | Agent Shield 与 JiuwenBox 共用的 Windows Hook 和软删除实现 |
 
 沙箱（F2）是独立交付件，见同仓 `../jiuwenbox/`。
 
 ## Windows 原生防护
 
-两套方案共用 `agent-security-dll` 分发包里的二进制文件，接入方式不同：
+SDK 可选的 [Windows DLL 用户态防护层](../foundation/agent-security-dll/README.md) 在 Windows x64 上检查受保护进程的文件、程序启动和网络访问。
+宿主通过 `from agent_shield import ProcessGuard` 创建会话。使用 `await guard.spawn(argv, task_id=..., tool_call_id=..., tool_name=...)` 启动一棵受保护的进程树，使用 `await proc.wait()` 取得根进程退出码。宿主提供 `policy_snapshot`、`confirm`、`save_grant` 和 `audit`。默认删除模式 `recover` 与 JiuwenBox 共用 foundation 的原生回收实现。
 
-| 方案 | 入口 | 形态 |
-|---|---|---|
-| 进程守卫 | `agent_shield.intercepts.native_call.wrap()` | 独立 `process_guard.exe` + Hook DLL，JSON `native-record/v1` 管道，支持回收站删除与 x86 WOW64 子进程 |
-| DLL 防护 | `agent_shield.intercepts.native_call.dll_guard.RuntimeGuardManager` | 宿主进程内管理会话，导入表注入 `jiuwen_runtime_guard.dll`，二进制帧 IPC，支持运行中审批、授权复用与前后台进程树 |
-
-新接入的异步工具链优先使用 `RuntimeGuardManager`。它只支持 Windows x64；每次工具调用在 `async with manager.tool_execution(...)` 内通过 `create_process()` 启动进程，命中 ask 时由宿主渲染事件并调用 `manager.approvals.resolve(...)` 交回决定。既有 `Decide` / `wrap` 协议保持原有行为，继续由进程守卫承载。
+要在这个入口使用行为规则，宿主在 `policy_snapshot()` 中同时提供 `ruleset` 和 `tasks`。下面的规则会在一次文件替换开始前检查备份目的地。
 
 ```python
-from agent_shield.intercepts.native_call.dll_guard import (
-    RuntimeGuardManager,
-    create_process,
-    locate_guard_dll,
-)
+{
+    "revision": 7,
+    "workspace_root": "C:/project",
+    "config": {"enabled": True, "tools": {"bash": "allow"}},
+    "ruleset": {"spec": "agent-pdp/v1", "rules": [{
+        "id": "org.protected_backup", "object": "file", "ops": ["write"],
+        "pattern": ["C:/project/protected/**"], "action": "deny",
+    }]},
+    "tasks": {"task-42": {"subject_id": "user-7", "user_rules": [], "grants": []}},
+    "unmatched": "none",
+}
 ```
+
+`spawn(..., task_id="task-42", ...)` 使用该任务的规则、主体、已保存授权以及可选的 `user_intent` 和 `host_capabilities`。组织规则通过原有行为规则引擎编译。运行时资源策略与任务规则中的拒绝均生效。宿主在改变快照时更新 `revision`。每次决策的 `policy_decision` 审计记录包含进程、任务、工具调用、裁决和命中规则 ID。Windows x64 宿主当前支持 x64 和 WOW64 目标，后代按实际位数继续使用同一会话。
+
+详见 [DLL 构建与架构验收](../foundation/agent-security-dll/README.md)。
 
 ## 目录 ↔ 工作项对照
 
@@ -51,12 +56,11 @@ from agent_shield.intercepts.native_call.dll_guard import (
 | 行为策略引擎 | `policy_engine/` |
 | 工具调用接入 | `intercepts/tool_call/` |
 | 工具结果接入 | `intercepts/tool_output/` |
-| W1b 宿主进程守卫 | `intercepts/native_call/`（`wrap` + `process_guard.exe`） |
-| DLL 防护 | `intercepts/native_call/dll_guard/` + `native/windows-dll-guard/` |
+| W1b 宿主进程守卫 | `intercepts/native_call/dll_guard/process_guard.py`（`ProcessGuard.spawn()`） |
 | W7 宿主接入 | 不在本仓（jiuwenswarm / agent-core 侧） |
 | W5 沙箱接线 | 服务端在 `../jiuwenbox/`，SDK 侧接线随 W6 定 |
 
-`schema/` 存放决策与 native record 的 JSON Schema。`native/windows-process-guard/` 是进程守卫的 C/C++ 实现；Microsoft Detours 是构建期外置依赖（见 `native/windows-process-guard/third_party/NOTICE.md`），安装和导入 Python 包不需要拉取。三方规则经规则集接口注册，PDP 设计见 [docs/agent_shield-design.md](docs/agent_shield-design.md)。
+`schema/` 是决策、事件与审计的 JSON Schema，`../foundation/agent-security-dll/` 是进程守卫的 C/C++ 实现（Microsoft Detours 为**构建期外置依赖**，见 `../foundation/agent-security-dll/third_party/NOTICE.md`；安装/导入 Python 包无需拉取 Detours）。三方规则经规则集接口注册。PDP 设计见 [docs/agent_shield-design.md](docs/agent_shield-design.md)。
 
 ## 环境
 
@@ -66,13 +70,10 @@ pip install -e ".[dev]"
 pytest
 ```
 
-tree-sitter 及 bash / pwsh / batch 语法包是必需依赖。需要使用 DLL 防护时再安装：
+tree-sitter 及 bash / pwsh / batch 语法包是必需依赖。在 Windows 上先按 [DLL 构建说明](../foundation/agent-security-dll/README.md) 构建并安装对应 wheel，再安装 SDK 扩展。
 
 ```bash
 pip install -e ".[dll-guard]"
-pip install agent-security-dll
-# 源码检出也可从本地安装：
-# pip install ./native/windows-process-guard/python
 ```
 
 ## 裁决与授权
@@ -83,7 +84,7 @@ pip install agent-security-dll
 
 ## 规则
 
-- 对外从子模块根导入，例如 `from agent_shield.tool_permission import get_permission_manager`；`agent_shield` 包根不导出任何名字。宿主不应直接依赖 `tool_permission.runtime`，需要独立运行时辅助时用 `agent_shield.tool_permission.runtime_policy`。
+- 对外从子模块根导入，例如 `from agent_shield.tool_permission import get_permission_manager`；`agent_shield` 包根按需导出 `ProcessGuard`。宿主不应直接依赖 `tool_permission.runtime`，需要独立运行时辅助时用 `agent_shield.tool_permission.runtime_policy`。
 - 权限判定：生产调用方必须用 `get_permission_manager()` 取进程级单例；测试或需要与单例隔离的实例用 `new_permission_manager()`；直接 `PermissionManager()` 会抛 `RuntimeError`。
 - `PermissionEngine` 位于 `agent_shield.tool_permission.engine`，仅供内部实现使用，不从门面导出。
 - `approval_overrides` 的匹配授权优先于命令规则和工具基线：

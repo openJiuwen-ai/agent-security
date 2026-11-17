@@ -545,32 +545,40 @@ def split_shell_for_grants(command: str) -> tuple[str, ...]:
         return ()
     if _GRANT_NONLITERAL_RE.search(text):
         return ()
-    parsed = parse_shell_for_permission(text)
-    if (
-        not str(parsed.backend).startswith("tree-sitter")
-        or parsed.kind != "ok"
-        or not parsed.subcommands
-    ):
+    source = text.encode("utf-8")
+    root = parse_literal_bash_root(source)
+    if root is None:
         return ()
-    source, cursor = text.encode("utf-8"), 0
-    commands: list[str] = []
-    for subcommand in parsed.subcommands:
-        if not subcommand.text or subcommand.source_span is None:
+    # Split only at structural operators. Redirects (including descriptor
+    # duplication) remain in the original command bytes. Reject every
+    # expansion or control structure outside the literal grant grammar.
+    containers = {"program", "list", "pipeline", "redirected_statement"}
+    allowed = containers | {"command", "command_name", "word", "number", "string", "raw_string",
+                            "string_content", "concatenation", "file_redirect", "file_descriptor"}
+    cursor = 0
+    commands = []
+    pending = [root]
+    while pending:
+        node = pending.pop()
+        if node.is_named and node.type not in allowed:
             return ()
-        start, end = subcommand.source_span
-        if start < cursor or end <= start or end > len(source):
+        if node.type == "word" and re.search(rb"[$*?~{}\[\]\x60]", node.text):
             return ()
-        try:
-            gap = source[cursor:start].decode("utf-8")
-            literal = source[start:end].decode("utf-8")
-        except UnicodeDecodeError:
-            return ()
-        if not re.fullmatch(r"\s*(?:(?:&&|\|\||;|\|)\s*)*", gap) or literal != subcommand.text:
-            return ()
-        commands.append(subcommand.text)
-        cursor = end
-    if source[cursor:].strip():
+        if node.type in containers:
+            for child in node.children:
+                if not child.is_named and child.type not in {"&&", "||", ";", "|"}:
+                    return ()
+        if not node.is_named and node.type in {"&&", "||", ";", "|"}:
+            literal = source[cursor:node.start_byte].strip()
+            if not literal:
+                return ()
+            commands.append(literal.decode("utf-8"))
+            cursor = node.end_byte
+        pending.extend(reversed(node.children))
+    last = source[cursor:].strip()
+    if not last or b"\n" in source or b"\r" in source:
         return ()
+    commands.append(last.decode("utf-8"))
     return tuple(dict.fromkeys(commands))
 
 
