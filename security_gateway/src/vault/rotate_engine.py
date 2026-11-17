@@ -116,10 +116,6 @@ class RotationTarget(Protocol):
         """Replace the key snapshot with one read from the store."""
         ...
 
-    def converge_stragglers(self) -> None:
-        """Re-encrypt every record still under an older key generation."""
-        ...
-
 
 def _not_started() -> None:
     """The stop callable of a rotator that was never started."""
