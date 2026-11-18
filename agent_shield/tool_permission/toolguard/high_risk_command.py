@@ -1,5 +1,5 @@
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
-"""Mark high-risk shell commands without changing allow / ask / deny."""
+"""Mark high-risk shell commands from caller-configured patterns."""
 
 from __future__ import annotations
 
@@ -9,38 +9,40 @@ import re
 from ..models import PermissionLevel, PermissionResult, RiskLevel
 from ..routing import RouteContext
 
-_BUILTIN_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"\brm\s+-[a-zA-Z]*r[a-zA-Z]*f\b"),
-    re.compile(r"\brm\s+-[a-zA-Z]*f[a-zA-Z]*r\b"),
-)
-
 
 class HighRiskCommandComponent:
     """Optional high-risk mark for shell commands. Default off.
 
-    Miss → ``ALLOW`` + ``risk_level=none``; hit → ``ASK`` + ``risk_level=high``.
+    Patterns come only from config ``high_risk_command.patterns`` (no builtins).
+    Matching is case-insensitive. Miss → ``ALLOW`` + ``none``; hit → ``ASK`` + ``high``.
     """
 
     def __init__(self) -> None:
         self._enabled = False
-        self._patterns: tuple[re.Pattern[str], ...] = _BUILTIN_PATTERNS
+        self._patterns: tuple[re.Pattern[str], ...] = ()
 
     def configure(self, config: Mapping[str, object]) -> None:
         section = config.get("high_risk_command")
         if not isinstance(section, Mapping):
             self._enabled = False
-            self._patterns = _BUILTIN_PATTERNS
+            self._patterns = ()
             return
-        self._enabled = section.get("enabled", False) is True
+        enabled = section.get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ValueError("high_risk_command.enabled must be a boolean")
+        self._enabled = enabled
         raw_patterns = section.get("patterns")
-        if isinstance(raw_patterns, list) and raw_patterns:
-            compiled: list[re.Pattern[str]] = []
+        compiled: list[re.Pattern[str]] = []
+        if isinstance(raw_patterns, list):
             for item in raw_patterns:
                 if isinstance(item, str) and item:
-                    compiled.append(re.compile(item))
-            self._patterns = tuple(compiled) if compiled else _BUILTIN_PATTERNS
-        else:
-            self._patterns = _BUILTIN_PATTERNS
+                    try:
+                        compiled.append(re.compile(item, re.IGNORECASE))
+                    except re.error as exc:
+                        raise ValueError(
+                            f"high_risk_command.patterns invalid regex: {item!r}"
+                        ) from exc
+        self._patterns = tuple(compiled)
 
     async def evaluate(
         self,
@@ -57,6 +59,11 @@ class HighRiskCommandComponent:
         command = tool_args.get("command")
         if not isinstance(command, str) or not command:
             return None
+        if not self._patterns:
+            return PermissionResult(
+                permission=PermissionLevel.ALLOW,
+                risk_level=RiskLevel.NONE,
+            )
         for pattern in self._patterns:
             if pattern.search(command):
                 return PermissionResult(
