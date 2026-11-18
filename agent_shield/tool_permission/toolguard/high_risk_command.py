@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 import re
 
-from ..models import PermissionResult, RiskLevel
+from ..models import PermissionLevel, PermissionResult, RiskLevel
 from ..routing import RouteContext
 
 _BUILTIN_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -16,7 +16,10 @@ _BUILTIN_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 
 class HighRiskCommandComponent:
-    """Optional high-risk mark for shell commands. Default off."""
+    """Optional high-risk mark for shell commands. Default off.
+
+    Miss → ``ALLOW`` + ``risk_level=none``; hit → ``ASK`` + ``risk_level=high``.
+    """
 
     def __init__(self) -> None:
         self._enabled = False
@@ -56,8 +59,14 @@ class HighRiskCommandComponent:
             return None
         for pattern in self._patterns:
             if pattern.search(command):
-                return PermissionResult(risk_level=RiskLevel.HIGH)
-        return PermissionResult(risk_level=RiskLevel.NONE)
+                return PermissionResult(
+                    permission=PermissionLevel.ASK,
+                    risk_level=RiskLevel.HIGH,
+                )
+        return PermissionResult(
+            permission=PermissionLevel.ALLOW,
+            risk_level=RiskLevel.NONE,
+        )
 
 
 __all__ = ["HighRiskCommandComponent"]

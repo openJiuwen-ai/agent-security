@@ -77,15 +77,15 @@ def test_custom_patterns_override_builtin() -> None:
 def test_merge_keeps_strongest_risk_level() -> None:
     result = PermissionEngine.merge_results(
         [
-            PermissionResult(permission=PermissionLevel.ASK, risk_level=RiskLevel.NONE),
-            PermissionResult(risk_level=RiskLevel.HIGH),
+            PermissionResult(permission=PermissionLevel.ALLOW, risk_level=RiskLevel.NONE),
+            PermissionResult(permission=PermissionLevel.ASK, risk_level=RiskLevel.HIGH),
         ]
     )
     assert result.permission is PermissionLevel.ASK
     assert result.risk_level is RiskLevel.HIGH
 
 
-def test_high_risk_does_not_change_allow_level() -> None:
+def test_high_risk_hit_raises_allow_to_ask() -> None:
     result = _check(
         {
             "tools": {"bash": "allow"},
@@ -94,5 +94,45 @@ def test_high_risk_does_not_change_allow_level() -> None:
         },
         "rm -rf /tmp/x",
     )
-    assert result.permission is PermissionLevel.ALLOW
+    assert result.permission is PermissionLevel.ASK
     assert result.risk_level is RiskLevel.HIGH
+
+
+def test_master_off_without_always_on_skips_high_risk() -> None:
+    result = _check(
+        {
+            "enabled": False,
+            "high_risk_command": {"enabled": True},
+        },
+        "rm -rf /tmp/x",
+    )
+    assert result.permission is PermissionLevel.ALLOW
+    assert result.risk_level is RiskLevel.NONE
+
+
+def test_master_off_with_always_on_hit_is_ask() -> None:
+    result = _check(
+        {
+            "enabled": False,
+            "always_on_components": ["high_risk_command"],
+            "high_risk_command": {"enabled": True},
+        },
+        "rm -rf /tmp/x",
+    )
+    assert result.permission is PermissionLevel.ASK
+    assert result.risk_level is RiskLevel.HIGH
+
+
+def test_master_off_always_on_miss_is_allow() -> None:
+    result = _check(
+        {
+            "enabled": False,
+            "always_on_components": ["high_risk_command"],
+            "tools": {"bash": "ask"},
+            "package_builtin_rules": False,
+            "high_risk_command": {"enabled": True},
+        },
+        "ls",
+    )
+    assert result.permission is PermissionLevel.ALLOW
+    assert result.risk_level is RiskLevel.NONE

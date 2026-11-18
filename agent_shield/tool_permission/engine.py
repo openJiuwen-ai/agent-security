@@ -43,7 +43,18 @@ _COMPONENT_BY_NAME: dict[str, type[Any]] = {
     "host_guard": HostGuardComponent,
     "file_guard": FileGuardComponent,
     "deletion_guard": DeletionGuardComponent,
+    "high_risk_command": HighRiskCommandComponent,
 }
+
+
+def _parse_always_on_components(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    names: list[str] = []
+    for item in value:
+        if isinstance(item, str) and item.strip():
+            names.append(item.strip())
+    return tuple(names)
 
 
 def _level_text(result: PermissionResult, *, with_rule: bool = True) -> str:
@@ -108,6 +119,7 @@ class PermissionEngine:
         self._components: tuple[PermissionComponent, ...] = ()
         self._config: dict[str, Any] = {}
         self._enabled = True
+        self._always_on_names: tuple[str, ...] = ()
         self._tiered: TieredPolicyComponent | None = None
         self._guard_actions = guard_actions_from_config({})
         self._install(config or {})
@@ -153,22 +165,51 @@ class PermissionEngine:
         self._tiered = tiered
         self._config = snapshot
         self._enabled = enabled
+        self._always_on_names = _parse_always_on_components(
+            snapshot.get("always_on_components")
+        )
         self._guard_actions = guard_actions_from_config(snapshot)
+
+    def _resolve_always_on_components(self) -> tuple[PermissionComponent, ...]:
+        """Map ``always_on_components`` names to installed instances; skip unknown."""
+
+        resolved: list[PermissionComponent] = []
+        for name in self._always_on_names:
+            component_type = _COMPONENT_BY_NAME.get(name)
+            if component_type is None:
+                continue
+            for component in self._components:
+                if isinstance(component, component_type):
+                    resolved.append(component)
+                    break
+        return tuple(resolved)
 
     async def check_permission(
         self,
         tool_name: str,
         tool_args: Mapping[str, Any],
     ) -> PermissionResult:
-        """Evaluate one tool call; allow it without checks when disabled."""
+        """Evaluate one tool call; allow it without checks when disabled.
+
+        When ``enabled`` is false, components listed in ``always_on_components``
+        still run; other components stay skipped.
+        """
 
         self._validate_call(tool_name, tool_args)
-        if not self._enabled:
+        if self._enabled:
+            return await self._evaluate_expanded(tool_name, tool_args, depth=0)
+        always_on = self._resolve_always_on_components()
+        if not always_on:
             return PermissionResult(
                 permission=PermissionLevel.ALLOW,
                 reason="Permission system is disabled",
             )
-        return await self._evaluate_expanded(tool_name, tool_args, depth=0)
+        return await self._evaluate_expanded(
+            tool_name,
+            tool_args,
+            depth=0,
+            components=always_on,
+        )
 
     async def _evaluate_expanded(
         self,
@@ -176,6 +217,7 @@ class PermissionEngine:
         tool_args: Mapping[str, Any],
         *,
         depth: int,
+        components: tuple[PermissionComponent, ...] | None = None,
     ) -> PermissionResult:
         """Evaluate the outer call, then any registered meta-tool inner call.
 
@@ -186,7 +228,7 @@ class PermissionEngine:
         层在前：同级平手时保留内层的 matched_rule / reason，审批卡与日志展示
         的是真实命令命中的规则而非外层 defaults。
         """
-        result = await self._evaluate(tool_name, tool_args)
+        result = await self._evaluate(tool_name, tool_args, components=components)
         expansion = resolve_meta_tool_expansion(tool_name, tool_args)
         if expansion is None:
             return result
@@ -213,7 +255,10 @@ class PermissionEngine:
             )
             return self._merge_results([capped, result])
         inner_result = await self._evaluate_expanded(
-            inner_name, inner_args, depth=depth + 1
+            inner_name,
+            inner_args,
+            depth=depth + 1,
+            components=components,
         )
         return self._merge_results([inner_result, result])
 
@@ -421,15 +466,25 @@ class PermissionEngine:
         self,
         tool_name: str,
         tool_args: Mapping[str, Any],
+        *,
+        components: tuple[PermissionComponent, ...] | None = None,
     ) -> PermissionResult:
         """Expand candidates, honour approval short-circuit, merge strictest."""
 
+        active = self._components if components is None else components
         candidates, structure_verdicts = self._expand(
             tool_name,
             tool_args,
             analyze=self._analyze,
         )
+        if components is not None:
+            # always_on subset: only listed components vote; skip structure floor.
+            structure_verdicts = []
         tiered = self._tiered
+        if components is not None and (
+            tiered is None or not any(component is tiered for component in active)
+        ):
+            tiered = None
 
         # Whole-call short-circuit: original or unwrapped hits approval.
         if tiered is not None:
@@ -463,7 +518,7 @@ class PermissionEngine:
                     continue
 
             subscribed: list[tuple[str, PermissionResult | None]] = []
-            for component in self._components:
+            for component in active:
                 name = type(component).__name__
                 try:
                     result = await self._evaluate_component(
@@ -482,7 +537,19 @@ class PermissionEngine:
                 all_subscribed.append((name, result))
 
             verdicts = [result for _, result in subscribed if result is not None]
-            candidate_verdicts.append(self._merge_results(verdicts))
+            if components is not None:
+                # ALLOW floor per candidate so sidecar-only marks do not become ASK.
+                disabled_allow = PermissionResult(
+                    permission=PermissionLevel.ALLOW,
+                    reason="Permission system is disabled",
+                )
+                candidate_verdicts.append(
+                    disabled_allow
+                    if not verdicts
+                    else self._merge_results([disabled_allow, *verdicts])
+                )
+            else:
+                candidate_verdicts.append(self._merge_results(verdicts))
 
         for verdict in structure_verdicts:
             all_subscribed.append(("ShellStructure", verdict))

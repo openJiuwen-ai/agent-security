@@ -8,6 +8,7 @@ import pytest
 
 from agent_shield.tool_permission import new_permission_manager
 from agent_shield.tool_permission.engine import PermissionEngine
+from agent_shield.tool_permission.toolguard.tiered import TieredPolicyComponent
 
 ENGINE_LOGGER = "agent_shield.tool_permission.engine"
 MANAGER_LOGGER = "agent_shield.tool_permission.manager"
@@ -106,7 +107,9 @@ async def test_component_failure_is_logged_and_still_raised(caplog, monkeypatch)
     async def boom(*args, **kwargs):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(engine.components[3], "evaluate", boom)
+    # Locate by type: component order shifted after HighRiskCommandComponent landed.
+    tiered = next(c for c in engine.components if isinstance(c, TieredPolicyComponent))
+    monkeypatch.setattr(tiered, "evaluate", boom)
     with caplog.at_level(logging.INFO, logger=ENGINE_LOGGER), pytest.raises(RuntimeError):
         await engine.check_permission("bash", {"command": "ls"})
 
