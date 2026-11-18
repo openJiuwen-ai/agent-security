@@ -12,8 +12,8 @@
 
 [project] 元数据、依赖、入口点仍在 pyproject.toml；本文件只负责包的发现与映射。
 """
-import tomllib
 from pathlib import Path
+import tomllib
 
 from setuptools import find_packages, setup
 
@@ -58,14 +58,14 @@ def check_member_declarations_synced():
             problems.append(f"{pkg}: 找不到成员 pyproject（{member_py}），检查 COMPONENTS 路径")
             continue
         member = tomllib.loads(member_py.read_text(encoding="utf-8"))
-        for name, target in member.get("project", {}).get("scripts", {}).items():
-            if root_scripts.get(name) != target:
-                problems.append(f"{pkg}: 入口点未同步 -> {name} = {target}")
+        for script_name, target in member.get("project", {}).get("scripts", {}).items():
+            if root_scripts.get(script_name) != target:
+                problems.append(f"{pkg}: 入口点未同步 -> {script_name} = {target}")
         for data_key in member.get("tool", {}).get("setuptools", {}).get("package-data", {}):
             if data_key not in package_data:
                 problems.append(f"{pkg}: package-data 键未同步 -> {data_key}")
     if problems:
-        raise SystemExit(
+        raise RuntimeError(
             "openjiuwen-security 与成员 pyproject 声明不一致，请同步后重新构建：\n  "
             + "\n  ".join(problems)
         )

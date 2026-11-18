@@ -9,11 +9,22 @@
 不在门面导出。
 可选 ``runtime_policy`` 为原生适配层提供实际资源、授权和配置支持，
 不改变既有工具调用入口、组件可见性或默认策略。
+
+转发类 meta-tool（如 jiuwenswarm 的 ``invoke_tool``）的外层判定会展开到
+内层真实调用：宿主经 :func:`register_meta_tool` 注册转发契约（宿主侧 API，
+在门面导出；引擎内部的展开机制不导出）。
 """
 
 from typing import TYPE_CHECKING
 
 from .manager import PermissionManager, get_permission_manager, new_permission_manager
+from .meta_tools import (
+    META_TOOL_MAX_DEPTH,
+    register_meta_tool,
+    registered_meta_tools,
+    resolve_meta_tool_expansion,
+    unregister_meta_tool,
+)
 from .models import PermissionLevel, PermissionResult
 
 if TYPE_CHECKING:
@@ -29,10 +40,15 @@ def __getattr__(name: str):
 
 
 __all__ = [
+    "META_TOOL_MAX_DEPTH",
     "PermissionLevel",
     "PermissionManager",
     "PermissionResult",
     "get_permission_manager",
     "new_permission_manager",
+    "register_meta_tool",
+    "registered_meta_tools",
+    "resolve_meta_tool_expansion",
     "runtime_policy",
+    "unregister_meta_tool",
 ]

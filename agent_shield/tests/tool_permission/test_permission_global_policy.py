@@ -7,6 +7,10 @@ import asyncio
 import pytest
 
 from agent_shield.tool_permission import PermissionLevel
+from agent_shield.tool_permission import (
+    register_meta_tool,
+    unregister_meta_tool,
+)
 from agent_shield.tool_permission.engine import PermissionEngine
 
 _CONFIG = {
@@ -30,6 +34,44 @@ def test_returns_the_same_decision_as_check_permission(command: str) -> None:
     checked, direct = _both(PermissionEngine(_CONFIG), "bash", {"command": command})
 
     assert direct == (checked.permission, checked.matched_rule)
+
+
+def test_equivalence_holds_for_registered_forwarder_envelopes() -> None:
+    """等价契约覆盖注册转发器：global policy 直查不得退化为仅外层判定。
+
+    外层 ``invoke_tool`` 不在 tools 配置走 defaults 放行（issue #6499 的绕过
+    形态）；若本入口不展开，宿主经它拿到的就是外层 ALLOW，等于在
+    check_permission 之外漏开一条同型旁路（检视意见：等价关系单侧打破）。
+    """
+    register_meta_tool(
+        "invoke_tool",
+        lambda args: (
+            (args["tool_name"], args["arguments"])
+            if isinstance(args.get("tool_name"), str)
+            and args.get("tool_name", "").strip()
+            and isinstance(args.get("arguments"), dict)
+            else None
+        ),
+    )
+    try:
+        engine = PermissionEngine(
+            {
+                "package_builtin_rules": False,
+                "defaults": {"*": "allow"},
+                "tools": {"create_terminal": "deny"},
+            }
+        )
+        envelope = {
+            "tool_name": "create_terminal",
+            "arguments": {"command": 'iex "Get-Process"'},
+        }
+
+        checked, direct = _both(engine, "invoke_tool", envelope)
+
+        assert checked.permission is PermissionLevel.DENY
+        assert direct == (checked.permission, checked.matched_rule)
+    finally:
+        unregister_meta_tool("invoke_tool")
 
 
 @pytest.mark.parametrize("enabled", (True, False))
