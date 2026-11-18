@@ -34,6 +34,7 @@ def _runtime_result(result):
         external_paths=result.external_paths.copy() if result.external_paths is not None else None,
         warnings=result.warnings.copy() if result.warnings is not None else None,
         ask_accesses=result.ask_accesses.copy() if result.ask_accesses is not None else None,
+        risk_level=result.risk_level,
     )
 
 

@@ -15,7 +15,7 @@ from .delguard.component import DeletionGuardComponent
 from .fileguard.component import FileGuardComponent, ImmutableControlPlaneComponent
 from .hostguard import HostGuardComponent
 from .meta_tools import META_TOOL_MAX_DEPTH, resolve_meta_tool_expansion
-from .models import PermissionLevel, PermissionResult
+from .models import PermissionLevel, PermissionResult, RiskLevel
 from .netguard import NetGuardComponent
 from .routing import (
     CandidateKind,
@@ -33,6 +33,7 @@ from .shell_structure import (
 from .toolguard.command_allowlist import CommandAllowlistComponent
 from .toolguard.command_canonicalize import canonicalize_shell_command_for_permission
 from .toolguard.destructive_warning import DestructiveWarningComponent
+from .toolguard.high_risk_command import HighRiskCommandComponent
 from .toolguard.injection import InjectionComponent
 from .toolguard.tiered import TieredPolicyComponent
 
@@ -119,6 +120,7 @@ class PermissionEngine:
             InjectionComponent(),
             CommandAllowlistComponent(),
             DestructiveWarningComponent(),
+            HighRiskCommandComponent(),
             TieredPolicyComponent(),
             HostGuardComponent(),
             FileGuardComponent(),
@@ -609,6 +611,11 @@ class PermissionEngine:
         warnings = list(dict.fromkeys(warning for result in results for warning in result.warnings))
         external_paths = [path for result in results for path in result.external_paths]
         ask_accesses = [item for result in results for item in result.ask_accesses]
+        risk_level = max(
+            (result.risk_level for result in results),
+            key=PermissionEngine._risk_rank,
+            default=RiskLevel.NONE,
+        )
 
         return PermissionResult(
             permission=(
@@ -621,7 +628,16 @@ class PermissionEngine:
             warnings=warnings,
             external_paths=external_paths,
             ask_accesses=ask_accesses,
+            risk_level=risk_level,
         )
+
+    @staticmethod
+    def _risk_rank(risk_level: RiskLevel) -> int:
+        ranks = {
+            RiskLevel.NONE: 0,
+            RiskLevel.HIGH: 1,
+        }
+        return ranks.get(risk_level, 0)
 
     @staticmethod
     def _permission_rank(permission: PermissionLevel | None) -> int:

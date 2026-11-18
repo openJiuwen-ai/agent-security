@@ -4,12 +4,14 @@
 
 from .command_allowlist import CommandAllowlistComponent
 from .destructive_warning import DestructiveWarningComponent
+from .high_risk_command import HighRiskCommandComponent
 from .injection import InjectionComponent
 from .tiered import TieredPolicyComponent
 
 __all__ = [
     "CommandAllowlistComponent",
     "DestructiveWarningComponent",
+    "HighRiskCommandComponent",
     "InjectionComponent",
     "TieredPolicyComponent",
 ]
