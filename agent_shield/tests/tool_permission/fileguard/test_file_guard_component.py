@@ -152,3 +152,27 @@ def test_read_deny_only_powershell_is_not_a_path_shell() -> None:
         current = _path_engine(workspace, common)
         denied = _run(current.check_permission("powershell", {"command": command}))
         assert denied.permission is PermissionLevel.DENY
+
+
+def test_dev_null_redirect_write_is_allowed_by_builtin_path() -> None:
+    with tempfile.TemporaryDirectory() as workspace:
+        engine = PermissionEngine({
+            "package_builtin_rules": False,
+            "shell_allowlist": None,
+            "tools": {"bash": "allow"},
+            "runtime": {"workspace_root": workspace},
+            "file_guard": {
+                "enabled": True,
+                "defaults": {"read": "allow", "write": "ask", "exec": "ask"},
+                "workspace": {"read": "allow", "write": "allow", "exec": "allow"},
+            },
+        })
+        allowed = _run(engine.check_permission(
+            "bash", {"command": "cat ./a 2>/dev/null", "shell_type": "bash"},
+        ))
+        assert allowed.permission is PermissionLevel.ALLOW
+        outside = (Path(workspace).parent / "outside.log").as_posix()
+        asked = _run(engine.check_permission(
+            "bash", {"command": f"echo hi > {outside}", "shell_type": "bash"},
+        ))
+        assert asked.permission is PermissionLevel.ASK

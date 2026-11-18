@@ -867,6 +867,27 @@ class FileGuardChecker:
         return getattr(defaults, action), "file_guard:defaults"
 
 
+# Ordinary allow rules for discard sinks. Appended after mode selection so a
+# glob here cannot flip legacy configs into native.
+_DEV_NULL_ALLOW_RULES = (
+    FileGuardPathRule(
+        path="/dev/null",
+        read=PermissionLevel.ALLOW,
+        write=PermissionLevel.ALLOW,
+        exec=PermissionLevel.ALLOW,
+        match="prefix",
+    ),
+    FileGuardPathRule(
+        path="*/dev/null",
+        read=PermissionLevel.ALLOW,
+        write=PermissionLevel.ALLOW,
+        exec=PermissionLevel.ALLOW,
+        match="glob",
+        ignore_case=True,
+    ),
+)
+
+
 def build_file_guard_checker(
     permissions: Mapping[str, Any] | None,
     *,
@@ -884,6 +905,7 @@ def build_file_guard_checker(
     )
     if not effective.enabled:
         return None
+    effective = replace(effective, paths=(*effective.paths, *_DEV_NULL_ALLOW_RULES))
     return FileGuardChecker(effective, permission_config=perms, agent_cwd=agent_cwd)
 
 

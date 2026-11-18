@@ -7,7 +7,6 @@ that same list on ``config["builtin"]["sensitive_paths"]``. Evaluation still
 consumes the merged ``paths`` only. Builtin ``action`` is copied onto
 read/write/exec. An overlay cannot widen a builtin path to allow.
 """
-
 from __future__ import annotations
 
 import logging
