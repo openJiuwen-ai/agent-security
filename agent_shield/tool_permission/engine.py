@@ -14,6 +14,7 @@ from .component import PermissionComponent
 from .delguard.component import DeletionGuardComponent
 from .fileguard.component import FileGuardComponent, ImmutableControlPlaneComponent
 from .hostguard import HostGuardComponent
+from .meta_tools import META_TOOL_MAX_DEPTH, resolve_meta_tool_expansion
 from .models import PermissionLevel, PermissionResult
 from .netguard import NetGuardComponent
 from .routing import (
@@ -165,7 +166,54 @@ class PermissionEngine:
                 permission=PermissionLevel.ALLOW,
                 reason="Permission system is disabled",
             )
-        return await self._evaluate(tool_name, tool_args)
+        return await self._evaluate_expanded(tool_name, tool_args, depth=0)
+
+    async def _evaluate_expanded(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, Any],
+        *,
+        depth: int,
+    ) -> PermissionResult:
+        """Evaluate the outer call, then any registered meta-tool inner call.
+
+        转发类 meta-tool（经 :mod:`~agent_shield.tool_permission.meta_tools` 注册）
+        的外层参数对组件不透明：外层默认放行不能携带内层命令穿透。外层照常
+        判定，命中注册转发器时对内层 ``(tool_name, tool_args)`` 递归判定并合
+        并取最严——宿主对转发器本身的显式规则（如 deny）依然生效。合并序内
+        层在前：同级平手时保留内层的 matched_rule / reason，审批卡与日志展示
+        的是真实命令命中的规则而非外层 defaults。
+        """
+        result = await self._evaluate(tool_name, tool_args)
+        expansion = resolve_meta_tool_expansion(tool_name, tool_args)
+        if expansion is None:
+            return result
+        inner_name, inner_args = expansion
+        logger.info(
+            "permission.engine.meta_expansion key=%s outer=%s inner=%s depth=%s",
+            self._label,
+            tool_name,
+            inner_name,
+            depth,
+        )
+        if depth >= META_TOOL_MAX_DEPTH:
+            # 封顶处外层仍是注册转发器：信封判定会走 defaults 放行，等于在
+            # 更深嵌套上重新打开本修复要堵的绕过。判定域 fail-closed（对照
+            # 宿主装配域 fail-open 的分野），并入一次不可静默放行的 ASK 交
+            # 用户裁决，外层显式 DENY 仍按最严保留。
+            capped = PermissionResult(
+                permission=PermissionLevel.ASK,
+                matched_rule="meta_tool_depth_cap",
+                reason=(
+                    "meta-tool nesting exceeds expansion depth cap "
+                    f"{META_TOOL_MAX_DEPTH}; refusing to judge the envelope alone"
+                ),
+            )
+            return self._merge_results([capped, result])
+        inner_result = await self._evaluate_expanded(
+            inner_name, inner_args, depth=depth + 1
+        )
+        return self._merge_results([inner_result, result])
 
     async def evaluate_global_policy_directly(
         self,
@@ -181,7 +229,12 @@ class PermissionEngine:
         """
 
         self._validate_call(tool_name, tool_args)
-        result = await self._evaluate(tool_name, tool_args)
+        # 与 check_permission 同一判定序（含注册转发器展开）：本入口的契约就是
+        # "同样的检查、只差 enabled 短路"，且返回值形态 (permission, matched_rule)
+        # 可直接用于宿主决策——若此处仅评外层，注册转发器的内层命令会经这个
+        # 兄弟 API 重新拿到外层 defaults 的放行，等于在 check_permission 之外
+        # 漏开一条 #6499 同型旁路。
+        result = await self._evaluate_expanded(tool_name, tool_args, depth=0)
         return result.permission, result.matched_rule
 
     def evaluate_component(

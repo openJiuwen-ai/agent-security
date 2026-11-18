@@ -71,6 +71,20 @@ agent-shield 把这些调用统一成事件，再做一次集中裁决：
 4. **生成结果**。结果是 `ask` 时，引擎会为可沉淀的部分生成建议 grant；宿主可以打开审批窗口，决定放行这一次或拒绝。
 5. **留下记录**。注册表、审计文件或调用方日志会记录胜出规则、动作和事件 id，方便追溯。
 
+**转发类 meta-tool 展开**。若工具调用本身携带另一个工具调用（如 jiuwenswarm 的
+`invoke_tool(tool_name, arguments)`），外层参数对组件是不透明信封——外层工具名
+通常不在 `tools` 配置里、走 `defaults` 放行，内层命令携带完整载荷穿透。宿主经
+`agent_shield.tool_permission.register_meta_tool(name, extractor)` 注册转发契约
+（extractor 从外层参数取内层 `(tool_name, tool_args)`，形状不符返回 None），
+`check_permission` 即对注册过的转发器：先按外层原样判定，再对内层递归判定
+（深度封顶 2），两层合并取最严、同级平手保留内层 matched_rule。直接调用的
+审批记忆（`approval_overrides`）对内层同样生效，转发与直接两条路径判定一致。
+`evaluate_global_policy_directly` 与 `check_permission` 同一判定序（仅差
+`enabled` 短路），对注册转发器同样展开——其返回值可直接用于宿主决策，若仅评
+外层会重新漏开一条外层 `defaults` 放行的同型旁路。
+未注册任何转发器的进程行为不变。配套用例见
+`agent_shield/tests/tool_permission/test_permission_meta_tools.py`。
+
 ## 5. Windows 原生防护
 
 Windows 上提供两套方案，接入方式不同：
