@@ -87,6 +87,30 @@ def test_tee_literal_destination_is_a_write(tmp_path):
     assert (tmp_path / "output.txt", "write") in accesses
 
 
+@pytest.mark.parametrize("command", [
+    "cat ./a 2>/dev/null",
+    "cat ./a >/dev/null",
+    "cat ./a &>/dev/null",
+    'cat ./a 2>"/dev/null"',
+    "cat ./a >NUL",
+    "cat ./a 2>nul",
+    "cat ./a 2>&-",
+    "echo ok | tee /dev/null",
+    "echo ok | tee NUL",
+])
+def test_discard_and_close_fd_targets_are_not_file_writes(tmp_path, command):
+    accesses = paths.extract_shell_path_accesses(command, tmp_path, shell_type="bash")
+    assert all(action != "write" for _path, action in accesses)
+
+
+def test_mixed_null_and_real_redirect_keeps_the_real_write(tmp_path):
+    accesses = paths.extract_shell_path_accesses(
+        "cat ./a >/dev/null 2> ./err.log", tmp_path, shell_type="bash")
+    assert (tmp_path / "a", "read") in accesses
+    assert (tmp_path / "err.log", "write") in accesses
+    assert accesses == [(tmp_path / "a", "read"), (tmp_path / "err.log", "write")]
+
+
 @pytest.mark.parametrize("limit,value,command", [
     ("_MAX_INLINE_DEPTH", 0, "echo ok && bash -c 'cat ./secret'"),
     ("_MAX_EXTRACTION_STEPS", 1, "echo ok && cat ./secret"),

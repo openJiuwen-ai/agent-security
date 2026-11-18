@@ -70,6 +70,8 @@ _WRITE_PATH_TOOLS = frozenset({
 
 _NT_CMD_SWITCH_BODY = re.compile(r"^[A-Za-z]{1,2}(?::[^\s/\\]+)?$")
 _FD_ALIAS_RE = re.compile(r"^&\d+$")
+# Discard sinks and close-fd: not real file writes for FileGuard.
+_NON_FILE_TARGET_RE = re.compile(r"(?i)^(?:/dev/null|nul|\\\\[.?]\\nul|&-)$")
 _UNEXPANDED_VAR_RE = re.compile(r"(?i)\$(\w+|\{[^}]+\}|env:\w+)")
 _WIN_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 
@@ -128,9 +130,18 @@ def _looks_like_path(token: str) -> bool:
     return "\\" in t or "/" in t
 
 
+def _bare_shell_token(token: str) -> str:
+    return token.strip().strip('"').strip("'")
+
+
+def _is_non_file_target(token: str) -> bool:
+    """True for /dev/null, NUL, and close-fd (&-) — not a filesystem access."""
+    return bool(_NON_FILE_TARGET_RE.match(_bare_shell_token(token)))
+
+
 def _looks_like_redirect_target(token: str) -> bool:
-    t = token.strip().strip('"').strip("'")
-    if not t or _FD_ALIAS_RE.match(t):
+    t = _bare_shell_token(token)
+    if not t or _FD_ALIAS_RE.match(t) or _is_non_file_target(t):
         return False
     if t.startswith("$") or _UNEXPANDED_VAR_RE.search(t):
         return False
@@ -624,6 +635,8 @@ def _path_aware_one_segment(
     path_tokens: list[tuple[Path, int]] = []
 
     def _append_path_token(tok: str, idx: int, *, require_path_shape: bool) -> None:
+        if _is_non_file_target(tok):
+            return
         path = _resolve_shell_operand(tok, base, shell_type, bare=not require_path_shape)
         if path is not None:
             path_tokens.append((path, idx))
