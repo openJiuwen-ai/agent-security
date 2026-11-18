@@ -8,6 +8,7 @@ import pytest
 
 from agent_shield.tool_permission import new_permission_manager
 from agent_shield.tool_permission.engine import PermissionEngine
+from agent_shield.tool_permission.toolguard.tiered import TieredPolicyComponent
 
 ENGINE_LOGGER = "agent_shield.tool_permission.engine"
 MANAGER_LOGGER = "agent_shield.tool_permission.manager"
@@ -106,7 +107,9 @@ async def test_component_failure_is_logged_and_still_raised(caplog, monkeypatch)
     async def boom(*args, **kwargs):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(engine.components[3], "evaluate", boom)
+    # Locate by type: component order shifted after HighRiskCommandComponent landed.
+    tiered = next(c for c in engine.components if isinstance(c, TieredPolicyComponent))
+    monkeypatch.setattr(tiered, "evaluate", boom)
     with caplog.at_level(logging.INFO, logger=ENGINE_LOGGER), pytest.raises(RuntimeError):
         await engine.check_permission("bash", {"command": "ls"})
 
@@ -120,17 +123,38 @@ async def test_component_failure_is_logged_and_still_raised(caplog, monkeypatch)
 @pytest.mark.asyncio
 async def test_manager_tags_decisions_with_key_and_logs_config_changes(caplog) -> None:
     manager = new_permission_manager()
+    changed = {
+        **CONFIG,
+        "tools": {**CONFIG["tools"], "bash": "allow"},
+    }
     with caplog.at_level(logging.INFO, logger="agent_shield"):
         manager.update_config(CONFIG, "u1")
-        manager.update_config(CONFIG, "u1")
+        manager.update_config(CONFIG, "u1")  # identical → no config lines
+        manager.update_config(changed, "u1")
         await manager.check_permission("bash", {"command": "ls"}, "u1")
         await manager.check_permission("bash", {"command": "ls"}, config=CONFIG)
         manager.remove_config("u1")
 
-    messages = [r.getMessage() for r in caplog.records]
-    assert "permission.manager.update key=u1 replaced=False" in messages
-    assert "permission.manager.update key=u1 replaced=True" in messages
-    assert "permission.manager.remove key=u1 removed=True" in messages
+    configs = [
+        r.getMessage()
+        for r in caplog.records
+        if "permission.config " in r.getMessage()
+    ]
+    assert any(
+        "key=u1 op=create field=tools value=" in line and "bash" in line
+        for line in configs
+    )
+    identical_tools_updates = [
+        line
+        for line in configs
+        if "key=u1 op=update field=tools value=" in line and "'bash': 'deny'" in line
+    ]
+    assert not identical_tools_updates, "identical republish must not re-log fields"
+    assert any(
+        "key=u1 op=update field=tools value=" in line and "'bash': 'allow'" in line
+        for line in configs
+    ), configs
+    assert any(line == "permission.config key=u1 op=remove" for line in configs)
     lines = _decisions(caplog)
     assert "key=u1 " in lines[0]
     assert "key=(one-off) " in lines[1]

@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
 
+from .config_log import log_config_diff, log_config_key_removed
 from .engine import PermissionEngine
 from .models import PermissionLevel, PermissionResult
 
@@ -70,6 +71,8 @@ class PermissionManager:
         self._engines: dict[str, PermissionEngine] = {
             DEFAULT_KEY: PermissionEngine({}, label=DEFAULT_KEY)
         }
+        # user_key → last full permissions config (config_log baseline).
+        self._config_log_snapshots: dict[str, dict[str, Any]] = {}
 
     @staticmethod
     def _resolve_key(key: str | None) -> str:
@@ -113,9 +116,13 @@ class PermissionManager:
                     f"permission config limit reached ({self._max_keys}); "
                     f"cannot register key {resolved!r}"
                 )
-            replaced = resolved in self._engines
+            previous = self._config_log_snapshots.get(resolved)
             self._engines[resolved] = engine
-        logger.info("permission.manager.update key=%s replaced=%s", resolved, replaced)
+            self._config_log_snapshots[resolved] = log_config_diff(
+                key=resolved,
+                previous=previous,
+                config=dict(engine.config),
+            )
 
     def remove_config(self, key: str) -> bool:
         """Remove ``key``; return whether it was registered.  ``default`` cannot be removed."""
@@ -125,7 +132,10 @@ class PermissionManager:
             raise ValueError("the default config cannot be removed")
         with self._lock:
             removed = self._engines.pop(resolved, None) is not None
-        logger.info("permission.manager.remove key=%s removed=%s", resolved, removed)
+            if removed:
+                self._config_log_snapshots.pop(resolved, None)
+        if removed:
+            log_config_key_removed(key=resolved)
         return removed
 
     async def check_permission(

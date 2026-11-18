@@ -17,6 +17,13 @@ class PermissionLevel(StrEnum):
     DENY = "deny"
 
 
+class RiskLevel(StrEnum):
+    """Side-channel risk mark; does not change allow / ask / deny."""
+
+    NONE = "none"
+    HIGH = "high"
+
+
 @dataclass(slots=True)
 class PermissionResult:
     """A component result or the final result returned by the engine.
@@ -33,3 +40,4 @@ class PermissionResult:
     # ASK-only path rules for "always allow" persistence: (path, action).
     # ``action`` is one of ``read`` / ``write`` / ``exec``. Empty otherwise.
     ask_accesses: list[tuple[str, str]] = field(default_factory=list)
+    risk_level: RiskLevel = RiskLevel.NONE

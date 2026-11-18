@@ -25,7 +25,7 @@ from .meta_tools import (
     resolve_meta_tool_expansion,
     unregister_meta_tool,
 )
-from .models import PermissionLevel, PermissionResult
+from .models import PermissionLevel, PermissionResult, RiskLevel
 
 if TYPE_CHECKING:
     from . import runtime_policy as runtime_policy
@@ -44,6 +44,7 @@ __all__ = [
     "PermissionLevel",
     "PermissionManager",
     "PermissionResult",
+    "RiskLevel",
     "get_permission_manager",
     "new_permission_manager",
     "register_meta_tool",
