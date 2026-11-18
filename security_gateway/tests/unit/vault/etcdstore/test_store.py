@@ -384,9 +384,11 @@ def test_the_package_imports_without_etcd3(tmp_path) -> None:
     # the function that builds the client, nowhere else.
     """Test the package imports without etcd3."""
     src = Path(__file__).resolve().parents[4] / "src" / "security_gateway"
-    # The source tree keeps the package under ``src/security_gateway``, so
-    # that directory is exposed under the package's own name to make the
-    # import below work against the sources rather than an installed copy.
+    if not src.is_dir():
+        src = Path(__file__).resolve().parents[4] / "src"
+    # The source tree may keep the package under ``src/security_gateway`` or
+    # directly under ``src``; expose whichever exists under the package name
+    # so the import below works against the sources, not an installed copy.
     (tmp_path / "security_gateway").symlink_to(src, target_is_directory=True)
     code = (
         "import sys\n"
