@@ -711,12 +711,34 @@ index 051631291..63cb84851 100644
      "gitcode-cli==0.12.0",
      "imageio-ffmpeg>=0.5.1,<1",
  ]
+diff --git a/scripts/jiuwenswarm.spec b/scripts/jiuwenswarm.spec
+index b2ca98b1e..4c5c76ab2 100644
+--- a/scripts/jiuwenswarm.spec
++++ b/scripts/jiuwenswarm.spec
+@@ -478,6 +478,17 @@ datas += _sqlite_vec_datas
+ hiddenimports += _sqlite_vec_hidden
+ _bundled_binaries = _bundled_binaries + _sqlite_vec_binaries
+ 
++# AgentSSAS（agent_ssas）把检测模块与决策策略写成包内 YAML
++# （core/detection_modules/*/module.yaml、backend_client/openjiuwen/
++# decision_policies.yaml），并按 YAML 动态装配检测模块与 rail；PyInstaller
++# 静态分析既收不到这些数据文件，也跟不到动态导入的模块。冻结包缺
++# decision_policies.yaml 时策略模式会静默降级为默认行为，因此统一用
++# collect_all 收集数据文件与子模块。
++_agent_ssas_datas, _agent_ssas_binaries, _agent_ssas_hidden = collect_all("agent_ssas")
++datas += _agent_ssas_datas
++hiddenimports += _agent_ssas_hidden
++_bundled_binaries = _bundled_binaries + _agent_ssas_binaries
++
+ a = Analysis(
+     [entry_script],
+     pathex=[project_root, symphony_root, computer_use_source],
 diff --git a/tests/unit_tests/test_ssas_rail_assembly.py b/tests/unit_tests/test_ssas_rail_assembly.py
 new file mode 100644
-index 000000000..5838c25ed
+index 000000000..49e5d6227
 --- /dev/null
 +++ b/tests/unit_tests/test_ssas_rail_assembly.py
-@@ -0,0 +1,400 @@
+@@ -0,0 +1,404 @@
 +# -*- coding: utf-8 -*-
 +"""宿主侧 AgentSSAS rail 装配/收口/缓存并发逻辑单测.
 +
@@ -981,11 +1003,15 @@ index 000000000..5838c25ed
 +        ]
 +    # 已关闭循环条目的释放契约: backend 构造期即建立 SQLite 连接等同步
 +    # 资源, 不随循环销毁释放——清扫必须经独立线程的全新事件循环后台执行
-+    # close(条目所属循环已关闭, 无法派发), 与初始化失败/收口超时两条剔除
-+    # 路径的"后台关闭"契约一致(evicted.closed is True), 三条路径的释放
-+    # 契约由本用例与另两用例分别显式锁定; wait_for+gather 确定性等待清扫
-+    # 派发的全部 close Task 完成(to_thread 线程内 asyncio.run 退出即 close
-+    # 落定), 超时上限与同文件其余三处一致(5s)防用例悬挂
++    # close(条目所属循环已关闭, 无法派发)。三条释放路径按是否有持有者分层:
++    # 本用例(无持有者: 缓存条目所属循环已销毁)关闭; 初始化失败与收口超时
++    # 两条可自愈路径仅剔除不关闭(已装配 rail 代理可能仍持有该 backend,
++    # 后续事件由 _ensure_initialized 兜底), 分别由
++    # test_init_failure_evicts_cache_for_retry /
++    # test_wait_timeout_cancels_and_evicts_hung_task 断言 closed is False;
++    # wait_for+gather 确定性等待清扫派发的全部 close Task 完成(to_thread
++    # 线程内 asyncio.run 退出即 close 落定), 超时上限与同文件其余三处
++    # 一致(5s)防用例悬挂
 +    await asyncio.wait_for(
 +        asyncio.gather(*pending_close, return_exceptions=True), timeout=5.0
 +    )
