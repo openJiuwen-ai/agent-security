@@ -23,15 +23,30 @@ dev = [
 ]
 
 [tool.setuptools]
+# ``src`` is the package named ``security_gateway``; its children are the
+# subpackages.  A ``find`` directive would treat those children as top-level
+# packages (``vault``, ``crypto``) and break the import path, so the list is
+# explicit on purpose.  It must name every directory under ``src`` that has an
+# ``__init__.py``.
 package-dir = { security_gateway = "src" }
-
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["security_gateway*"]
+packages = [
+    "security_gateway",
+    "security_gateway.crypto",
+    "security_gateway.platform",
+    "security_gateway.vault",
+    "security_gateway.vault.clusterdek",
+    "security_gateway.vault.clusterkey",
+    "security_gateway.vault.etcdstore",
+    "security_gateway.vault.sync",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "slow: exercises real processes, real etcd, or multi-second failure recovery",
+    "load: multi-process or multi-node load test",
+]
 
 [tool.ruff]
 src = ["src"]
