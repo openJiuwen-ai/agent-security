@@ -58,10 +58,10 @@ index fe52e4d93..e3f970234 100644
    web:
      send_file_allowed: true
 diff --git a/jiuwenswarm/resources/config.team.distributed.teammate.yaml b/jiuwenswarm/resources/config.team.distributed.teammate.yaml
-index 112fca92d..eea5c034b 100644
+index bf3eb6d86..ee4807b90 100644
 --- a/jiuwenswarm/resources/config.team.distributed.teammate.yaml
 +++ b/jiuwenswarm/resources/config.team.distributed.teammate.yaml
-@@ -354,6 +354,54 @@ execution_guard:
+@@ -335,6 +335,54 @@ execution_guard:
        consecutive_threshold: 4
        bailout_threshold: 3
  
@@ -117,10 +117,10 @@ index 112fca92d..eea5c034b 100644
    web:
      send_file_allowed: true
 diff --git a/jiuwenswarm/resources/config.yaml b/jiuwenswarm/resources/config.yaml
-index b8b8ef218..42927c939 100644
+index 3a990c254..bf429bd39 100644
 --- a/jiuwenswarm/resources/config.yaml
 +++ b/jiuwenswarm/resources/config.yaml
-@@ -1099,6 +1099,52 @@ execution_guard:
+@@ -979,6 +979,52 @@ execution_guard:
      # 未知/错误工具连续调用达到该次数时停止重试并中断
      unknown_tool_threshold: 10
  
@@ -174,10 +174,10 @@ index b8b8ef218..42927c939 100644
    web:
      send_file_allowed: true
 diff --git a/jiuwenswarm/server/runtime/agent_adapter/interface_code.py b/jiuwenswarm/server/runtime/agent_adapter/interface_code.py
-index 80a72ab2d..6f5c49614 100644
+index 70adcb451..e4a304052 100644
 --- a/jiuwenswarm/server/runtime/agent_adapter/interface_code.py
 +++ b/jiuwenswarm/server/runtime/agent_adapter/interface_code.py
-@@ -65,6 +65,7 @@ from jiuwenswarm.server.runtime.agent_adapter.interface_deep import (
+@@ -68,6 +68,7 @@ from jiuwenswarm.server.runtime.agent_adapter.interface_deep import (
      _AGENT_CARD_ID,
      _CRON_TOOL_CHANNEL_ID,
      _RailBuildInfo,
@@ -185,7 +185,7 @@ index 80a72ab2d..6f5c49614 100644
      _deep_agent_context_engine_config_for_model,
      _deep_agent_kv_cache_affinity_config,
      parse_int,
-@@ -1176,6 +1177,12 @@ class JiuwenSwarmCodeAdapter(JiuWenSwarmDeepAdapter):
+@@ -1178,6 +1179,12 @@ class JiuwenSwarmCodeAdapter(JiuWenSwarmDeepAdapter):
          self._instance.deep_config.tool_owner_id = tool_owner_id
          self._instance.ability_manager.set_owner_id(tool_owner_id)
          self._code_spec_rails = list(self._instance.configured_rails())
@@ -197,8 +197,8 @@ index 80a72ab2d..6f5c49614 100644
 +        await _await_ssas_init_tasks()
          # Reloads never sync a caller-supplied Spec's tools, so the multimodal
          # config refresh must not track and rewrite them either.
-         self._set_multimodal_runtime_state(
-@@ -1897,6 +1904,11 @@ class JiuwenSwarmCodeAdapter(JiuWenSwarmDeepAdapter):
+         self._set_code_multimodal_runtime_state(
+@@ -2002,6 +2009,11 @@ class JiuwenSwarmCodeAdapter(JiuWenSwarmDeepAdapter):
              ),
              _RailBuildInfo("_stream_event_rail", self._build_stream_event_rail),
              _RailBuildInfo("_security_rail", self._build_security_rail),
@@ -210,7 +210,7 @@ index 80a72ab2d..6f5c49614 100644
              _RailBuildInfo("_heartbeat_rail", self._build_heartbeat_rail),
              _RailBuildInfo(
                  "_session_messaging_route_rail",
-@@ -3361,6 +3373,10 @@ class JiuwenSwarmCodeAdapter(JiuWenSwarmDeepAdapter):
+@@ -3462,6 +3474,10 @@ class JiuwenSwarmCodeAdapter(JiuWenSwarmDeepAdapter):
          added_tools = _merge_tool_cards(agent, tool_cards)
  
          rails = self._build_agent_rails(react_config, config_base, mode="code")
@@ -222,13 +222,13 @@ index 80a72ab2d..6f5c49614 100644
  
          subagents, _should_add_general = self._build_configured_subagents(model, react_config, config_base)
 diff --git a/jiuwenswarm/server/runtime/agent_adapter/interface_deep.py b/jiuwenswarm/server/runtime/agent_adapter/interface_deep.py
-index 7bd1441ea..3944d434f 100644
+index 3232c8ba1..bc2da3ee1 100644
 --- a/jiuwenswarm/server/runtime/agent_adapter/interface_deep.py
 +++ b/jiuwenswarm/server/runtime/agent_adapter/interface_deep.py
-@@ -130,6 +130,26 @@ from openjiuwen.harness.rails.context_engineer.context_assemble_rail import Cont
+@@ -120,6 +120,26 @@ from openjiuwen.harness.rails.context_engineer.context_assemble_rail import Cont
  from openjiuwen.harness.rails.context_engineer.context_processor_rail import ContextProcessorRail
  from openjiuwen.harness.subagents.browser_agent import build_browser_agent_config
- from openjiuwen.harness.subagents.code_agent import build_code_agent_config
+ from jiuwenswarm.agents.harness.common.cua_factory import build_cua_agent_config
 +
 +# AgentSSAS: 可选导入 AgentSSASSecurityRail(fail-open,未安装时降级为不注册)
 +# 注: try/except 条件导入块整体对 E402 豁免, _SSAS_AVAILABLE 赋值必须
@@ -252,7 +252,7 @@ index 7bd1441ea..3944d434f 100644
  from openjiuwen.harness.subagents.research_agent import build_research_agent_config
  from openjiuwen.harness.subagent_runtime import (
      SUBAGENT_ACTIVITY_EVENT_TYPE,
-@@ -913,6 +933,258 @@ def _permission_user_text_for_request(request: AgentRequest) -> str:
+@@ -762,6 +782,261 @@ def _permission_user_text_for_request(request: AgentRequest) -> str:
  
  logger = logging.getLogger(__name__)
  
@@ -265,20 +265,22 @@ index 7bd1441ea..3944d434f 100644
 +# 用 RLock: 竞态落败路径在临界区内调用 _close_ssas_backend_in_background,
 +# 后者需再入同一线程的锁登记 close Task, 非重入锁会自锁死
 +_SSAS_INIT_TASKS_LOCK = threading.RLock()
-+# 收口等待上界(秒): 初始化含检测模块加载与一次启动 TTL 清理, 留足余量;
-+# 超时告警后放行(fail-open), 后续事件由 backend 的 _ensure_initialized 兜底
-+_SSAS_INIT_WAIT_TIMEOUT: float = 30.0
++# 收口等待上界(秒): 实例创建为同步契约路径, 上界即用户首请求时延天花板;
++# 初始化是 in-process 本地操作(模块加载 + 单次启动 TTL 清理), 正常亚秒级
++# 完成, 5s 覆盖慢盘/冷启动余量即可。超时告警后放行(fail-open), 后续事件
++# 由 backend 的 _ensure_initialized 兜底等待, 安全感知仅延迟就绪不丢失
++_SSAS_INIT_WAIT_TIMEOUT: float = 5.0
 +# 初始化 Task -> (缓存键, backend) 反查表: 初始化失败/收口超时时剔除缓存
 +# 条目, 让下次装配重建 backend 并重试(自愈), 而非永远复用未就绪实例;
 +# 与 _SSAS_INIT_TASKS 同锁保护, done callback 中随 Task 一并清理
 +_SSAS_INIT_TASK_KEYS: "dict[asyncio.Task[None], tuple[tuple[Any, str], Any]]" = {}
-+# 竞态落败/初始化失败/收口超时剔除 backend 的后台 close Task 强引用集
++# 竞态落败/已关闭循环条目清扫的 backend 后台 close Task 强引用集
 +# (防 GC 中途销毁); done callback 中自动移出, 与 _SSAS_INIT_TASKS 同锁保护
 +_SSAS_CLOSE_TASKS: "set[asyncio.Task[None]]" = set()
 +
 +
 +def _log_ssas_close_result(task: "asyncio.Task[None]") -> None:
-+    """被剔除/落败 backend 的后台 close 完成回调: 移除引用并记录异常."""
++    """竞态落败/已关闭循环清扫 backend 的后台 close 完成回调: 移除引用并记录异常."""
 +    with _SSAS_INIT_TASKS_LOCK:
 +        _SSAS_CLOSE_TASKS.discard(task)
 +    if task.cancelled():
@@ -316,17 +318,20 @@ index 7bd1441ea..3944d434f 100644
 +def _close_ssas_backend_in_background(
 +    backend: Any, backend_loop: asyncio.AbstractEventLoop
 +) -> None:
-+    """后台关闭被剔除/落败/清扫的 backend, 防 SQLite 连接等资源泄漏.
++    """后台关闭竞态落败/已关闭循环清扫的 backend, 防 SQLite 连接等资源泄漏.
 +
-+    backend 构造期即建立 SQLite 连接等同步资源, 初始化失败/收口超时剔除、
-+    双检锁竞态落败或已关闭循环条目清扫后不再被缓存复用, 不关闭的话重复
-+    失败装配会持续累积泄漏(SQLite 连接 fd 耗尽、Windows 上 WAL 文件句柄
-+    锁定), 故统一经本通道关闭: close Task 强引用存入 _SSAS_CLOSE_TASKS
-+    (防 GC 中途销毁), done callback(_log_ssas_close_result)记录异常并
-+    移出。close 经 getattr 防御获取; backend 所属循环已关闭时, close
-+    无法派发到原循环, 改经 to_thread 在独立线程的全新事件循环中执行
-+    (见 _close_ssas_backend_in_fresh_loop), 保证循环生命周期之外的
-+    同步资源同样被释放。close Task 登记在调用方运行中的事件循环上。
++    仅用于无持有者的 backend: 双检锁竞态落败的 candidate 从未入缓存、
++    已关闭循环条目清扫前已 pop 出缓存, 两者都不会被 rail 代理持有或
++    缓存复用, 不关闭的话重复并发装配会持续累积泄漏(SQLite 连接 fd
++    耗尽、Windows 上 WAL 文件句柄锁定), 故经本通道关闭: close Task
++    强引用存入 _SSAS_CLOSE_TASKS(防 GC 中途销毁), done callback
++    (_log_ssas_close_result)记录异常并移出。初始化失败/收口超时剔除的
++    backend 可能已被 rail 持有且可由 _ensure_initialized 自愈, 不走
++    本通道(见 _log_ssas_init_result/_await_ssas_init_tasks)。close 经
++    getattr 防御获取; backend 所属循环已关闭时, close 无法派发到原
++    循环, 改经 to_thread 在独立线程的全新事件循环中执行(见
++    _close_ssas_backend_in_fresh_loop), 保证循环生命周期之外的同步
++    资源同样被释放。close Task 登记在调用方运行中的事件循环上。
 +    """
 +    if backend is None:
 +        return
@@ -348,6 +353,9 @@ index 7bd1441ea..3944d434f 100644
 +    try:
 +        close_task = loop.create_task(close_coro)
 +    except RuntimeError:
++        # create_task 失败(循环已关闭等)时 close_coro 无人接管, 显式
++        # close 释放协程, 防 "coroutine was never awaited" RuntimeWarning
++        close_coro.close()
 +        return
 +    with _SSAS_INIT_TASKS_LOCK:
 +        _SSAS_CLOSE_TASKS.add(close_task)
@@ -356,25 +364,23 @@ index 7bd1441ea..3944d434f 100644
 +
 +def _log_ssas_init_result(task: "asyncio.Task[None]") -> None:
 +    """AgentSSAS backend 初始化 Task 完成回调: 移除引用并记录异常."""
-+    evicted: "tuple[tuple[Any, str], Any] | None" = None
 +    with _SSAS_INIT_TASKS_LOCK:
 +        _SSAS_INIT_TASKS.discard(task)
 +        entry = _SSAS_INIT_TASK_KEYS.pop(task, None)
 +        if task.cancelled():
 +            logger.warning("[JiuWenSwarmDeepAdapter] AgentSSAS backend init task cancelled")
 +            _evict_ssas_backend_locked(entry)
-+            evicted = entry
 +        else:
 +            exc = task.exception()
 +            if exc is not None:
 +                logger.warning("[JiuWenSwarmDeepAdapter] AgentSSAS backend init failed: %s", exc)
 +                _evict_ssas_backend_locked(entry)
-+                evicted = entry
-+    # 初始化失败/被取消的 backend 已被剔除出缓存, 后台关闭其构造期建立的
-+    # SQLite 连接等资源(重复失败装配不累积泄漏); 收口超时路径先行 pop
-+    # 反查表, 此处 entry 为 None, 不会二次关闭
-+    if evicted is not None:
-+        _close_ssas_backend_in_background(evicted[1], task.get_loop())
++    # 初始化失败/被取消的 backend 仅剔除缓存、不主动关闭: 它可能已被
++    # 本次装配的 rail 经代理持有, 且 report_event 入口的
++    # _ensure_initialized 兜底会在后续事件上自愈重试初始化, 后台关闭
++    # 会与该兜底及已装配 rail 竞态(事件打到已关闭对象)。backend 生命周期
++    # 本为进程级(见 _SSAS_BACKEND_CACHE), 同步资源随进程退出回收;
++    # 剔除后缓存不复用, 不构成无界泄漏
 +
 +
 +def _evict_ssas_backend_locked(
@@ -411,8 +417,10 @@ index 7bd1441ea..3944d434f 100644
 +    - asyncio.wait 带超时上界, 避免初始化挂死无限阻塞实例创建;
 +      超时仅告警并放行, 后续首个事件仍由 backend report_event 入口的
 +      _ensure_initialized 兜底等待(等待而非丢弃);
-+    - 超时剔除的 backend 经 _close_ssas_backend_in_background 后台关闭,
-+      防止其构造期建立的资源随重复失败装配持续累积泄漏。
++    - 超时剔除仅取消挂死 Task 并剔除缓存条目, 不主动关闭 backend:
++      它可能已被本次装配的 rail 持有, 且可能恰在超时判定后自行完成
++      初始化, 关闭会与 _ensure_initialized 兜底及事件上报竞态; backend
++      生命周期为进程级, 剔除后缓存不复用, 不构成无界泄漏。
 +    """
 +    loop = asyncio.get_running_loop()
 +    with _SSAS_INIT_TASKS_LOCK:
@@ -435,24 +443,19 @@ index 7bd1441ea..3944d434f 100644
 +        )
 +        # 超时剔除: 挂死 Task 移出跟踪集、取消执行并剔除对应缓存条目。
 +        # 不移出的话, 后续每次 create_instance 收口都会对同一挂死 Task
-+        # 重复等满 30s; 不取消的话, Task 与其 backend 引用会永久滞留(泄漏);
-+        # 剔除缓存后, 下次装配重建 backend 并重新初始化(自愈); 已装配
-+        # rail 的事件由 _ensure_initialized 兜底。取消触发 done callback
-+        # (cancelled 分支), 其中 discard/pop 均为幂等空操作, 安全。
-+        evicted_backends: list[Any] = []
++        # 重复等满整个上界; 不取消的话, Task 与其 backend 引用会永久滞留
++        # (泄漏); 剔除缓存后, 下次装配重建 backend 并重新初始化(自愈);
++        # 已装配 rail 的事件由 _ensure_initialized 兜底。剔除条目不主动
++        # 关闭: 挂死 backend 可能恰在超时判定后自行完成初始化并由兜底
++        # 接管, 关闭会与其竞态; backend 生命周期为进程级, 剔除后缓存
++        # 不复用, 不构成无界泄漏。取消触发 done callback(cancelled 分支),
++        # 其中 discard/pop/剔除均为幂等空操作, 安全。
 +        with _SSAS_INIT_TASKS_LOCK:
 +            for task in still_pending:
 +                _SSAS_INIT_TASKS.discard(task)
 +                entry = _SSAS_INIT_TASK_KEYS.pop(task, None)
 +                _evict_ssas_backend_locked(entry)
-+                if entry is not None:
-+                    evicted_backends.append(entry[1])
 +                task.cancel()
-+        # 先取消后关闭: close Task 排在取消投递之后调度, 挂死的初始化协程
-+        # 先处理取消再由 close 释放资源; 反查表条目已被本分支独占 pop,
-+        # done callback 不会二次关闭同一 backend
-+        for backend in evicted_backends:
-+            _close_ssas_backend_in_background(backend, loop)
 +
 +
 +# AgentSSAS backend 进程级复用缓存: create_instance 会被 reload/权限隔离/
@@ -511,7 +514,7 @@ index 7bd1441ea..3944d434f 100644
  
  def _model_name_names_selection(model_name: str, selection: ModelSelection) -> bool:
      """Whether an ordinary model name and a stable model selection pick the same catalog model.
-@@ -2210,6 +2482,8 @@ class JiuWenSwarmDeepAdapter:
+@@ -2135,6 +2410,8 @@ class JiuWenSwarmDeepAdapter:
          self._personal_context_rail: PersonalContextRail | None = None
          self._personal_context_rail_lock = asyncio.Lock()
          self._security_rail: SecurityRail | None = None
@@ -520,7 +523,7 @@ index 7bd1441ea..3944d434f 100644
          self._memory_rail: MemoryRail | None = None
          self._external_memory_rail: Any = None
          self._external_memory_rail_registered: bool = False
-@@ -11477,6 +11751,153 @@ class JiuWenSwarmDeepAdapter:
+@@ -10289,6 +10566,153 @@ class JiuWenSwarmDeepAdapter:
              security_prompt_rail = None
          return security_prompt_rail
  
@@ -674,7 +677,7 @@ index 7bd1441ea..3944d434f 100644
      # 重索引延时（秒）：embedding 配置变更后，延后这段时间再跑一次全量重索引。
      # 配合 _schedule_memory_reindex 的 debounce，连续改多次只在最后一次后跑一次。
      _MEMORY_REINDEX_DELAY_SECONDS: float = 5.0
-@@ -12285,6 +12706,11 @@ class JiuWenSwarmDeepAdapter:
+@@ -10963,6 +11387,11 @@ class JiuWenSwarmDeepAdapter:
              _RailBuildInfo("_stream_event_rail", self._build_stream_event_rail),
              _RailBuildInfo("_task_planning_rail", self._build_task_planning_rail),
              _RailBuildInfo("_security_rail", self._build_security_rail),
@@ -686,7 +689,7 @@ index 7bd1441ea..3944d434f 100644
              _RailBuildInfo(
                  "_model_anomaly_detection_rail",
                  self._build_model_anomaly_detection_rail,
-@@ -13921,6 +14347,9 @@ class JiuWenSwarmDeepAdapter:
+@@ -12513,6 +12942,9 @@ class JiuWenSwarmDeepAdapter:
              mode=mode,
              composition_scope=composition_scope,
          )
@@ -694,26 +697,26 @@ index 7bd1441ea..3944d434f 100644
 +        # 已完成初始化(初始化异常已由 done callback 告警, fail-open 不阻断)
 +        await _await_ssas_init_tasks()
          resolved_language = self._resolve_runtime_language()
-         workspace_obj = self._get_memory_workspace(resolved_language, config=config_base)
-         if agent_definition is not None and agent_definition.get("tools") != "*":
+         workspace_obj = Workspace(
+             root_path=self._workspace_dir or "./",
 diff --git a/pyproject.toml b/pyproject.toml
-index f2ddb31ae..2604b16d4 100644
+index 051631291..63cb84851 100644
 --- a/pyproject.toml
 +++ b/pyproject.toml
-@@ -84,6 +84,7 @@ dependencies = [
+@@ -70,6 +70,7 @@ dependencies = [
+     "tree-sitter-bash>=0.25.0,<0.26.0",
      "playwright>=1.40,<2",
-     "tiktoken>=0.12.0,<0.13",
      "uv>=0.4.0,<0.13",
 +    "openjiuwen-security==0.0.1b2",
      "gitcode-cli==0.12.0",
      "imageio-ffmpeg>=0.5.1,<1",
-     # Enterprise / link-mtls / manager-config. Dockerfile.claw strips this line via
+ ]
 diff --git a/tests/unit_tests/test_ssas_rail_assembly.py b/tests/unit_tests/test_ssas_rail_assembly.py
 new file mode 100644
-index 000000000..95312e195
+index 000000000..5838c25ed
 --- /dev/null
 +++ b/tests/unit_tests/test_ssas_rail_assembly.py
-@@ -0,0 +1,415 @@
+@@ -0,0 +1,400 @@
 +# -*- coding: utf-8 -*-
 +"""宿主侧 AgentSSAS rail 装配/收口/缓存并发逻辑单测.
 +
@@ -731,7 +734,6 @@ index 000000000..95312e195
 +# agent-ssas 是必装依赖(uv.lock 固定): 缺失属安装/锁定失败, 本模块用例
 +# 会在收集/运行期直接 error 硬红, 不设 skipif——避免依赖缺失时整模块跳过
 +# 伪装成"通过"
-+pytestmark = [pytest.mark.filterwarnings("ignore")]
 +
 +
 +@pytest.fixture(autouse=True)
@@ -840,7 +842,7 @@ index 000000000..95312e195
 +        raise RuntimeError("injected init failure")
 +
 +    class _EvictedBackend:
-+        """替身: 顶替缓存条目模拟初始化失败态, 记录后台 close 是否触达."""
++        """替身: 顶替缓存条目模拟初始化失败态, 记录 close 是否被误触达."""
 +
 +        def __init__(self):
 +            self.closed = False
@@ -860,16 +862,9 @@ index 000000000..95312e195
 +    with pytest.raises(RuntimeError, match="injected init failure"):
 +        await asyncio.wait_for(fail_task, timeout=5.0)
 +    assert m._SSAS_BACKEND_CACHE.get(key) is None
-+    # 剔除的 backend 被后台关闭, 防构造期资源随重复失败装配累积泄漏
-+    pending_close = [t for t in m._SSAS_CLOSE_TASKS if not t.done()]
-+    if pending_close:
-+        await asyncio.wait_for(
-+            asyncio.gather(*pending_close, return_exceptions=True), timeout=5.0
-+        )
-+    # 协程完成与 done callback(_log_ssas_close_result)移出集合相差一个
-+    # 循环节拍, 补一拍确定性等待后再断言
-+    await asyncio.sleep(0)
-+    assert evicted.closed is True
++    # 剔除契约: 初始化失败仅剔除缓存, 不主动关闭 backend(其可能由
++    # _ensure_initialized 兜底自愈, 已装配 rail 代理仍持有引用)
++    assert evicted.closed is False
 +    with m._SSAS_INIT_TASKS_LOCK:
 +        assert len(m._SSAS_CLOSE_TASKS) == 0
 +
@@ -890,7 +885,7 @@ index 000000000..95312e195
 +        await asyncio.sleep(3600)
 +
 +    class _HungBackend:
-+        """替身: 记录超时剔除后的后台 close 是否触达."""
++        """替身: 记录超时剔除后 close 是否被误触达."""
 +
 +        def __init__(self):
 +            self.closed = False
@@ -921,17 +916,10 @@ index 000000000..95312e195
 +    with m._SSAS_INIT_TASKS_LOCK:
 +        assert hung not in m._SSAS_INIT_TASKS
 +        assert key not in m._SSAS_BACKEND_CACHE
-+    # 超时剔除的 backend 被后台关闭(防资源泄漏), 若 close Task 尚未完成
-+    # 则确定性等待其结束
-+    pending_close = [t for t in m._SSAS_CLOSE_TASKS if not t.done()]
-+    if pending_close:
-+        await asyncio.wait_for(
-+            asyncio.gather(*pending_close, return_exceptions=True), timeout=5.0
-+        )
-+    # 协程完成与 done callback(_log_ssas_close_result)移出集合相差一个
-+    # 循环节拍, 补一拍确定性等待后再断言
-+    await asyncio.sleep(0)
-+    assert fake_backend.closed is True
++    # 超时剔除契约: 仅取消 Task 并剔除缓存, 不主动关闭 backend(挂死
++    # backend 可能恰在超时后自行完成初始化, 关闭会与 _ensure_initialized
++    # 兜底竞态)
++    assert fake_backend.closed is False
 +    with m._SSAS_INIT_TASKS_LOCK:
 +        assert len(m._SSAS_CLOSE_TASKS) == 0
 +    t1 = time.monotonic()
@@ -1130,11 +1118,11 @@ index 000000000..95312e195
 +    # _SSAS_CLOSE_TASKS 收口断言锁定该契约, 不再重复 close
 +    await state["winner"].close()
 diff --git a/uv.lock b/uv.lock
-index 4427e782a..b9972f66d 100644
+index 695c5a4c3..92d3920e3 100644
 --- a/uv.lock
 +++ b/uv.lock
-@@ -3980,6 +3980,28 @@ dependencies = [
-     { name = "sqlalchemy" },
+@@ -3129,6 +3129,28 @@ zmq = [
+     { name = "tornado" },
  ]
  
 +[[package]]
@@ -1162,7 +1150,7 @@ index 4427e782a..b9972f66d 100644
  [[package]]
  name = "openpyxl"
  version = "3.1.5"
-@@ -6807,6 +6829,38 @@ wheels = [
+@@ -5623,6 +5645,38 @@ wheels = [
      { url = "https://files.pythonhosted.org/packages/47/75/4ca1a9fabd8fb5aea78cea70f7837ce4dbf2afae115f62051e5fa99cba1c/tree_sitter_bash-0.25.1-cp310-abi3-win_arm64.whl", hash = "sha256:59115057ec2bae319e8082ff29559861045002964c3431ccb0fc92aa4bc9bccb", size = 191196, upload-time = "2025-12-02T17:01:07.486Z" },
  ]
  
@@ -1201,19 +1189,19 @@ index 4427e782a..b9972f66d 100644
  [[package]]
  name = "typer"
  version = "0.25.0"
-@@ -7236,6 +7290,7 @@ dependencies = [
+@@ -5997,6 +6051,7 @@ dependencies = [
+     { name = "mutagen" },
+     { name = "numpy" },
      { name = "openjiuwen" },
-     { name = "openjiuwen-computeruse" },
-     { name = "openjiuwen-runtime-foundation" },
 +    { name = "openjiuwen-security" },
      { name = "opentelemetry-api" },
      { name = "opentelemetry-exporter-otlp-proto-grpc" },
      { name = "opentelemetry-exporter-otlp-proto-http" },
-@@ -7465,6 +7520,7 @@ requires-dist = [
-     { name = "openjiuwen", extras = ["postgres", "zmq"], marker = "extra == 'distribute'", git = "https://gitcode.com/openJiuwen/agent-core.git?rev=45d53dd1919a09e3801ce7bca3798f776ac72ca1" },
-     { name = "openjiuwen-computeruse", git = "https://gitcode.com/openJiuwen/computer-use.git?rev=2c8171fb6783dba589dd396263b3161186c5f3e4" },
-     { name = "openjiuwen-runtime-foundation", git = "https://gitcode.com/openJiuwen/agent-runtime.git?subdirectory=foundation&branch=develop" },
+@@ -6200,6 +6255,7 @@ requires-dist = [
+     { name = "openjiuwen", extras = ["codex"], marker = "extra == 'codex'", git = "https://gitcode.com/openJiuwen/agent-core.git?branch=release%2Fv0.1.20.agent_os" },
+     { name = "openjiuwen", extras = ["cua"], marker = "extra == 'cua'", git = "https://gitcode.com/openJiuwen/agent-core.git?branch=release%2Fv0.1.20.agent_os" },
+     { name = "openjiuwen", extras = ["postgres", "zmq"], marker = "extra == 'distribute'", git = "https://gitcode.com/openJiuwen/agent-core.git?branch=release%2Fv0.1.20.agent_os" },
 +    { name = "openjiuwen-security", specifier = "==0.0.1b2" },
-     { name = "opentelemetry-api", specifier = ">=1.28.0" },
+     { name = "opentelemetry-api", specifier = ">=1.28.0,<1.42" },
      { name = "opentelemetry-api", marker = "extra == 'harmony'", specifier = ">=1.28.0" },
-     { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.28.0" },
+     { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.28.0,<1.42" },
