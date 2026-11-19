@@ -249,6 +249,27 @@ class PendingMint:
         return committed
 
 
+def _pending_key(etcd_store, self: Identity, generation: int) -> bytes | None:
+    """Return the key a dead rotator already sealed to this node, if any."""
+    if self.private is None or generation < 1:
+        return None
+    from ..clusterdek import unwrap
+    from ..etcdstore.cluster import load_pending_dek
+
+    blob = load_pending_dek(etcd_store.kv, etcd_store.ns, generation, self.node_id)
+    if blob is None:
+        return None
+    try:
+        return unwrap(self.private, blob)
+    except Exception as exc:  # noqa: BLE001 - a peer may still hold the key
+        _log.warning(
+            "could not unwrap the pending key for generation %s: %s",
+            generation,
+            exc,
+        )
+        return None
+
+
 def obtain(
     cfg: Config,
     etcd_store,
@@ -334,24 +355,43 @@ def obtain(
                     "refusing to recover the fleet's key"
                 )
             if not present:
-                # The minter wrote the permanent mint but died before any node
-                # could adopt its key, and no live node holds it.  Re-mint one
-                # generation above the lost one so the fleet can start again.
                 current = etcd_store.generation()
-                dek = _random_key()
-                if pending is None:
-                    raise ValueError(
-                        "clusterkey: replacing the fleet's key requires a pending commit sink"
+                # A rotation publishes its sealed key before it moves the
+                # generation fence.  The pending key is filed under the
+                # generation it will become, so while the fence still says
+                # ``current`` the key to adopt is ``current``'s pending key,
+                # not the next generation's.  If the rotator died between
+                # those two steps there is no live holder, but the key is not
+                # lost: it is already sealed to every node.  Adopt it instead
+                # of minting a fresh generation, or the pending key becomes
+                # permanently unreachable.
+                adopted = _pending_key(etcd_store, self, current)
+                if adopted is not None:
+                    _log.info(
+                        "adopted the dead rotator's pending key",
+                        extra={"node_id": self.node_id, "generation": current},
                     )
-                pending.append(
-                    PendingMint(
-                        etcd_store=etcd_store,
-                        node_id=self.node_id,
-                        generation=current + 1,
-                        recover_owner=owner,
+                    return adopted, current
+                # Once a rotation has published its key, that key is
+                # quorum-durable and the dead minter no longer matters: the
+                # pending copy above, or a live peer, is the authority.  Only
+                # the initial mint can be recovered by minting again, because
+                # no generation was ever published and no record was written.
+                if current <= MINTED_GENERATION:
+                    dek = _random_key()
+                    if pending is None:
+                        raise ValueError(
+                            "clusterkey: replacing the fleet's key requires a pending commit sink"
+                        )
+                    pending.append(
+                        PendingMint(
+                            etcd_store=etcd_store,
+                            node_id=self.node_id,
+                            generation=current + 1,
+                            recover_owner=owner,
+                        )
                     )
-                )
-                return dek, current + 1
+                    return dek, current + 1
 
     # Someone else holds the key. Ask for it: publish a request carrying a
     # key generated for this one exchange, and wait for a holder to answer
