@@ -12,6 +12,12 @@ from jiuwenbox.supervisor import win_setup as setup
 from jiuwenbox.supervisor import win_wfp as wfp
 
 
+@pytest.fixture(autouse=True)
+def _mock_firewall_migration(monkeypatch):
+    monkeypatch.setattr(wfp, 'remove_legacy_dns_firewall_rules', Mock())
+    monkeypatch.setattr(wfp, 'verify_legacy_dns_permits_absent', Mock())
+
+
 def _prepared(monkeypatch):
     monkeypatch.setattr(setup, '_require_windows', Mock())
     monkeypatch.setattr(setup, 'reg_get_str', lambda key: '1' if key == const.REG_VALUE_INSTALLED else None)
@@ -73,25 +79,49 @@ def test_port_repair_never_uninstalls_another_instances_filters(monkeypatch):
     uninstall.assert_not_called()
 
 
-@pytest.mark.parametrize('fallback_ok', [False, True])
-def test_port_repair_preserves_existing_firewall_fallback_without_false_success(monkeypatch, fallback_ok):
-    monkeypatch.setattr(setup, 'get_sandbox_user_sid', lambda: 'S-test')
-    write = Mock()
-    monkeypatch.setattr(setup, '_reg_set_str', write)
-    monkeypatch.setattr(setup, 'reg_get_str', lambda _key: None)
-    monkeypatch.setattr(wfp, 'install_wfp_filters', Mock(side_effect=OSError('WFP unavailable')))
-    fallback = Mock(return_value=fallback_ok)
+@pytest.mark.parametrize('install_ok,live_ok', [(False, False), (True, False), (True, True)])
+def test_port_repair_records_fallback_only_after_live_verification(monkeypatch, install_ok, live_ok):
+    values = _registry(monkeypatch, {'sid': 'S-test', 'firewall_ranges': [[61000, 61002]]})
+    previous = values[setup._PROXY_PERMIT_RECORD]
+    wfp_error = OSError('WFP unavailable')
+    monkeypatch.setattr(wfp, 'install_wfp_filters', Mock(side_effect=wfp_error))
+    monkeypatch.setattr(wfp, 'proxy_permits_installed',
+                        Mock(side_effect=AssertionError('fallback must read legacy keys directly')))
+    fallback = Mock(return_value=install_ok)
+    live = Mock(return_value=live_ok)
     monkeypatch.setattr(wfp, 'install_firewall_rule_fallback', fallback)
-    if fallback_ok:
+    monkeypatch.setattr(wfp, 'firewall_permits_installed', live)
+    if live_ok:
         setup._repair_proxy_permits(61100, 61102)
-        record = json.loads(write.call_args.args[1])
+        record = json.loads(values[setup._PROXY_PERMIT_RECORD])
         assert record['sid'] == 'S-test'
-        assert record['firewall_ranges'] == [[61100, 61102]]
+        assert record['firewall_ranges'] == [[61000, 61002], [61100, 61102]]
+        assert record['firewall_legacy_dns_verified'] is True
     else:
-        with pytest.raises(RuntimeError):
+        with pytest.raises(RuntimeError, match='网络隔离不可用') as caught:
             setup._repair_proxy_permits(61100, 61102)
-        write.assert_not_called()
+        assert caught.value.__cause__ is wfp_error
+        assert values[setup._PROXY_PERMIT_RECORD] == previous
+    wfp.verify_legacy_dns_permits_absent.assert_called_once_with()
     fallback.assert_called_once_with(const.SANDBOX_USER_NAME, 61100, 61102, sandbox_user_sid='S-test')
+    if install_ok:
+        live.assert_called_once_with('S-test', 61100, 61102)
+    else:
+        live.assert_not_called()
+
+
+@pytest.mark.parametrize('failure', [wfp.LegacyDnsPermitError('legacy present'), OSError('BFE unavailable')])
+def test_port_repair_rejects_present_or_unreadable_legacy_wfp_permits(monkeypatch, failure):
+    values = _registry(monkeypatch)
+    monkeypatch.setattr(wfp, 'install_wfp_filters', Mock(side_effect=OSError('WFP install failed')))
+    wfp.verify_legacy_dns_permits_absent.side_effect = failure
+    fallback = Mock()
+    monkeypatch.setattr(wfp, 'install_firewall_rule_fallback', fallback)
+    with pytest.raises(type(failure)) as caught:
+        setup._repair_proxy_permits(61100, 61102)
+    assert caught.value is failure
+    fallback.assert_not_called()
+    assert setup._PROXY_PERMIT_RECORD not in values
 
 
 @pytest.mark.parametrize('record,expected', [
@@ -102,7 +132,8 @@ def test_port_repair_preserves_existing_firewall_fallback_without_false_success(
 ])
 def test_firewall_port_evidence_is_bound_to_sid_and_complete_range(monkeypatch, record, expected):
     monkeypatch.setattr(setup, 'get_sandbox_user_sid', lambda: 'S-test')
-    monkeypatch.setattr(setup, 'reg_get_str', lambda _key: json.dumps(record))
+    monkeypatch.setattr(setup, '_lookup_user_sid', lambda _user: 'S-test')
+    monkeypatch.setattr(setup, 'reg_get_str', lambda _key: json.dumps({'network_policy_version': 2, **record}))
     monkeypatch.setattr(wfp, 'proxy_permits_installed', Mock(side_effect=OSError()), raising=False)
     live = Mock(return_value=True)
     monkeypatch.setattr(wfp, 'firewall_permits_installed', live, raising=False)
@@ -139,10 +170,10 @@ def _no_native_account_lookup(monkeypatch):
     monkeypatch.setattr(setup, '_lookup_user_sid', lambda _user: 'S-test')
 
 
-def _registry(monkeypatch, record=None):
+def _registry(monkeypatch, record=None, *, version=2):
     values = {const.REG_VALUE_INSTALLED: '1'}
     if record is not None:
-        values[setup._PROXY_PERMIT_RECORD] = json.dumps(record)
+        values[setup._PROXY_PERMIT_RECORD] = json.dumps({'network_policy_version': version, **record})
     monkeypatch.setattr(setup, 'reg_get_str', values.get)
     monkeypatch.setattr(setup, '_reg_set_str', values.__setitem__)
     monkeypatch.setattr(setup, 'get_sandbox_user_sid', lambda: 'S-test')
@@ -163,6 +194,14 @@ def test_nonadmin_custom_range_stays_ready_after_successful_privileged_repair(mo
     assert record['wfp_ranges'] == [[61100, 61102]]
     setup.ensure_windows_setup(proxy_port_start=61100, proxy_port_end=61102, allow_elevation=False)
     install.assert_called_once()
+
+
+def test_old_receipt_cannot_certify_dns_rule_migration(monkeypatch):
+    _registry(monkeypatch, {'sid': 'S-test', 'wfp_ranges': [[61100, 61102]]}, version=1)
+    live = Mock(return_value=True)
+    monkeypatch.setattr(wfp, 'proxy_permits_installed', live)
+    assert not setup._proxy_ports_ready(61100, 61102)
+    live.assert_not_called()
 
 
 @pytest.mark.parametrize('query', [True, False, PermissionError(13, 'denied'), OSError('BFE unavailable')])
@@ -235,7 +274,8 @@ def test_failed_receipt_invalidation_stops_recreation_before_destructive_steps(m
     exists.assert_not_called()
 
 
-def test_full_install_records_wfp_success_before_later_setup_steps(monkeypatch):
+@pytest.mark.parametrize('backend', ['wfp', 'firewall'])
+def test_full_install_records_network_success_before_later_setup_steps(monkeypatch, backend):
     from jiuwenbox.supervisor import win_acl
 
     monkeypatch.setattr(setup, '_require_windows', Mock())
@@ -247,10 +287,14 @@ def test_full_install_records_wfp_success_before_later_setup_steps(monkeypatch):
                  '_grant_interactive_logon_right', '_install_rollback']:
         monkeypatch.setattr(setup, name, Mock())
     monkeypatch.setattr(win_acl, 'get_synthetic_write_sid', lambda: 'S-synthetic')
-    monkeypatch.setattr(wfp, 'install_wfp_filters', Mock())
+    wfp_failure = OSError('WFP install failed') if backend == 'firewall' else None
+    monkeypatch.setattr(wfp, 'install_wfp_filters', Mock(side_effect=wfp_failure))
+    monkeypatch.setattr(wfp, 'install_firewall_rule_fallback', Mock(return_value=True))
+    live = Mock(return_value=True)
+    monkeypatch.setattr(wfp, 'firewall_permits_installed', live)
 
     def stop():
-        assert json.loads(values[setup._PROXY_PERMIT_RECORD])['wfp_ranges'] == [[61100, 61102]]
+        assert json.loads(values[setup._PROXY_PERMIT_RECORD])[f'{backend}_ranges'] == [[61100, 61102]]
         raise RuntimeError('stop after receipt')
 
     # Stop before any filesystem ACL operation, after completing network setup.
@@ -260,6 +304,7 @@ def test_full_install_records_wfp_success_before_later_setup_steps(monkeypatch):
         setup.install(force=True, proxy_port_start=61100, proxy_port_end=61102,
                       preinstall_paths=paths)
     paths.__iter__.assert_called_once()
+    assert live.called is (backend == 'firewall')
 
 
 @pytest.mark.parametrize('query', [False, PermissionError(13, 'denied'), OSError('BFE unavailable')])
@@ -273,6 +318,23 @@ def test_firewall_receipt_requires_live_rules_and_cannot_skip_the_wfp_query(monk
     assert setup._proxy_ports_ready(61100, 61102) is (live is True)
     wfp_query.assert_called_once_with(61100, 61102)
     firewall.assert_called_once_with('S-test', 61100, 61102)
+
+
+@pytest.mark.parametrize('verified,failure,ready', [
+    (False, PermissionError(13, 'denied'), False),
+    (True, PermissionError(13, 'denied'), True),
+    (True, OSError('BFE unavailable'), False),
+    (True, wfp.LegacyDnsPermitError('legacy present'), False),
+])
+def test_firewall_readiness_accepts_proof_on_access_denial_only(monkeypatch, verified, failure, ready):
+    _registry(monkeypatch, {'sid': 'S-test', 'firewall_ranges': [[61100, 61102]],
+                          'firewall_legacy_dns_verified': verified})
+    monkeypatch.setattr(wfp, 'proxy_permits_installed', Mock(side_effect=PermissionError(13, 'denied')))
+    wfp.verify_legacy_dns_permits_absent.side_effect = failure
+    live = Mock(return_value=True)
+    monkeypatch.setattr(wfp, 'firewall_permits_installed', live)
+    assert setup._proxy_ports_ready(61100, 61102) is ready
+    assert live.called is ready
 
 
 @pytest.mark.parametrize('operation', ['rollback', 'uninstall'])

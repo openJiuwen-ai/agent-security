@@ -72,6 +72,31 @@ def test_medium_severity_without_action_uses_permission_mode(mode, expected) -> 
     assert result.permission is expected
 
 
+@pytest.mark.parametrize("action", ["ask", "deny", "allow"])
+def test_command_wildcards_respect_the_effective_rule_action(action):
+    component = TieredPolicyComponent()
+    component.configure({
+        "rules": [
+            {"id": "example", "layer": "builtin", "tools": ["bash"],
+             "pattern": "printf *", "action": "deny"},
+            {"tools": ["bash"], "pattern": "printf *", "action": action},
+        ],
+        "approval_overrides": [
+            {"tools": ["bash"], "pattern": "printf *", "action": "allow"},
+        ],
+        "defaults": {"*": "ask"},
+    })
+    command = "printf '(draft)'"
+    result = asyncio.run(component.evaluate("bash", {"command": command}, route=_BASH_ROUTE))
+    assert component.match_approval("bash", command) is None
+    if action == "allow":
+        assert result.permission is PermissionLevel.ASK
+        assert "defaults" in result.matched_rule
+    else:
+        assert result.permission is PermissionLevel(action)
+        assert "example" in result.matched_rule
+
+
 def test_action_override_uses_tools_and_pattern_not_id() -> None:
     component = TieredPolicyComponent()
     component.configure(

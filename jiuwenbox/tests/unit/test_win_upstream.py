@@ -1,15 +1,19 @@
 # Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 
 import asyncio
+import socket
+from unittest.mock import AsyncMock
 
 import pytest
 
 import jiuwenbox.supervisor.win_proxy as win_proxy
+from jiuwenbox.iptext import ipv4
 from jiuwenbox.models.policy import NetworkRulePolicy
 from jiuwenbox.supervisor.win_proxy import (
     EgressFilter,
     _connect_via_upstream,
     _upstream_authority,
+    handle_http_connect,
     handle_http_forward,
 )
 from jiuwenbox.supervisor.win_upstream import (
@@ -277,3 +281,49 @@ def test_http_forward_sends_absolute_form_to_upstream():
         assert b"CONNECT " not in request
 
     asyncio.run(scenario())
+
+
+@pytest.mark.asyncio
+async def test_direct_proxy_dials_the_policy_checked_address(monkeypatch):
+    address = ipv4(192, 0, 2, 10)
+    resolved = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", (address, 0))]
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *_args: resolved)
+    monkeypatch.setattr(win_proxy, "resolve_upstream", lambda *_args: None)
+    target = asyncio.StreamReader()
+    target.feed_eof()
+    connect = AsyncMock(return_value=(target, _MemWriter()))
+    monkeypatch.setattr(asyncio, "open_connection", connect)
+    policy = EgressFilter(NetworkRulePolicy(default="deny", allowed_domains=["docs.example"]))
+    client = asyncio.StreamReader()
+    client.feed_data(b"Host: docs.example\r\n\r\n")
+    client.feed_eof()
+    downstream = _MemWriter()
+    await handle_http_connect(client, downstream, b"CONNECT docs.example:443 HTTP/1.1", policy)
+    connect.assert_awaited_once_with(address, 443, flags=socket.AI_NUMERICHOST)
+    assert downstream.buf.startswith(b"HTTP/1.1 200")
+
+
+@pytest.mark.asyncio
+async def test_http_forward_completes_one_framed_upload(monkeypatch):
+    client = asyncio.StreamReader()
+    client.feed_data(b"Host: docs.example\r\nContent-Length: 4\r\n\r\ntext")
+    client.feed_eof()
+    response = asyncio.StreamReader()
+    response.feed_data(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+    upstream, downstream = _MemWriter(), _MemWriter()
+
+    def eof_after_upload(data):
+        if b"text" in data:
+            response.feed_eof()
+        upstream.buf.extend(data)
+
+    upstream.write = eof_after_upload
+    monkeypatch.setattr(win_proxy, "resolve_upstream", lambda *_args: None)
+    monkeypatch.setattr(win_proxy, "_connect_checked_addresses", AsyncMock(return_value=(response, upstream)))
+    policy = EgressFilter(NetworkRulePolicy(default="allow"))
+    address = ipv4(192, 0, 2, 10)
+    monkeypatch.setattr(policy, "check_destination", lambda *_args: (True, "allow", [address]))
+    await asyncio.wait_for(handle_http_forward(client, downstream, b"POST http://docs.example/a HTTP/1.1", policy), 3)
+    assert upstream.buf.startswith(b"POST /a HTTP/1.1\r\n")
+    assert upstream.buf.endswith(b"\r\n\r\ntext")
+    assert downstream.buf.startswith(b"HTTP/1.1 200 OK")

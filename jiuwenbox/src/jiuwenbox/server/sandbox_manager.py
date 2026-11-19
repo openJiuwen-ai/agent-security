@@ -1041,7 +1041,9 @@ class SandboxManager:
             return
 
         detail = result.detail or result.error or "unknown failure"
-        _emit_result(False, error=detail, path="ipc")
+        winerror = getattr(result, "winerror", None)
+        diagnostics = {"winerror": winerror} if winerror is not None else {}
+        _emit_result(False, error=detail, path="ipc", **diagnostics)
         raise SandboxStateError(
             f"Failed to upload file to '{sandbox_path}': {detail}"
         )

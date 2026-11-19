@@ -480,6 +480,10 @@ def _get_fwpuclnt() -> ctypes.WinDLL:
             wintypes.HANDLE, ctypes.POINTER(Guid),
         ]
         _fwpuclnt.FwpmFilterDeleteByKey0.restype = wintypes.DWORD
+        _fwpuclnt.FwpmFilterGetByKey0.argtypes = [
+            wintypes.HANDLE, ctypes.POINTER(Guid), ctypes.POINTER(ctypes.POINTER(FwpmFilter0)),
+        ]
+        _fwpuclnt.FwpmFilterGetByKey0.restype = wintypes.DWORD
         # FwpmTransactionBegin/Commit/Abort 用于多 filter 原子安装.
         _fwpuclnt.FwpmTransactionBegin0.argtypes = [wintypes.HANDLE, ctypes.c_uint32]
         _fwpuclnt.FwpmTransactionBegin0.restype = wintypes.DWORD
@@ -796,12 +800,46 @@ def _add_filter(  # pylint: disable=huawei-too-many-arguments
     logger.info("WFP filter 安装: %s (layer=%s, action=%d)", display_name, layer_key, action_type)
 
 
+def _legacy_dns_permit_keys() -> set[str]:
+    keys = {const.JBX_FILTER_DNS_PERMIT_KEY_V4, const.JBX_FILTER_DNS_PERMIT_KEY_V6}
+    return keys | {
+        _dns_filter_guid_str(key, proto)
+        for key in keys for proto in (const.IPPROTO_UDP, const.IPPROTO_TCP)
+    }
+
+
+class LegacyDnsPermitError(RuntimeError):
+    """Old WFP permits must be removed before accepting network setup."""
+
+
+def verify_legacy_dns_permits_absent() -> None:
+    """Check the old filter keys directly when sublayer enumeration is unavailable."""
+    _require_windows()
+    fwpu = _get_fwpuclnt()
+    engine = _open_engine()
+    try:
+        for key in _legacy_dns_permit_keys():
+            entry = ctypes.POINTER(FwpmFilter0)()
+            status = fwpu.FwpmFilterGetByKey0(engine, ctypes.byref(_guid_from_str(key)), ctypes.byref(entry))
+            if status == 0x80320003:  # FWP_E_FILTER_NOT_FOUND
+                continue
+            if status:
+                raise _wfp_error(status, "FwpmFilterGetByKey0 (legacy DNS)")
+            memory = ctypes.cast(entry, ctypes.c_void_p)
+            fwpu.FwpmFreeMemory0(ctypes.byref(memory))
+            raise LegacyDnsPermitError("Legacy WFP DNS permits remain installed")
+    finally:
+        fwpu.FwpmEngineClose0(engine)
+
+
 def proxy_permits_installed(port_start: int, port_end: int) -> bool:
     """Check the requested v4/v6 permit keys without modifying shared filters."""
     _require_windows()
     engine = _open_engine()
     try:
         installed = {key.lower() for key in _enumerate_sublayer_filters(engine, strict=True)}
+        if not installed.isdisjoint(key.lower() for key in _legacy_dns_permit_keys()):
+            raise LegacyDnsPermitError("Legacy WFP DNS permits remain installed")
         required = {
             _permit_filter_guid_str(base, port).lower()
             for base in (const.JBX_FILTER_PERMIT_KEY_V4, const.JBX_FILTER_PERMIT_KEY_V6)
@@ -834,10 +872,19 @@ def install_wfp_filters(
 
     engine = _open_engine()
     try:
-        hr = fwpu.FwpmTransactionBegin0(engine, 0)
-        if hr != 0:
-            raise _wfp_error(hr, "FwpmTransactionBegin0")
+        status = fwpu.FwpmTransactionBegin0(engine, 0)
+        if status:
+            raise _wfp_error(status, "FwpmTransactionBegin0")
+        removed_legacy_dns = False
         try:
+            # The host proxy resolves destinations. Remove legacy direct DNS
+            # exceptions atomically with the rest of the policy.
+            for key in _legacy_dns_permit_keys():
+                status = fwpu.FwpmFilterDeleteByKey0(engine, ctypes.byref(_guid_from_str(key)))
+                if status not in (0, 0x80320031, 0x80320003):
+                    raise _wfp_error(status, "FwpmFilterDeleteByKey0 (legacy DNS)")
+                removed_legacy_dns |= status == 0
+
             sublayer_key = _add_sublayer(engine, const.JBX_SUBLAYER_KEY, weight=100)
 
             # --- Block filters (V4 + V6) ---
@@ -885,37 +932,19 @@ def install_wfp_filters(
                         f"JiuwenBox-Permit-Loopback-{base_key}-{port}",
                     )
 
-            # --- DNS Permit filters (V4 + V6) ---
-            # 放行沙箱用户到任意 IP 的 DNS 出站 (port 53, TCP/UDP 均匹配).
-            # 不对 IP_PROTOCOL 单独建 filter: 实测 FwpmFilterAdd0 在 ALE_AUTH_CONNECT
-            # 上对 [ALE_USER_ID, IP_REMOTE_PORT, IP_PROTOCOL] 返回 FWP_E_CONDITION_NOT_FOUND
-            # (hr=0x80320002). port 53 已足够区分 DNS, 与 loopback Permit 同样省略 protocol.
-            for layer, dns_key in (
-                (const.FWPM_LAYER_ALE_AUTH_CONNECT_V4, const.JBX_FILTER_DNS_PERMIT_KEY_V4),
-                (const.FWPM_LAYER_ALE_AUTH_CONNECT_V6, const.JBX_FILTER_DNS_PERMIT_KEY_V6),
-            ):
-                user_cond, user_ka = _build_ale_user_condition(sandbox_user_sid)
-                keeps.append(user_ka)
-                port_cond = _build_port_eq_condition(const.DNS_PORT)
-                _add_filter(
-                    engine, dns_key, layer, sublayer_key,
-                    [user_cond, port_cond],
-                    const.FWP_ACTION_PERMIT,
-                    const.FWP_WEIGHT_PERMIT,
-                    f"JiuwenBox-Permit-DNS-{dns_key}",
-                )
-
-            hr = fwpu.FwpmTransactionCommit0(engine)
-            if hr != 0:
-                raise _wfp_error(hr, "FwpmTransactionCommit0")
-        except Exception:
+            status = fwpu.FwpmTransactionCommit0(engine)
+            if status:
+                raise _wfp_error(status, "FwpmTransactionCommit0")
+        except Exception as exc:
             fwpu.FwpmTransactionAbort0(engine)
+            if removed_legacy_dns and not isinstance(exc, LegacyDnsPermitError):
+                raise LegacyDnsPermitError("WFP update failed and restored old DNS permits") from exc
             raise
     finally:
         fwpu.FwpmEngineClose0(engine)
     logger.info(
-        "WFP filter set 安装完成: sid=%s permit_port=%d-%d dns_port=%d",
-        sandbox_user_sid, permit_port_start, permit_port_end, const.DNS_PORT,
+        "WFP filter set 安装完成: sid=%s permit_port=%d-%d",
+        sandbox_user_sid, permit_port_start, permit_port_end,
     )
 
 
@@ -1036,17 +1065,8 @@ def _delete_all_filters_by_fixed_keys(fwpu, engine) -> None:
             const.DEFAULT_PROXY_PORT_RANGE_END + 1,
         ):
             _delete_filter_by_key(fwpu, engine, str(_uuid.uuid5(_ns, f"{_base}:{_port}")))
-    for _base in (
-        const.JBX_FILTER_DNS_PERMIT_KEY_V4,
-        const.JBX_FILTER_DNS_PERMIT_KEY_V6,
-    ):
-        _delete_filter_by_key(fwpu, engine, _base)
-        # 旧版按 UDP/TCP 各建一条 filter (含 IP_PROTOCOL 条件), 卸载时一并清理.
-        for _proto in (const.IPPROTO_UDP, const.IPPROTO_TCP):
-            _delete_filter_by_key(
-                fwpu, engine,
-                _dns_filter_guid_str(_base, _proto),
-            )
+    for key in _legacy_dns_permit_keys():
+        _delete_filter_by_key(fwpu, engine, key)
 
 
 def _delete_sublayer_idempotent(fwpu, engine, max_attempts: int = 3) -> None:
@@ -1121,6 +1141,8 @@ def _firewall_remote_ports_cover(ports, port_start: int, port_end: int) -> bool:
 def _firewall_rule_applies(rule, sid: str) -> bool:
     if not isinstance(rule, dict) or rule.get("enabled") is not True:
         return False
+    if rule.get("enforcement_status") != [1]:  # MSFT_NetFirewallRule.EnforcementStatus: Full
+        return False
     if rule.get("direction") != "Outbound" or rule.get("profile") != "Any":
         return False
     if rule.get("local_user") != f"D:(A;;CC;;;{sid})":
@@ -1137,6 +1159,8 @@ def _firewall_snapshot_ready(snapshot, sid: str, port_start: int, port_end: int)
         return False
     block_ready, permit_ready = False, False
     for rule in rules:
+        if isinstance(rule, dict) and rule.get("name") in _LEGACY_DNS_FIREWALL_RULES:
+            return False
         if not _firewall_rule_applies(rule, sid):
             continue
         if rule.get("name") == "JiuwenBox-Block-Sandbox-Egress":
@@ -1163,8 +1187,9 @@ def firewall_permits_installed(sandbox_user_sid: str, port_start: int, port_end:
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $profiles = @(Get-NetFirewallProfile -PolicyStore ActiveStore)
-$rules = @(Get-NetFirewallRule -PolicyStore ActiveStore -DisplayName `
-    'JiuwenBox-Block-Sandbox-Egress','JiuwenBox-Permit-Loopback')
+$names = @('JiuwenBox-Block-Sandbox-Egress','JiuwenBox-Permit-Loopback',
+           'JiuwenBox-Permit-DNS-UDP','JiuwenBox-Permit-DNS-TCP')
+$rules = @(Get-NetFirewallRule -PolicyStore ActiveStore | Where-Object { $_.DisplayName -in $names })
 $snapshot = @{
     profiles_enabled = ($profiles.Count -eq 3 -and
         @($profiles | Where-Object { [string]$_.Enabled -ne 'True' }).Count -eq 0)
@@ -1174,6 +1199,7 @@ $snapshot = @{
         $security = $_ | Get-NetFirewallSecurityFilter
         @{
             name = $_.DisplayName; enabled = ([string]$_.Enabled -eq 'True')
+            enforcement_status = @($_.CimInstanceProperties['EnforcementStatus'].Value)
             direction = [string]$_.Direction; action = [string]$_.Action; profile = [string]$_.Profile
             local_user = [string]$security.LocalUser; protocol = [string]$ports.Protocol
             local_ports = @($ports.LocalPort); remote_ports = @($ports.RemotePort)
@@ -1222,8 +1248,6 @@ def install_firewall_rule_fallback(
     _require_windows()
     rule_block = "JiuwenBox-Block-Sandbox-Egress"
     rule_permit = "JiuwenBox-Permit-Loopback"
-    rule_dns_udp = "JiuwenBox-Permit-DNS-UDP"
-    rule_dns_tcp = "JiuwenBox-Permit-DNS-TCP"
     port_range = f"{permit_port_start}-{permit_port_end}"
 
     # -LocalUser 要的是 SDDL 字符串 (微软文档): D:(A;;CC;;;<SID>).
@@ -1249,24 +1273,8 @@ def install_firewall_rule_fallback(
         f"-RemoteAddress 127.0.0.1 "
         f"-RemotePort {port_range}"
     )
-    # DNS Permit 规则: 放行 sandbox 用户的 DNS 出站 (UDP/TCP port 53),
-    # 对齐 Linux network.py iptables ALLOW DNS.
-    ps_dns_udp = (
-        f"New-NetFirewallRule -DisplayName '{rule_dns_udp}' "
-        f"-Direction Outbound -Action Allow "
-        f"-Protocol UDP "
-        f"-LocalUser '{local_user}' "
-        f"-RemotePort {const.DNS_PORT}"
-    )
-    ps_dns_tcp = (
-        f"New-NetFirewallRule -DisplayName '{rule_dns_tcp}' "
-        f"-Direction Outbound -Action Allow "
-        f"-Protocol TCP "
-        f"-LocalUser '{local_user}' "
-        f"-RemotePort {const.DNS_PORT}"
-    )
     all_ok = True
-    for ps in (ps_permit, ps_dns_udp, ps_dns_tcp, ps_block):
+    for ps in (ps_permit, ps_block):
         try:
             subprocess.run(
                 [_get_powershell(), "-NoProfile", "-Command", ps],
@@ -1296,12 +1304,41 @@ def install_firewall_rule_fallback(
     return all_ok
 
 
+_LEGACY_DNS_FIREWALL_RULES = ("JiuwenBox-Permit-DNS-UDP", "JiuwenBox-Permit-DNS-TCP")
+
+
+def remove_legacy_dns_firewall_rules() -> None:
+    """Remove only the old DNS permits, preserving other instances' rules."""
+    names = ",".join(f"'{name}'" for name in _LEGACY_DNS_FIREWALL_RULES)
+    script = (
+        "$ErrorActionPreference='Stop'; "
+        "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); "
+        f"$names=@({names}); "
+        "Get-NetFirewallRule | Where-Object { $_.DisplayName -in $names } | "
+        "Remove-NetFirewallRule -ErrorAction Stop; "
+        "if (@(Get-NetFirewallRule -PolicyStore ActiveStore | "
+        "Where-Object { $_.DisplayName -in $names }).Count) { throw 'Legacy DNS permits remain' }"
+    )
+    try:
+        subprocess.run([_get_powershell(), "-NoProfile", "-Command", script],
+                       check=True, capture_output=True, timeout=30, **_hidden_kwargs())
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        if isinstance(exc, subprocess.TimeoutExpired):
+            reason = f"PowerShell 超时 ({exc.timeout} 秒)"
+        else:
+            reason = f"PowerShell 退出码 {exc.returncode}"
+        stderr = (exc.stderr or b"").decode("utf-8", errors="replace")
+        summary = " ".join(stderr.split())[:240]
+        raise OSError(f"无法清理旧版沙箱 DNS 防火墙规则 ({reason}) {summary}".rstrip()) from exc
+
+
 def uninstall_firewall_rule_fallback() -> None:
     """降级方案卸载: 删除降级路径安装的两条防火墙规则."""
     _require_windows()
     for rule in (
         "JiuwenBox-Block-Sandbox-Egress",
         "JiuwenBox-Permit-Loopback",
+        *_LEGACY_DNS_FIREWALL_RULES,
     ):
         try:
             subprocess.run(

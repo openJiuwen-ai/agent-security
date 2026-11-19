@@ -26,6 +26,9 @@ import ipaddress
 import logging
 import socket
 
+import h11
+
+from jiuwenbox.iptext import cidr, ipv4, ipv6
 from jiuwenbox.logging_config import configure_logging
 from jiuwenbox.models.policy import NetworkRulePolicy
 from jiuwenbox.supervisor import win_constants as const
@@ -33,6 +36,23 @@ from jiuwenbox.supervisor.win_upstream import resolve_upstream
 
 configure_logging()
 logger = logging.getLogger(__name__)
+
+_LOCAL_DESTINATIONS = tuple(map(ipaddress.ip_network, (
+    cidr(ipv4(0, 0, 0, 0), 8),
+    cidr(ipv4(10, 0, 0, 0), 8),
+    cidr(ipv4(100, 64, 0, 0), 10),
+    cidr(ipv4(127, 0, 0, 0), 8),
+    cidr(ipv4(169, 254, 0, 0), 16),
+    cidr(ipv4(172, 16, 0, 0), 12),
+    cidr(ipv4(192, 168, 0, 0), 16),
+    cidr(ipv4(224, 0, 0, 0), 4),
+    cidr(ipv4(240, 0, 0, 0), 4),
+    cidr(ipv6("", "", ""), 128),
+    cidr(ipv6("", "", "1"), 128),
+    cidr(ipv6("fc00", "", ""), 7),
+    cidr(ipv6("fe80", "", ""), 10),
+    cidr(ipv6("ff00", "", ""), 8),
+)))
 
 # 单个隧道读缓冲上限, 防止恶意对端用大量数据撑爆内存.
 _TUNNEL_BUF = 65536
@@ -105,10 +125,15 @@ class EgressFilter:
             ip = ipaddress.ip_address(ip_str)
         except ValueError:
             return False
-        return any(ip in net for net in nets)
+        mapped = ip.ipv4_mapped if isinstance(ip, ipaddress.IPv6Address) else None
+        return any(ip in net or (mapped is not None and mapped in net) for net in nets)
 
     def allow(self, host: str, port: int) -> tuple[bool, str]:
-        """判定是否放行 (host, port). 返回 (allowed, reason).
+        allowed, reason, _ = self.check_destination(host, port)
+        return allowed, reason
+
+    def check_destination(self, host: str, port: int) -> tuple[bool, str, list[str]]:
+        """Return the policy verdict and the resolved addresses it covers.
 
         语义对齐 Linux supervisor/network.py 的 iptables 规则:
           0. disable_all 总开关置位 → 直接拒绝 (不清空 allow/blocked_domains,
@@ -122,55 +147,58 @@ class EgressFilter:
           3. 无任何 allow 规则: 按 default.
         """
         if self.disable_all:
-            return False, "network disabled (disable_all)"
-        if not host:
-            return False, "empty host"
+            return False, "network disabled (disable_all)", []
+        host = host.lower().rstrip(".")
+        if not host or _host_has_controls(host) or not 1 <= port <= 65535:
+            return False, "invalid destination", []
 
         # 1. 域名 deny 优先.
         for pat in self._blocked_domains:
             if self._domain_matches(pat, host):
-                return False, f"domain blocked by {pat}"
+                return False, f"domain blocked by {pat}", []
 
         # 2. 端口 deny.
         if port in self._blocked_ports:
-            return False, f"port {port} blocked"
+            return False, f"port {port} blocked", []
 
-        # 域名 allow 只看请求名. 没有 IP 规则时不解析 DNS, 避免不存在的
-        # 子域 (*.example.com) 在通配命中前被当成不可解析而拒绝.
-        domain_allowed = any(
-            self._domain_matches(pat, host) for pat in self._allowed_domains
-        )
+        domain_allowed = any(self._domain_matches(pat, host) for pat in self._allowed_domains)
+        port_in_allow = port in self._allowed_ports
+        if self.egress.default == "deny" and not self._has_allow_rules():
+            return False, "default deny (no allow rules)", []
+        # The host resolver is outside WFP's sandbox account. Avoid sending
+        # DNS queries for names that cannot match the active allow policy.
+        if self.egress.default == "deny" and not (domain_allowed or port_in_allow or self._allowed_ips):
+            return False, f"{host}:{port} not in any allow rule", []
 
-        # 3. IP deny. 只有 blocked/allowed IP 才需要解析.
+        # Resolve once so direct connections use only validated IPs.
         resolved_ips: list[str] = []
         ip_host: str | None = None
         try:
-            ipaddress.ip_address(host)
-            ip_host = host
+            ip_host = str(ipaddress.ip_address(host))
         except ValueError:
-            if self._blocked_ips or self._allowed_ips:
-                try:
-                    infos = socket.getaddrinfo(
-                        host, None, socket.AF_UNSPEC, socket.SOCK_STREAM,
-                    )
-                    for info in infos:
-                        resolved_ips.append(info[4][0])
-                except socket.gaierror:
-                    # 解析失败时无法核对 blocked_ips, 保持拒绝.
-                    if self._blocked_ips:
-                        return False, f"unresolvable domain {host} with blocked IPs present"
-                    if domain_allowed:
-                        return True, "explicitly allowed (domain)"
-                    if self._has_allow_rules():
-                        return False, f"unresolvable domain {host} with allow-rules present"
-                    return self.egress.default != "deny", "unresolvable domain, default"
+            try:
+                infos = socket.getaddrinfo(
+                    host, None, socket.AF_UNSPEC, socket.SOCK_STREAM,
+                )
+                for info in infos:
+                    resolved_ips.append(info[4][0])
+            except socket.gaierror:
+                if self._blocked_ips or self.egress.default == "deny":
+                    return False, f"unresolvable destination {host}", []
+                # A trusted upstream proxy may resolve names unavailable locally.
+                return True, "unresolvable domain, default allow", []
 
         ips_to_check: list[str] = [ip_host] if ip_host else resolved_ips
 
         # 3a. blocked_ips 命中 -> 拒绝.
         for ip in ips_to_check:
             if self._ip_in_networks(ip, self._blocked_ips):
-                return False, f"ip {ip} blocked"
+                return False, f"ip {ip} blocked", []
+            if self.egress.default == "deny" and (
+                self._ip_in_networks(ip, _LOCAL_DESTINATIONS)
+                and not self._ip_in_networks(ip, self._allowed_ips)
+            ):
+                return False, "local destination requires an explicit IP rule", []
 
         # 4. allow 判定.
         has_ip_rules = bool(self._allowed_ips or self._allowed_domains)
@@ -179,7 +207,6 @@ class EgressFilter:
         ip_allowed = any(
             self._ip_in_networks(ip, self._allowed_ips) for ip in ips_to_check
         )
-        port_in_allow = port in self._allowed_ports if self._allowed_ports else False
 
         # 4a. allow 规则按维度独立判定 (OR), 对齐 Linux iptables 独立 ACCEPT 链:
         #     allowed_ips / allowed_ports 任一命中即放行,
@@ -195,15 +222,17 @@ class EgressFilter:
             if port_in_allow:
                 reasons.append("port")
             if reasons:
-                return True, f"explicitly allowed ({'+'.join(reasons)})"
+                if ip_allowed and self.egress.default == "deny" and not (domain_allowed or port_in_allow):
+                    ips_to_check = [ip for ip in ips_to_check if self._ip_in_networks(ip, self._allowed_ips)]
+                return True, f"explicitly allowed ({'+'.join(reasons)})", ips_to_check
             if self.egress.default != "deny":
-                return True, "default allow (no allow rule matched)"
-            return False, f"{host}:{port} not in any allow rule"
+                return True, "default allow (no allow rule matched)", ips_to_check
+            return False, f"{host}:{port} not in any allow rule", []
 
         # 5. 无任何 allow 规则: 按 default.
         if self.egress.default == "deny":
-            return False, "default deny (no allow rules)"
-        return True, "default allow"
+            return False, "default deny (no allow rules)", []
+        return True, "default allow", ips_to_check
 
     def _has_allow_rules(self) -> bool:
         return bool(
@@ -315,7 +344,18 @@ def _note_upstream(upstream) -> None:
         logger.info("出站经上游代理 %s (无代理时仍直连)", label)
 
 
-async def _connect_target(host: str, port: int) -> tuple:
+async def _connect_checked_addresses(addresses: list[str], port: int) -> tuple:
+    last_error = None
+    async with asyncio.timeout(_CONNECT_TIMEOUT):
+        for address in dict.fromkeys(addresses):
+            try:
+                return await asyncio.open_connection(address, port, flags=socket.AI_NUMERICHOST)
+            except OSError as exc:
+                last_error = exc
+    raise OSError("No approved destination address could be reached") from last_error
+
+
+async def _connect_target(host: str, port: int, addresses: list[str]) -> tuple:
     """连到目标, 返回 (reader, writer).
 
     给 CONNECT / SOCKS5 用: 没有上游时直接 TCP, 有上游时先 CONNECT 建隧道.
@@ -324,10 +364,8 @@ async def _connect_target(host: str, port: int) -> tuple:
     """
     upstream = await asyncio.to_thread(resolve_upstream, host, port)
     if upstream is None:
-        return await asyncio.wait_for(
-            asyncio.open_connection(host, port),
-            timeout=_CONNECT_TIMEOUT,
-        )
+        return await _connect_checked_addresses(addresses, port)
+    # Enterprise upstream proxies must apply their own DNS and destination policy.
     _note_upstream(upstream)
     return await _connect_via_upstream(upstream, host, port)
 
@@ -389,12 +427,14 @@ async def handle_http_connect(
                 port = int(port_str)
             else:
                 host, port = host_port, 443
+            if host.startswith("[") and host.endswith("]"):
+                host = str(ipaddress.IPv6Address(host[1:-1]))
         except ValueError:  # UnicodeDecodeError 为 ValueError 子类, 简化
             client_writer.write(b"HTTP/1.1 400 Bad Request\r\n\r\n")
             await client_writer.drain()
             return
 
-        allowed, reason = egress_filter.allow(host, port)
+        allowed, reason, addresses = await asyncio.to_thread(egress_filter.check_destination, host, port)
         if not allowed:
             logger.info("HTTP CONNECT 拒绝 %s:%d (%s)", _log_host(host), port, reason)
             client_writer.write(
@@ -414,7 +454,7 @@ async def handle_http_connect(
                 break
 
         try:
-            target_reader, target_writer = await _connect_target(host, port)
+            target_reader, target_writer = await _connect_target(host, port, addresses)
         except OSError as exc:  # asyncio.TimeoutError 为 OSError 子类, 简化
             logger.info("CONNECT 目标连接失败 %s:%d (%s)", _log_host(host), port, exc)
             client_writer.write(
@@ -481,7 +521,7 @@ async def handle_socks5(
         port_bytes = await client_reader.readexactly(2)
         port = int.from_bytes(port_bytes, "big")
 
-        allowed, reason = egress_filter.allow(host, port)
+        allowed, reason, addresses = await asyncio.to_thread(egress_filter.check_destination, host, port)
         if not allowed:
             logger.info("SOCKS5 拒绝 %s:%d (%s)", _log_host(host), port, reason)
             client_writer.write(b"\x05\x02\x00\x01\x00\x00\x00\x00\x00\x00")
@@ -489,7 +529,7 @@ async def handle_socks5(
             return
 
         try:
-            target_reader, target_writer = await _connect_target(host, port)
+            target_reader, target_writer = await _connect_target(host, port, addresses)
         except OSError as exc:  # asyncio.TimeoutError 为 OSError 子类, 简化
             logger.info("SOCKS5 目标连接失败 %s:%d (%s)", _log_host(host), port, exc)
             client_writer.write(b"\x05\x05\x00\x01\x00\x00\x00\x00\x00\x00")
@@ -522,32 +562,24 @@ async def handle_http_forward(
     没有上游时直连目标, 请求行用 origin-form. 有上游时连到上游本身,
     请求行用 absolute-form, 并附带 Proxy-Authorization.
     """
+    target_writer = None
     try:
-        try:
-            line = first_line.decode("latin-1").strip()
-            parts = line.split()
-            if len(parts) < 2:
-                client_writer.write(b"HTTP/1.1 400 Bad Request\r\n\r\n")
-                await client_writer.drain()
-                return
-            method = parts[0].upper()
-            raw_url = parts[1]
-        except ValueError:
-            client_writer.write(b"HTTP/1.1 400 Bad Request\r\n\r\n")
-            await client_writer.drain()
-            return
-
-        # 解析 URL: 提取 host/port/path.
-        if not raw_url.startswith("http://") and not raw_url.startswith("https://"):
-            client_writer.write(b"HTTP/1.1 400 Bad Request\r\n\r\n")
-            await client_writer.drain()
-            return
-        from urllib.parse import urlparse
-        parsed = urlparse(raw_url)
+        front = h11.Connection(h11.SERVER, max_incomplete_event_size=_TUNNEL_BUF)
+        front.receive_data(first_line.rstrip(b"\r\n") + b"\r\n")
+        request = await asyncio.wait_for(_read_http_event(front, client_reader), _HANDSHAKE_TIMEOUT)
+        if not isinstance(request, h11.Request):
+            raise ValueError("Invalid proxy request")
+        from urllib.parse import urlsplit
+        parsed = urlsplit(request.target.decode("ascii"))
         host = parsed.hostname or ""
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        if parsed.scheme not in {"http", "https"} or not host or parsed.fragment:
+            raise ValueError("Invalid proxy request target")
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("Invalid proxy request target")
+        default_port = 443 if parsed.scheme == "https" else 80
+        port = default_port if parsed.port is None else parsed.port
 
-        allowed, reason = egress_filter.allow(host, port)
+        allowed, reason, addresses = await asyncio.to_thread(egress_filter.check_destination, host, port)
         if not allowed:
             logger.info("HTTP FORWARD 拒绝 %s:%d (%s)", _log_host(host), port, reason)
             client_writer.write(
@@ -558,47 +590,40 @@ async def handle_http_forward(
             await client_writer.drain()
             return
 
-        # 读掉剩余 HTTP 头 (到空行).
-        headers_data = b""
-        while True:
-            header = await asyncio.wait_for(
-                client_reader.readline(), timeout=_HANDSHAKE_TIMEOUT,
-            )
-            if header in (b"\r\n", b"\n", b""):
-                break
-            headers_data += header
-
-        path = parsed.path or "/"
-        if parsed.query:
-            path += "?" + parsed.query
-        if parsed.fragment:
-            path += "#" + parsed.fragment
+        names = {name for name, _ in request.headers}
+        if b"upgrade" in names or {b"transfer-encoding", b"content-length"} <= names:
+            raise ValueError("Unsupported proxy request framing")
+        hop = {b"connection", b"keep-alive", b"proxy-connection", b"proxy-authorization",
+               b"proxy-authenticate", b"te", b"trailer", b"expect"}
+        connection_tokens = set()
+        for name, value in request.headers:
+            if name == b"connection":
+                connection_tokens.update(token.strip().lower() for token in value.split(b","))
+        if connection_tokens & {b"host", b"content-length", b"transfer-encoding"}:
+            raise ValueError("Invalid proxy Connection header")
+        authority = _upstream_authority(host, port)
+        host_header = authority if port != default_port else authority.rsplit(":", 1)[0]
+        headers = [(name, value) for name, value in request.headers
+                   if name not in hop | connection_tokens | {b"host"}]
+        headers.extend([(b"Host", host_header.encode("ascii")), (b"Connection", b"close")])
+        path = (parsed.path or "/") + ("?" + parsed.query if parsed.query else "")
+        if path.startswith("//"):
+            raise ValueError("Invalid proxy request path")
 
         upstream = await asyncio.to_thread(resolve_upstream, host, port)
         try:
             if upstream is None:
-                target_reader, target_writer = await asyncio.wait_for(
-                    asyncio.open_connection(host, port),
-                    timeout=_CONNECT_TIMEOUT,
-                )
-                new_request_line = f"{method} {path} HTTP/1.1\r\n".encode("latin-1")
-                prefix_headers = b""
+                target_reader, target_writer = await _connect_checked_addresses(addresses, port)
+                target = path
             else:
                 _note_upstream(upstream)
-                authority = _upstream_authority(host, port)
-                _reject_request_injection(path)
-                _reject_request_injection(method)
                 target_reader, target_writer = await asyncio.wait_for(
                     asyncio.open_connection(upstream.host, upstream.port),
                     timeout=_CONNECT_TIMEOUT,
                 )
-                absolute = f"{parsed.scheme}://{authority}{path}"
-                new_request_line = f"{method} {absolute} HTTP/1.1\r\n".encode("latin-1")
-                prefix_headers = b""
+                target = f"{parsed.scheme}://{authority}{path}"
                 if upstream.proxy_authorization:
-                    prefix_headers = (
-                        f"Proxy-Authorization: {upstream.proxy_authorization}\r\n"
-                    ).encode("ascii")
+                    headers.append((b"Proxy-Authorization", upstream.proxy_authorization.encode("ascii")))
         except OSError as exc:
             logger.info("HTTP FORWARD 目标连接失败 %s:%d (%s)", _log_host(host), port, exc)
             client_writer.write(
@@ -609,17 +634,61 @@ async def handle_http_forward(
             await client_writer.drain()
             return
 
-        # 直连时是 origin-form; 走上游时是 absolute-form.
-        target_writer.write(new_request_line + prefix_headers + headers_data + b"\r\n")
+        back = h11.Connection(h11.CLIENT)
+        target_writer.write(back.send(h11.Request(method=request.method, target=target, headers=headers)))
         await target_writer.drain()
-        await _relay(client_reader, client_writer, target_reader, target_writer)
+        if front.they_are_waiting_for_100_continue:
+            client_writer.write(b"HTTP/1.1 100 Continue\r\n\r\n")
+            await client_writer.drain()
+        await _forward_http_message(front, back, client_reader, client_writer, target_reader, target_writer)
+    except (ValueError, h11.ProtocolError):
+        client_writer.write(b"HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n")
+        await client_writer.drain()
     except OSError as exc:
         logger.debug("HTTP FORWARD handler 异常: %s", exc)
     finally:
-        try:
-            client_writer.close()
-        except Exception:  # noqa: BLE001
-            pass
+        for writer in (target_writer, client_writer):
+            if writer is not None:
+                writer.close()
+
+
+async def _read_http_event(connection, reader):
+    event = connection.next_event()
+    while event is h11.NEED_DATA:
+        connection.receive_data(await reader.read(_TUNNEL_BUF))
+        event = connection.next_event()
+    return event
+
+
+async def _forward_http_message(front, back, client_reader, client_writer, target_reader, target_writer):
+    async def upload():
+        while True:
+            event = await _read_http_event(front, client_reader)
+            if not isinstance(event, (h11.Data, h11.EndOfMessage)):
+                raise ValueError("Incomplete proxy request")
+            data = back.send(event)
+            if data:
+                target_writer.write(data)
+                await target_writer.drain()
+            if isinstance(event, h11.EndOfMessage):
+                return
+
+    upload_task = asyncio.create_task(upload())
+    download_task = asyncio.create_task(_pipe_streams(target_reader, client_writer))
+    tasks = (upload_task, download_task)
+    try:
+        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        if upload_task in done:
+            try:
+                upload_task.result()
+            except (ValueError, h11.ProtocolError) as exc:
+                raise ConnectionAbortedError("Incomplete proxy upload") from exc
+            await download_task
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def _handle_client(

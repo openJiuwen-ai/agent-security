@@ -59,6 +59,7 @@ class RuntimeFileOpResult:
     detail: str | None = None
     content: bytes | None = None
     items: list[dict[str, Any]] | None = None
+    winerror: int | None = None
 
 
 @dataclass(frozen=True)

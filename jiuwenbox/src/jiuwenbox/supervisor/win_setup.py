@@ -168,11 +168,6 @@ def _get_netapi32() -> ctypes.WinDLL:
     global _netapi32
     if _netapi32 is None:
         _netapi32 = ctypes.WinDLL("netapi32", use_last_error=True)
-        _netapi32.NetUserAdd.argtypes = [
-            wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_void_p,
-            ctypes.POINTER(wintypes.DWORD),
-        ]
-        _netapi32.NetUserAdd.restype = wintypes.DWORD
         _netapi32.NetLocalGroupAddMembers.argtypes = [
             wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
             ctypes.c_void_p, wintypes.DWORD,
@@ -191,12 +186,6 @@ def _get_netapi32() -> ctypes.WinDLL:
             ctypes.POINTER(ctypes.c_void_p),
         ]
         _netapi32.NetUserGetInfo.restype = wintypes.DWORD
-        # NetUserSetInfo(servername, username, level, buf, parm_err): 重设用户属性 (含密码).
-        _netapi32.NetUserSetInfo.argtypes = [
-            wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
-            ctypes.c_void_p, ctypes.POINTER(wintypes.DWORD),
-        ]
-        _netapi32.NetUserSetInfo.restype = wintypes.DWORD
         # NetUserDel(servername, username): 删用户 (uninstall).
         _netapi32.NetUserDel.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
         _netapi32.NetUserDel.restype = wintypes.DWORD
@@ -449,19 +438,6 @@ def _reg_set_dword_under(full_subkey: str, name: str, value: int) -> None:
 # ---------------------------------------------------------------------------
 # 用户/组创建.
 # ---------------------------------------------------------------------------
-class UserInfo1(ctypes.Structure):
-    _fields_ = [
-        ("usri1_name", wintypes.LPWSTR),
-        ("usri1_password", wintypes.LPWSTR),
-        ("usri1_password_age", wintypes.DWORD),
-        ("usri1_priv", wintypes.DWORD),
-        ("usri1_home_dir", wintypes.LPWSTR),
-        ("usri1_comment", wintypes.LPWSTR),
-        ("usri1_flags", wintypes.DWORD),
-        ("usri1_script_path", wintypes.LPWSTR),
-    ]
-
-
 USER_PRIV_USER = 1  # noqa: N816 - Win32 常量
 # lmerr.h: 沙箱用户重建/校验用.
 NERR_USER_NOT_FOUND = 2221  # noqa: N816 - Win32 常量
@@ -574,65 +550,50 @@ def _save_sandbox_user_password(password: str) -> None:
         logger.warning("pywin32 缺失, 沙箱用户密码未加密存储 (仅开发环境)")
 
 
+def _sandbox_user_info(user_name: str, password: str) -> dict[str, str | int | None]:
+    # win32net marshals the Windows SDK USER_INFO_1 layout for information level 1.
+    return {
+        "name": user_name,
+        "password": password,
+        "password_age": 0,
+        "priv": USER_PRIV_USER,
+        "home_dir": None,
+        "comment": "JiuwenBox sandbox user",
+        "flags": const.SANDBOX_USER_FLAGS,
+        "script_path": None,
+    }
+
+
 def _create_sandbox_user(password: str, *, retries: int = 1) -> bool:
     """创建 jbx-sandbox 本地用户 (幂等: 已存在则跳过).
 
     retries>1 用于刚 NetUserDel 后的 pending-delete (Add 返回 2224).
     Returns: True=本次新建; False=已存在 (未改密码, 调用方用 DPAPI 旧密码).
     """
-    netapi32 = _get_netapi32()
-    info = UserInfo1()
-    # LPWSTR 字段直接赋 str: ctypes 自动转 NUL 结尾宽字符串指针并绑定生命周期.
-    # 不能用 create_unicode_buffer (返回 c_wchar_Array_N, py3.13 ctypes 拒绝数组→指针赋值).
-    info.usri1_name = const.SANDBOX_USER_NAME
-    info.usri1_password = password
-    info.usri1_password_age = 0
-    info.usri1_priv = USER_PRIV_USER
-    info.usri1_home_dir = None
-    info.usri1_comment = "JiuwenBox sandbox user"
-    info.usri1_flags = const.SANDBOX_USER_FLAGS
-    info.usri1_script_path = None
+    import win32net  # type: ignore[import-not-found]
 
+    info = _sandbox_user_info(const.SANDBOX_USER_NAME, password)
     attempts = max(1, retries)
-    last_ret = 0
-    last_err = 0
-    for attempt in range(attempts):
-        err = wintypes.DWORD(0)
-        ret = netapi32.NetUserAdd(
-            None, const.USER_INFO_1_LEVEL, ctypes.byref(info), ctypes.byref(err),
-        )
-        if ret == 0:
-            logger.info("创建沙箱用户 %s 成功", const.SANDBOX_USER_NAME)
-            return True
-        if ret == NERR_USER_EXISTS:
-            if attempt + 1 < attempts:
-                logger.warning(
-                    "NetUserAdd 用户已存在 (可能 pending-delete), 0.5s 后重试 (%d/%d)",
-                    attempt + 1, attempts,
-                )
-                time.sleep(0.5)
-                continue
-            # 用户已存在不重设密码: 随机密码下本次生成的新密码与实际不一致, 不能用它存 DPAPI (否则重现 1326).
-            # 调用方应读 DPAPI 旧密码存注册表, 读不到时由 _verify_or_reset 重设.
-            logger.info(
-                "沙箱用户 %s 已存在, 跳过 (不重设密码, 用 DPAPI 旧密码)",
-                const.SANDBOX_USER_NAME,
-            )
-            return False
-        last_ret, last_err = ret, err.value
-        if attempt + 1 < attempts:
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            win32net.NetUserAdd(None, const.USER_INFO_1_LEVEL, info)
+        except win32net.error as exc:
+            ret = exc.winerror
+            if attempt >= attempts:
+                if ret == NERR_USER_EXISTS:
+                    logger.info("沙箱用户 %s 已存在, 跳过 (不重设密码)", const.SANDBOX_USER_NAME)
+                    return False
+                raise RuntimeError(f"NetUserAdd 失败: ret={ret}") from exc
             logger.warning(
-                "NetUserAdd 失败 ret=%d err=%d, 0.5s 后重试 (%d/%d)",
-                ret, err.value, attempt + 1, attempts,
+                "NetUserAdd 失败 ret=%d, 0.5s 后重试 (%d/%d)",
+                ret, attempt, attempts,
             )
             time.sleep(0.5)
-            continue
-        raise RuntimeError(
-            f"NetUserAdd 失败: ret={last_ret} err={last_err}"
-        )
-    raise RuntimeError(
-        f"NetUserAdd 失败: ret={last_ret} err={last_err}"
-    )
+        else:
+            logger.info("创建沙箱用户 %s 成功", const.SANDBOX_USER_NAME)
+            return True
 
 
 def _set_user_password(user_name: str, password: str) -> None:
@@ -641,24 +602,13 @@ def _set_user_password(user_name: str, password: str) -> None:
     install 幂等场景: 用户已存在时把密码重设为本次生成的值, 保证用户密码
     与注册表 DPAPI 密码一致 (见 1326). 需 admin (install 本身 admin).
     """
-    netapi32 = _get_netapi32()
-    info = UserInfo1()
-    info.usri1_name = user_name  # LPWSTR 直接赋 str (见 _create_sandbox_user 注释)
-    info.usri1_password = password
-    info.usri1_password_age = 0
-    info.usri1_priv = USER_PRIV_USER
-    info.usri1_home_dir = None
-    info.usri1_comment = "JiuwenBox sandbox user"
-    info.usri1_flags = const.SANDBOX_USER_FLAGS
-    info.usri1_script_path = None
-    err = wintypes.DWORD(0)
-    ret = netapi32.NetUserSetInfo(
-        None, user_name, const.USER_INFO_1_LEVEL, ctypes.byref(info), ctypes.byref(err),
-    )
-    if ret != 0:
-        raise RuntimeError(
-            f"NetUserSetInfo 失败: ret={ret} err={err.value}"
-        )
+    import win32net  # type: ignore[import-not-found]
+
+    info = _sandbox_user_info(user_name, password)
+    try:
+        win32net.NetUserSetInfo(None, user_name, const.USER_INFO_1_LEVEL, info)
+    except win32net.error as exc:
+        raise RuntimeError(f"NetUserSetInfo 失败: ret={exc.winerror}") from exc
 
 
 # GetComputerNameExW NameType (sysinfoapi.h COMPUTER_NAME_FORMAT).
@@ -1755,45 +1705,10 @@ def install(
         synth_sid = win_acl.get_synthetic_write_sid()
         _reg_set_str(const.REG_VALUE_SYNTHETIC_WRITE_SID, synth_sid)
 
-        # 3. 安装 WFP filter set (网络隔离). 失败则降级到防火墙规则 (致命:
-        # WFP 主路径 + 降级路径都失败 = 网络隔离不可用, raise 触发回滚)。
-        network_isolation_ok = False
-        wfp_exc = None
-        try:
-            from jiuwenbox.supervisor import win_wfp
-            win_wfp.install_wfp_filters(sid, proxy_port_start, proxy_port_end)
-            network_isolation_ok = True
-        except Exception as exc:  # noqa: BLE001
-            wfp_exc = exc
-            logger.warning(
-                "WFP filter 安装失败, 降级到 PowerShell 防火墙规则", exc_info=True,
-            )
-            try:
-                from jiuwenbox.supervisor import win_wfp
-                fallback_ok = win_wfp.install_firewall_rule_fallback(
-                    const.SANDBOX_USER_NAME, proxy_port_start, proxy_port_end,
-                    sandbox_user_sid=sid,
-                )
-            except Exception as fallback_exc:  # noqa: BLE001
-                logger.error(
-                    "防火墙规则降级也失败, 网络隔离不可用", exc_info=True,
-                )
-                raise RuntimeError(
-                    "网络隔离不可用: WFP 主路径与 PowerShell 降级均失败"
-                ) from (exc, fallback_exc)
-            if not fallback_ok:
-                raise RuntimeError(
-                    "网络隔离不可用: WFP 主路径失败, PowerShell 降级部分失败"
-                ) from exc
-            network_isolation_ok = True
-        if not network_isolation_ok:
-            # 不应到达此处 (上面任一路径失败已 raise), 防御性兜底。
-            raise RuntimeError("网络隔离不可用 (未知原因)") from wfp_exc
+        # 3. 安装网络隔离。只有确认防火墙降级生效后才能记录就绪。
+        backend = _install_proxy_permits(sid, proxy_port_start, proxy_port_end)
         steps_done.add("wfp")  # 网络隔离已装 (WFP 或降级), 失败回滚需卸载
-        if wfp_exc is not None:
-            _record_firewall_permits(sid, proxy_port_start, proxy_port_end)
-        else:
-            _record_proxy_permits(sid, proxy_port_start, proxy_port_end, "wfp")
+        _record_proxy_permits(sid, proxy_port_start, proxy_port_end, backend)
 
         # Only prepare explicitly requested tool paths; errors prevent setup success.
         if preinstall_paths:
@@ -2130,6 +2045,17 @@ def _grant_owned_preinstall_paths(paths: set[str], recorded: set[str]) -> set[st
 
 
 _PROXY_PERMIT_RECORD = "proxy_permit_ranges"
+_NETWORK_POLICY_VERSION = 2
+
+
+def _proxy_permit_record() -> dict:
+    try:
+        record = json.loads(reg_get_str(_PROXY_PERMIT_RECORD) or "{}")
+    except (ValueError, TypeError):
+        return {}
+    if not isinstance(record, dict) or record.get("network_policy_version") != _NETWORK_POLICY_VERSION:
+        return {}
+    return record
 
 
 def _permit_ranges(record, sid: str, backend: str) -> list[list[int]]:
@@ -2153,6 +2079,11 @@ def _firewall_ranges(record, sid: str) -> list[list[int]]:
     return _permit_ranges(record, sid, "firewall")
 
 
+def _wfp_read_access_denied(exc: OSError) -> bool:
+    return (isinstance(exc, PermissionError) or exc.errno == 13
+            or getattr(exc, "winerror", None) in {5, 0x80070005})
+
+
 def _proxy_ports_ready(port_start: int, port_end: int) -> bool:
     from jiuwenbox.supervisor import win_wfp
 
@@ -2164,10 +2095,8 @@ def _proxy_ports_ready(port_start: int, port_end: int) -> bool:
             return False
     except OSError:
         return False
-    raw = reg_get_str(_PROXY_PERMIT_RECORD)
-    try:
-        record = json.loads(raw or "{}")
-    except (ValueError, TypeError):
+    record = _proxy_permit_record()
+    if record.get("sid") != sid:
         return False
     firewall_recorded = any(start <= port_start <= port_end <= end
                             for start, end in _firewall_ranges(record, sid))
@@ -2179,37 +2108,50 @@ def _proxy_ports_ready(port_start: int, port_end: int) -> bool:
         return False
     try:
         wfp_ready = win_wfp.proxy_permits_installed(port_start, port_end)
+    except win_wfp.LegacyDnsPermitError:
+        return False
     except OSError as exc:
         # Ordinary users can open BFE but typically cannot enumerate filters.
         # Only permission denial may use the privileged install receipt; a
         # working query returning False or an unavailable BFE must fail closed.
-        denied = (isinstance(exc, PermissionError) or exc.errno == 13
-                  or getattr(exc, "winerror", None) in {5, 0x80070005})
         logger.debug("WFP permit query unavailable", exc_info=True)
         # Overlapping fallback evidence makes an old mixed receipt ambiguous.
         # Require its live rule check rather than trusting the cached WFP half.
-        wfp_ready = denied and not firewall_recorded
+        wfp_ready = _wfp_read_access_denied(exc) and not firewall_recorded
     except RuntimeError:
         wfp_ready = False
     if wfp_recorded and wfp_ready:
         return True
     if firewall_recorded:
-        # A firewall receipt identifies a fallback installation, not its
-        # continued existence. Never substitute it for a live rule query.
         try:
+            win_wfp.verify_legacy_dns_permits_absent()
+        except OSError as exc:
+            # An ordinary user may need the privileged by-key verification
+            # receipt. Only access denial permits using that receipt.
+            if not (_wfp_read_access_denied(exc) and record.get("firewall_legacy_dns_verified") is True):
+                logger.debug("Legacy WFP DNS permit query unavailable", exc_info=True)
+                return False
+        except RuntimeError:
+            logger.debug("Could not confirm absence of legacy WFP DNS permits", exc_info=True)
+            return False
+        try:
+            # Confirm the firewall protection still exists in ActiveStore.
             return win_wfp.firewall_permits_installed(sid, port_start, port_end)
         except (OSError, RuntimeError):
-            logger.debug("Firewall permit query unavailable", exc_info=True)
+            logger.debug("Firewall fallback could not be verified", exc_info=True)
     return False
 
 
 def _record_proxy_permits(sid: str, port_start: int, port_end: int, backend: str) -> None:
-    try:
-        record = json.loads(reg_get_str(_PROXY_PERMIT_RECORD) or "{}")
-    except (ValueError, TypeError):
-        record = {}
-    updated = {"sid": sid, "firewall_ranges": [] if backend == "wfp" else _firewall_ranges(record, sid),
-               "wfp_ranges": _permit_ranges(record, sid, "wfp")}
+    record = _proxy_permit_record()
+    updated = {
+        "network_policy_version": _NETWORK_POLICY_VERSION,
+        "sid": sid,
+        "firewall_ranges": [] if backend == "wfp" else _firewall_ranges(record, sid),
+        "wfp_ranges": _permit_ranges(record, sid, "wfp"),
+    }
+    if backend == "firewall":
+        updated["firewall_legacy_dns_verified"] = True
     range_key = f"{backend}_ranges"
     ranges = updated.get(range_key)
     if ranges is None:
@@ -2219,28 +2161,35 @@ def _record_proxy_permits(sid: str, port_start: int, port_end: int, backend: str
     _reg_set_str(_PROXY_PERMIT_RECORD, json.dumps(updated))
 
 
-def _record_firewall_permits(sid: str, port_start: int, port_end: int) -> None:
-    _record_proxy_permits(sid, port_start, port_end, "firewall")
+def _install_proxy_permits(sid: str, port_start: int, port_end: int) -> str:
+    """Install the requested range and return the backend to record."""
+    from jiuwenbox.supervisor import win_wfp
+
+    win_wfp.remove_legacy_dns_firewall_rules()
+    try:
+        win_wfp.install_wfp_filters(sid, port_start, port_end)
+        return "wfp"
+    except win_wfp.LegacyDnsPermitError:
+        raise
+    except (OSError, RuntimeError) as exc:
+        logger.warning("WFP 代理端口授权失败, 检查防火墙降级条件", exc_info=True)
+        win_wfp.verify_legacy_dns_permits_absent()
+        if not win_wfp.install_firewall_rule_fallback(
+            const.SANDBOX_USER_NAME, port_start, port_end, sandbox_user_sid=sid,
+        ):
+            raise RuntimeError("网络隔离不可用: PowerShell 防火墙规则安装失败") from exc
+        if not win_wfp.firewall_permits_installed(sid, port_start, port_end):
+            raise RuntimeError("网络隔离不可用: 未确认 PowerShell 防火墙规则生效") from exc
+        return "firewall"
 
 
 def _repair_proxy_permits(port_start: int, port_end: int) -> None:
     """Add this range without removing another live instance's WFP permits."""
-    from jiuwenbox.supervisor import win_wfp
-
     sid = get_sandbox_user_sid()
     if not sid:
         raise RuntimeError("沙箱代理授权缺少账户 SID")
-    try:
-        win_wfp.install_wfp_filters(sid, port_start, port_end)
-    except Exception:  # Preserve the existing firewall fallback.
-        logger.warning("WFP 代理端口补装失败, 尝试既有防火墙降级", exc_info=True)
-        if not win_wfp.install_firewall_rule_fallback(
-            const.SANDBOX_USER_NAME, port_start, port_end, sandbox_user_sid=sid,
-        ):
-            raise RuntimeError("沙箱代理端口放行失败") from None
-        _record_firewall_permits(sid, port_start, port_end)
-    else:
-        _record_proxy_permits(sid, port_start, port_end, "wfp")
+    backend = _install_proxy_permits(sid, port_start, port_end)
+    _record_proxy_permits(sid, port_start, port_end, backend)
 
 
 def _clear_proxy_permit_record(*, strict: bool = False) -> None:

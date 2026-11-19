@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import ctypes
+import errno
 import json
 import logging
 import os
@@ -18,7 +19,9 @@ import shutil
 import socket
 import sys
 import threading as _threading
+import time
 from ctypes import wintypes
+from pathlib import Path
 from typing import Any
 
 from jiuwenbox.logging_config import configure_logging
@@ -45,6 +48,10 @@ logger = logging.getLogger(__name__)
 # runner 脚本路径 (本模块的 runner 入口函数以 `python -m` 形式启动).
 RUNNER_MODULE = "jiuwenbox.supervisor.win_exec"
 RUNNER_SUBCOMMAND = "runner"
+MANAGED_NODE_DIR_ENV = "JIUWENBOX_INTERNAL_NODE_DIR"
+MANAGED_PYTHON_DIR_ENV = "JIUWENBOX_INTERNAL_PYTHON_DIR"
+MANAGED_WRITABLE_DIRS_ENV = "JIUWENBOX_INTERNAL_WRITABLE_DIRS"
+_MANAGED_ENV_KEYS = {MANAGED_NODE_DIR_ENV, MANAGED_PYTHON_DIR_ENV, MANAGED_WRITABLE_DIRS_ENV}
 
 # runner shutdown 时等待在途 worker 完成的窗口. 对齐 Linux daemon 的
 # SHUTDOWN_DRAIN_TIMEOUT_SECONDS 但缩短: box-server 侧 _send_runner_shutdown
@@ -394,13 +401,18 @@ def _clear_inherit(handle: int) -> None:
 # ---------------------------------------------------------------------------
 # broker 侧: 第一跳.
 # ---------------------------------------------------------------------------
-def _build_env_block(env: dict[str, str]) -> ctypes.c_wchar_p:
+def _build_env_block(env: dict[str, str]) -> ctypes.Array:
     """构造 CreateProcessWithLogonW 的 lpEnvironment (UTF-16 环境块).
 
     格式: 一串 "KEY=VALUE\\0" 序列, 末尾额外一个 "\\0" (双 null 终止).
     CreateProcessWithLogonW 要求 UNICODE (UTF-16) 环境块.
     """
-    parts = [f"{k}={v}" for k, v in env.items()]
+    parts = []
+    for key, value in env.items():
+        invalid_key = not key or "=" in key or "\0" in key
+        if invalid_key or "\0" in value:
+            raise ValueError("Invalid Windows environment entry")
+        parts.append(f"{key}={value}")
     block = "\0".join(parts) + "\0\0"
     return ctypes.create_unicode_buffer(block)
 
@@ -496,6 +508,7 @@ def two_hop_spawn(
     runner resume 后从 stdin 读 token 再切 socket accept.
     """
     _require_windows()
+    env_block_buf = _build_env_block(env) if env else None
     advapi32 = _get_advapi32()
     kernel32 = get_kernel32()
 
@@ -544,10 +557,8 @@ def two_hop_spawn(
     creation_flags = const.CREATE_NO_WINDOW | const.CREATE_SUSPENDED
     # env 块含 box-server 拼好的 PATH (tool_paths), runner 必须继承, 否则起 child 时 WinError 2.
     # env_block_buf 须存活到调用返回 (悬垂指针防护).
-    env_block_buf = None
     env_block_ptr = None
-    if env:
-        env_block_buf = _build_env_block(env)
+    if env_block_buf is not None:
         env_block_ptr = ctypes.cast(env_block_buf, ctypes.c_void_p)
         creation_flags |= const.CREATE_UNICODE_ENVIRONMENT
 
@@ -969,6 +980,45 @@ def get_sandbox_profile_dir() -> str | None:
         kernel32.CloseHandle(wintypes.HANDLE(token))
 
 
+def _managed_tool_file(root: Path, relative: Path, writable: tuple[Path, ...]) -> str:
+    candidate = root / relative
+    if not root.is_absolute() or candidate.resolve(strict=True) != candidate or not candidate.is_file():
+        raise PermissionError(f"Managed executable is outside its declared location: {candidate}")
+    if any(candidate.is_relative_to(path) for path in writable):
+        raise PermissionError(f"Managed executable is under a sandbox-writable path: {candidate}")
+    return str(candidate)
+
+
+def resolve_managed_command(command: list[str]) -> tuple[str | None, list[str]]:
+    """Resolve a configured tool for the sandbox runner's Win32 launch."""
+    if not command:
+        return None, command
+    name = command[0].lower()
+    if name in {"cmd", "cmd.exe", "powershell", "powershell.exe"}:
+        system_dir = ctypes.create_unicode_buffer(32768)
+        length = get_kernel32().GetSystemDirectoryW(system_dir, len(system_dir))
+        if not 0 < length < len(system_dir):
+            raise ctypes.WinError()
+        relative = Path("cmd.exe") if name.startswith("cmd") else Path("WindowsPowerShell/v1.0/powershell.exe")
+        application = _managed_tool_file(Path(system_dir.value), relative, ())
+        return application, [application, *command[1:]]
+
+    tool = name.removesuffix(".exe").removesuffix(".cmd")
+    if name not in {"node", "node.exe", "npm", "npm.cmd", "npx", "npx.cmd", "python", "python.exe"}:
+        return None, command
+    root = os.environ.get(MANAGED_PYTHON_DIR_ENV if tool == "python" else MANAGED_NODE_DIR_ENV)
+    if not root:
+        return None, command
+    writable = tuple(Path(path) for path in json.loads(os.environ.get(MANAGED_WRITABLE_DIRS_ENV, "[]")))
+    if tool in {"npm", "npx"}:
+        # Launch the stock Node distribution's CLI with Node itself and preserve argv.
+        application = _managed_tool_file(Path(root), Path("node.exe"), writable)
+        cli = _managed_tool_file(Path(root), Path("node_modules/npm/bin") / f"{tool}-cli.js", writable)
+        return application, [application, cli, *command[1:]]
+    application = _managed_tool_file(Path(root), Path(f"{tool}.exe"), writable)
+    return application, [application, *command[1:]]
+
+
 def _create_process_as_user(  # pylint: disable=huawei-too-many-arguments
     restricted_token: int,
     command: list[str],
@@ -984,6 +1034,7 @@ def _create_process_as_user(  # pylint: disable=huawei-too-many-arguments
     调用方必须先加入 Job, 再恢复主线程并关闭线程句柄.
     """
     advapi32 = _get_advapi32()
+    application, command = resolve_managed_command(command)
     # P2-18: 用 subprocess.list2cmdline 正确转义命令行. 旧版 " ".join 只对含空格参数加外层双引号不转义内部 ",
     # command 形如 ['bash','-lc','python -c "print("ok")"'] 时 bash 收到的双引号被 Windows CRT 当边界 → argv 错位 → SyntaxError.
     # list2cmdline 按 MSVCRT argv 规则把内部 " 转义为 \".
@@ -1116,9 +1167,10 @@ def _create_process_as_user(  # pylint: disable=huawei-too-many-arguments
         f"USERPROFILE={env.get('USERPROFILE')} HOME={env.get('HOME')} "
         f"TEMP={env.get('TEMP')}",
     )
-    parts = [f"{k}={v}" for k, v in env.items()]
-    block = "\0".join(parts) + "\0\0"
-    env_block_buf = ctypes.create_unicode_buffer(block)
+    env = {key: value for key, value in env.items()
+           if key.upper() not in _MANAGED_ENV_KEYS and key.upper() != "NODEFAULTCURRENTDIRECTORYINEXEPATH"}
+    env["NoDefaultCurrentDirectoryInExePath"] = "1"
+    env_block_buf = _build_env_block(env)
     env_block_ptr = ctypes.cast(env_block_buf, ctypes.c_void_p)
 
     startup = STARTUPINFOW()
@@ -1141,7 +1193,7 @@ def _create_process_as_user(  # pylint: disable=huawei-too-many-arguments
 
     ok = advapi32.CreateProcessAsUserW(
         wintypes.HANDLE(restricted_token),
-        None,
+        application,
         cmd_line_buf,
         None, None,
         True,  # inherit handles
@@ -2080,6 +2132,47 @@ def _handle_exec_request(stream, header, restricted_token, workspace, stdin_byte
             stdin_thread.join(timeout=5.0)
 
 
+def open_runner_write_stream(path: str):
+    """Open a sandbox upload destination with bounded Win32 sharing retries."""
+    if sys.platform != "win32":
+        return open(path, "wb")
+
+    import msvcrt
+    import pywintypes
+    import win32con
+    import win32file
+
+    if "\0" in path:
+        raise ValueError("embedded null character")
+    delays = (0.02, 0.05, 0.1)
+    for attempt in range(len(delays) + 1):
+        try:
+            handle = win32file.CreateFile(
+                path, win32con.GENERIC_WRITE, win32con.FILE_SHARE_READ | win32con.FILE_SHARE_WRITE,
+                None, win32con.OPEN_ALWAYS, win32con.FILE_ATTRIBUTE_NORMAL, None,
+            )
+            break
+        except pywintypes.error as exc:
+            # Permission denial is persistent. Only retry lock/sharing failures.
+            if exc.winerror not in {32, 33} or attempt == len(delays):
+                error = ctypes.WinError(exc.winerror)
+                error.filename = path
+                raise error from exc
+            time.sleep(delays[attempt])
+    raw_handle = handle.Detach()
+    try:
+        fd = msvcrt.open_osfhandle(raw_handle, os.O_WRONLY | os.O_BINARY | os.O_NOINHERIT)
+    except BaseException:
+        win32file.CloseHandle(raw_handle)
+        raise
+    try:
+        os.ftruncate(fd, 0)
+        return os.fdopen(fd, "wb")
+    except BaseException:
+        os.close(fd)
+        raise
+
+
 def _handle_write_file_request(stream, header, stdin) -> None:
     path = header.get("path", "")
     size = int(header.get("content_size", 0))
@@ -2093,8 +2186,9 @@ def _handle_write_file_request(stream, header, stdin) -> None:
             )
         if mkdir_parents:
             os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(path, "wb") as fh:
-            fh.write(content)
+        with open_runner_write_stream(path) as fh:
+            if fh.write(content) != len(content):
+                raise OSError(errno.EIO, "incomplete file write")
             if mode is not None:
                 os.chmod(path, int(str(mode), 8) if isinstance(mode, str) else mode)
         _send_response(stream, {"ok": True})
@@ -2102,6 +2196,7 @@ def _handle_write_file_request(stream, header, stdin) -> None:
         _send_response(stream, {
             "ok": False, "error": "io_error", "errno": exc.errno,
             "stderr": str(exc),
+            **({"winerror": exc.winerror} if getattr(exc, "winerror", None) is not None else {}),
         })
     except Exception as exc:  # noqa: BLE001
         _send_error_response(stream, str(exc))

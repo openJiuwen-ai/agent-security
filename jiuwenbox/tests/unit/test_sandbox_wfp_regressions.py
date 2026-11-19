@@ -18,10 +18,14 @@ def test_wfp_enumeration_declares_the_native_five_argument_contract(monkeypatch)
     dll = Mock()
     monkeypatch.setattr(wfp, '_fwpuclnt', None)
     monkeypatch.setattr(wfp.ctypes, 'WinDLL', Mock(return_value=dll), raising=False)
-    assert wfp._get_fwpuclnt().FwpmFilterEnum0.argtypes == [
+    wfp._get_fwpuclnt()
+    assert dll.FwpmFilterEnum0.argtypes == [
         wintypes.HANDLE, wintypes.HANDLE, wintypes.UINT,
         ctypes.POINTER(ctypes.POINTER(ctypes.POINTER(wfp.FwpmFilter0))),
         ctypes.POINTER(wintypes.UINT),
+    ]
+    assert dll.FwpmFilterGetByKey0.argtypes == [
+        wintypes.HANDLE, ctypes.POINTER(wfp.Guid), ctypes.POINTER(ctypes.POINTER(wfp.FwpmFilter0)),
     ]
 
 
@@ -136,11 +140,12 @@ def test_existing_filter_key_is_replaced_with_current_conditions(monkeypatch, fa
     assert store['unrelated-live-port'] == 123
 
 
-@pytest.mark.parametrize('failure', ['begin', 'commit'])
+@pytest.mark.parametrize('failure', ['begin', 'legacy_delete', 'commit'])
 def test_failed_wfp_transaction_cannot_report_success(monkeypatch, failure):
     dll = Mock()
     dll.FwpmTransactionBegin0.return_value = 5 if failure == 'begin' else 0
     dll.FwpmTransactionCommit0.return_value = 5
+    dll.FwpmFilterDeleteByKey0.return_value = 5 if failure == 'legacy_delete' else 0x80320003
     monkeypatch.setattr(wfp, '_require_windows', Mock())
     monkeypatch.setattr(wfp, '_get_fwpuclnt', lambda: dll)
     monkeypatch.setattr(wfp, '_open_engine', lambda: 123)
@@ -151,8 +156,57 @@ def test_failed_wfp_transaction_cannot_report_success(monkeypatch, failure):
     monkeypatch.setattr(wfp, '_add_filter', add)
     with pytest.raises(OSError):
         wfp.install_wfp_filters('S-current', 61100, 61100)
-    assert add.call_count == (0 if failure == 'begin' else 6)
-    assert dll.FwpmTransactionAbort0.call_count == (failure == 'commit')
+    assert add.call_count == (4 if failure == 'commit' else 0)  # Block and loopback per family.
+    assert dll.FwpmTransactionAbort0.call_count == (failure != 'begin')
+    dll.FwpmEngineClose0.assert_called_once_with(123)
+
+
+def test_legacy_dns_rules_prevent_positive_wfp_readback(monkeypatch):
+    monkeypatch.setattr(wfp, '_require_windows', Mock())
+    monkeypatch.setattr(wfp, '_open_engine', lambda: 123)
+    monkeypatch.setattr(wfp, '_get_fwpuclnt', Mock())
+    monkeypatch.setattr(wfp, '_enumerate_sublayer_filters',
+                        Mock(return_value=[const.JBX_FILTER_DNS_PERMIT_KEY_V4]))
+    with pytest.raises(wfp.LegacyDnsPermitError):
+        wfp.proxy_permits_installed(61100, 61100)
+
+
+@pytest.mark.parametrize('status', [0x80320003, 0, 5])
+def test_legacy_dns_key_readback_distinguishes_absent_present_and_unavailable(monkeypatch, status):
+    entry = wfp.FwpmFilter0()
+    dll = Mock()
+    queried = set()
+    legacy_key = const.JBX_FILTER_DNS_PERMIT_KEY_V4.lower()
+
+    def get_filter(engine, key, result):
+        assert engine == 123
+        guid = ctypes.cast(key, ctypes.POINTER(wfp.Guid)).contents
+        name = wfp._guid_to_str(guid).lower()
+        queried.add(name)
+        if name != legacy_key:
+            return 0x80320003
+        if status == 0:
+            output = ctypes.cast(result, ctypes.POINTER(ctypes.POINTER(wfp.FwpmFilter0)))
+            output[0] = ctypes.pointer(entry)
+        return status
+
+    dll.FwpmFilterGetByKey0.side_effect = get_filter
+    monkeypatch.setattr(wfp, '_require_windows', Mock())
+    monkeypatch.setattr(wfp, '_open_engine', lambda: 123)
+    monkeypatch.setattr(wfp, '_get_fwpuclnt', lambda: dll)
+    if status == 0x80320003:
+        wfp.verify_legacy_dns_permits_absent()
+        assert queried == {key.lower() for key in wfp._legacy_dns_permit_keys()}
+    elif status == 0:
+        with pytest.raises(wfp.LegacyDnsPermitError):
+            wfp.verify_legacy_dns_permits_absent()
+        freed = dll.FwpmFreeMemory0.call_args.args[0]
+        assert ctypes.cast(freed, ctypes.POINTER(ctypes.c_void_p)).contents.value == ctypes.addressof(entry)
+    else:
+        with pytest.raises(OSError) as caught:
+            wfp.verify_legacy_dns_permits_absent()
+        assert caught.value.winerror == status
+    assert dll.FwpmFreeMemory0.call_count == (status == 0)
     dll.FwpmEngineClose0.assert_called_once_with(123)
 
 
@@ -163,7 +217,7 @@ def test_wfp_error_keeps_native_code_for_permission_classification():
 
 
 def _live_firewall_snapshot():
-    common = {'enabled': True, 'direction': 'Outbound', 'profile': 'Any',
+    common = {'enabled': True, 'enforcement_status': [1], 'direction': 'Outbound', 'profile': 'Any',
               'local_user': 'D:(A;;CC;;;S-test)', 'local_addresses': ['Any'], 'local_ports': ['Any']}
     return {'profiles_enabled': True, 'rules': [
         dict(common, name='JiuwenBox-Block-Sandbox-Egress', action='Block', protocol='Any',
@@ -175,6 +229,7 @@ def _live_firewall_snapshot():
 
 @pytest.mark.parametrize('index,field,value', [
     (0, 'enabled', False), (1, 'enabled', False), (0, 'action', 'Allow'),
+    (0, 'enforcement_status', [16]), (1, 'enforcement_status', []),
     (0, 'direction', 'Inbound'), (1, 'profile', 'Private'),
     (0, 'local_user', 'D:(A;;CC;;;S-old)'), (1, 'local_user', 'Any'),
     (0, 'protocol', 'TCP'), (0, 'remote_ports', ['80']),
@@ -221,6 +276,7 @@ def test_firewall_readback_uses_only_effective_read_queries_and_checks_the_resul
     assert not wfp.firewall_permits_installed('S-old', 61100, 61102)
     query = run.call_args.args[0][-1]
     assert '-PolicyStore ActiveStore' in query
+    assert "'EnforcementStatus'" in query
     assert 'Get-NetFirewallSecurityFilter' in query
     assert 'S-test' not in query
     assert 'New-NetFirewallRule' not in query and 'Remove-NetFirewallRule' not in query
@@ -242,3 +298,21 @@ def test_live_firewall_query_failure_cannot_report_ready(monkeypatch, failure):
     monkeypatch.setattr(wfp.subprocess, 'run', run)
     with pytest.raises((OSError, RuntimeError)):
         wfp.firewall_permits_installed('S-test', 61100, 61102)
+
+
+@pytest.mark.parametrize('timeout', [False, True])
+def test_legacy_firewall_cleanup_wraps_powershell_errors(monkeypatch, timeout):
+    monkeypatch.setattr(wfp, '_get_powershell', lambda: 'powershell-test')
+    stderr = '权限拒绝\r\n策略限制 '.encode() + b'x' * 300
+    if timeout:
+        failure = wfp.subprocess.TimeoutExpired('cleanup', 30, stderr=stderr)
+        reason = '超时'
+    else:
+        failure = wfp.subprocess.CalledProcessError(1, 'cleanup', stderr=stderr)
+        reason = '退出码 1'
+    monkeypatch.setattr(wfp.subprocess, 'run', Mock(side_effect=failure))
+    with pytest.raises(OSError, match=reason) as caught:
+        wfp.remove_legacy_dns_firewall_rules()
+    assert caught.value.__cause__ is failure
+    assert '权限拒绝 策略限制' in str(caught.value)
+    assert 'x' * 240 not in str(caught.value)

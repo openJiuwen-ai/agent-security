@@ -80,6 +80,34 @@ async def run_client(tmp_path, engine, arguments, *, approved=True, approval=Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("replace_existing", [False, True])
+@pytest.mark.parametrize("approved", [False, True])
+async def test_native_move_uses_one_approval_for_both_paths(tmp_path, replace_existing, approved):
+    source, target = tmp_path / "source.txt", tmp_path / "target.txt"
+    source.write_text("source")
+    if replace_existing:
+        target.write_text("target")
+    engine = policy(tmp_path, paths=[
+        {"path": str(path), "read": "allow", "write": "ask"} for path in (source, target)
+    ])
+
+    code, output, cards = await run_client(tmp_path, engine, [source, target, "rename"], approved=approved)
+
+    assert len(cards) == 1, (output, cards)
+    accesses = set(map(tuple, cards[0]["resource"]["accesses"]))
+    assert {(str(source), "delete"), (str(target), "write")} <= accesses
+    assert ((str(target), "delete") in accesses) is replace_existing
+    assert (code == 0) is approved, output
+    assert source.exists() is not approved
+    if approved:
+        assert target.read_text() == "source"
+    elif replace_existing:
+        assert target.read_text() == "target"
+    else:
+        assert not target.exists()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("host_confirmed", [True, False])
 async def test_real_git_bash_forwards_one_batch_delete_confirmation(tmp_path, host_confirmed):
     operation = {

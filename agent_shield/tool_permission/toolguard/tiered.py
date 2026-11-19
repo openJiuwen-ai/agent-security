@@ -14,6 +14,7 @@ import logging
 import re
 import sys
 from collections.abc import Mapping
+from fnmatch import translate
 from typing import Any
 
 from ..models import PermissionLevel, PermissionResult
@@ -96,7 +97,18 @@ def _compile_wildcard(pattern: str) -> re.Pattern[str] | None:
         return None
 
 
-def _rule_matches(rule: Mapping[str, Any], command: str) -> bool:
+def _compile_restriction(pattern: str) -> re.Pattern[str]:
+    # fnmatch uses atomic groups for repeated stars. Only * and ? are wildcards.
+    glob = pattern.replace("\\", "/").replace("[", "[[]")
+    expression = translate(glob)
+    if glob.endswith(" *"):
+        expression = f"(?:{expression}|{translate(glob[:-2])})"
+    return re.compile(expression, re.IGNORECASE if sys.platform == "win32" else 0)
+
+
+def _rule_matches(
+    rule: Mapping[str, Any], command: str, decision: PermissionLevel = PermissionLevel.ALLOW,
+) -> bool:
     if not command or not rule["_is_command"]:
         return False
     kind = rule["_kind"]
@@ -107,7 +119,8 @@ def _rule_matches(rule: Mapping[str, Any], command: str) -> bool:
             for text in (command, command.replace("\\", "/"))
         )
     if kind == "wildcard":
-        pattern = rule["_wildcard"]
+        restrictive = decision in {PermissionLevel.ASK, PermissionLevel.DENY}
+        pattern = rule["_restriction"] if restrictive else rule["_wildcard"]
         return pattern is not None and pattern.fullmatch(command.replace("\\", "/")) is not None
     return command == rule["_exact"]
 
@@ -293,8 +306,8 @@ class TieredPolicyComponent:
         hits: list[tuple[PermissionLevel, str, str]] = []
         for namespace, rules in (("builtin", self._builtin_rules), ("rules", self._user_rules)):
             for rule in rules:
-                if _rule_targets_tool(rule, tool_name) and _rule_matches(rule, command):
-                    decision = rule["_by_tool"].get(tool_name, rule["_decision"])
+                decision = rule["_by_tool"].get(tool_name, rule["_decision"])
+                if _rule_targets_tool(rule, tool_name) and _rule_matches(rule, command, decision):
                     hits.append((decision, namespace, _rule_label(namespace, rule)))
         if not hits:
             return None
@@ -336,6 +349,7 @@ class TieredPolicyComponent:
         elif any(char in pattern for char in "*?["):
             rule["_kind"] = "wildcard"
             rule["_wildcard"] = _compile_wildcard(pattern)
+            rule["_restriction"] = _compile_restriction(pattern)
         else:
             rule["_kind"] = "exact"
             rule["_exact"] = pattern
