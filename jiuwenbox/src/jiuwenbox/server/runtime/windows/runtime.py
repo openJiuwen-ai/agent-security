@@ -291,6 +291,7 @@ class WindowsRuntime(RuntimeAdapter):
             ok=False,
             error=str(response.get("error") or "io_error"),
             errno=int(response["errno"]) if isinstance(response.get("errno"), int) else None,
+            winerror=response["winerror"] if isinstance(response.get("winerror"), int) else None,
             detail=str(response.get("stderr") or response.get("detail") or ""),
         )
 
@@ -411,6 +412,19 @@ class WindowsRuntime(RuntimeAdapter):
 
         for _k, _v in inherited_environment(for_runner=True).items():
             env.setdefault(_k, _v)
+        # Bind trusted tool directories after merging inherited variables.
+        managed_dirs = {
+            win_exec.MANAGED_NODE_DIR_ENV: (tool_paths.node_dir or "").strip(),
+            win_exec.MANAGED_PYTHON_DIR_ENV: (tool_paths.python_dir or "").strip(),
+        }
+        for key in tuple(env):
+            if key.upper() in {*managed_dirs, win_exec.MANAGED_WRITABLE_DIRS_ENV}:
+                env.pop(key)
+        if any(managed_dirs.values()):
+            env.update({key: os.path.expandvars(path) for key, path in managed_dirs.items() if path})
+            env[win_exec.MANAGED_WRITABLE_DIRS_ENV] = json.dumps([
+                str(Path(os.path.expandvars(path)).resolve()) for path in [workspace, *allow_write_paths] if path
+            ])
         _merge_soft_delete_runner_env(env)
         if env.get("JIUWENBOX_SOFT_DELETE") == "1":
             _drive = (os.environ.get("SystemDrive") or "C:").rstrip("\\")

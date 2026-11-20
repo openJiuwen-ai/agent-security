@@ -2,6 +2,7 @@
 """Access/logon-policy failures must not be mistaken for a bad password."""
 # pylint: disable=protected-access
 # Fault injection replaces private Win32 boundaries; no privileged setup runs.
+import sys
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -9,6 +10,40 @@ import pytest
 
 from jiuwenbox.supervisor import win_constants as const
 from jiuwenbox.supervisor import win_setup as setup
+from jiuwenbox.supervisor.win_setup import _create_sandbox_user, _set_user_password
+
+
+class _NetUserError(Exception):
+    def __init__(self, winerror):
+        self.winerror = winerror
+
+
+@pytest.mark.parametrize('following_status, expected', [(None, True), (2224, False)])
+def test_account_creation_retries_on_an_existing_account(monkeypatch, following_status, expected):
+    following_error = None if following_status is None else _NetUserError(following_status)
+    add = Mock(side_effect=[_NetUserError(2224), following_error])
+    monkeypatch.setitem(sys.modules, 'win32net', SimpleNamespace(NetUserAdd=add, error=_NetUserError))
+    sleep = Mock()
+    monkeypatch.setattr(setup.time, 'sleep', sleep)
+
+    assert _create_sandbox_user('test-password', retries=2) is expected
+    server, level, account = add.call_args.args
+    assert (server, level, account['name']) == (None, const.USER_INFO_1_LEVEL, const.SANDBOX_USER_NAME)
+    assert account['flags'] == const.SANDBOX_USER_FLAGS
+    assert account['password'] == 'test-password'
+    assert add.call_count == 2
+    sleep.assert_called_once_with(0.5)
+
+
+def test_password_reset_preserves_native_error_for_missing_account(monkeypatch):
+    reset = Mock(side_effect=_NetUserError(2221))
+    monkeypatch.setitem(sys.modules, 'win32net', SimpleNamespace(NetUserSetInfo=reset, error=_NetUserError))
+
+    with pytest.raises(RuntimeError, match='ret=2221'):
+        _set_user_password(const.SANDBOX_USER_NAME, 'test-password')
+    server, name, level, account = reset.call_args.args
+    assert (server, name, level) == (None, const.SANDBOX_USER_NAME, const.USER_INFO_1_LEVEL)
+    assert account['password'] == 'test-password'
 
 
 def _existing_account(monkeypatch, winerror, *, native_logon=False):

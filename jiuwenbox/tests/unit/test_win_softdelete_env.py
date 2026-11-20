@@ -225,3 +225,81 @@ def test_local_hook_preserves_original_when_broker_unavailable(tmp_path):
     finally:
         broker.stop()
     assert source.read_bytes() == b"original"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows native recovery")
+def test_delete_proxy_keeps_data_on_broker_refusal(tmp_path):
+    import subprocess
+
+    pytest.importorskip("win32security")
+    from agent_security_dll import guard_library
+    from jiuwenbox.supervisor.win_recycle_broker import RecycleBroker
+
+    if not guard_library().is_file():
+        pytest.skip("Build the foundation DLL first")
+    source = tmp_path / "document.txt"
+    source.write_bytes(b"original")
+    program = r'''
+import ctypes, os, sys
+from ctypes import wintypes
+import ntsecuritycon, win32api, win32con, win32file, win32security
+from jiuwenbox.supervisor import win_softdelete as recovery
+
+target, port, token = sys.argv[1:]
+security = win32security
+sid = security.GetTokenInformation(security.OpenProcessToken(win32api.GetCurrentProcess(),
+                                   win32con.TOKEN_QUERY), security.TokenUser)[0]
+get_acl = lambda path: security.GetNamedSecurityInfo(path, security.SE_FILE_OBJECT,
+                       security.DACL_SECURITY_INFORMATION).GetSecurityDescriptorDacl()
+set_acl = lambda path, acl: security.SetNamedSecurityInfo(path, security.SE_FILE_OBJECT,
+                       security.DACL_SECURITY_INFORMATION, None, None, acl, None)
+parent = os.path.dirname(target)
+original = {path: get_acl(path) for path in (parent, target)}
+for path, mask in ((parent, ntsecuritycon.FILE_DELETE_CHILD), (target, ntsecuritycon.DELETE)):
+    acl = security.ACL()
+    acl.AddAccessDeniedAce(security.ACL_REVISION, mask, sid)
+    acl.AddAccessAllowedAce(security.ACL_REVISION, ntsecuritycon.FILE_ALL_ACCESS, sid)
+    set_acl(path, acl)
+
+os.environ[recovery.ENV_RECYCLE_PORT] = port
+os.environ[recovery.ENV_RECYCLE_TOKEN] = token
+try:
+    recovery.install_win_soft_delete(os.path.join(parent, 'archive'))
+    share = win32con.FILE_SHARE_READ | win32con.FILE_SHARE_WRITE | win32con.FILE_SHARE_DELETE
+    handle = win32file.CreateFile(target, ntsecuritycon.DELETE | ntsecuritycon.FILE_READ_ATTRIBUTES,
+                                  share, None, win32con.OPEN_EXISTING, 0, None)
+    try:
+        query = ctypes.WinDLL('ntdll').NtQueryObject
+        query.argtypes = (wintypes.HANDLE, wintypes.ULONG, ctypes.c_void_p, wintypes.ULONG, ctypes.c_void_p)
+        basic = (wintypes.ULONG * 14)()
+        assert query(int(handle), 0, ctypes.byref(basic), ctypes.sizeof(basic), None) >= 0
+        assert not basic[1] & ntsecuritycon.DELETE
+        set_info = ctypes.WinDLL('kernel32', use_last_error=True).SetFileInformationByHandle
+        set_info.argtypes = (wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD)
+        delete = wintypes.BOOL(True)
+        assert not set_info(int(handle), 4, ctypes.byref(delete), ctypes.sizeof(delete))
+        assert ctypes.get_last_error() == 5
+    finally:
+        handle.Close()
+finally:
+    recovery.uninstall_win_soft_delete()
+    for path, acl in original.items():
+        set_acl(path, acl)
+'''
+    calls = []
+
+    def refuse(path):
+        calls.append(path)
+        return False
+
+    broker = RecycleBroker(recycler=refuse)
+    port = broker.start()
+    try:
+        token = broker.register([str(tmp_path)])
+        result = subprocess.run([sys.executable, "-c", program, str(source), str(port), token],
+                                capture_output=True, timeout=15)
+        assert result.returncode == 0, result.stderr
+    finally:
+        broker.stop()
+    assert calls == [str(source)]
+    assert source.read_bytes() == b"original"

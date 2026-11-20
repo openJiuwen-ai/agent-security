@@ -2,6 +2,7 @@
  * Lower-level checks remain active during the real call, including recovery. */
 static BOOL (WINAPI *original_copy)(LPCWSTR, LPCWSTR, BOOL);
 static BOOL (WINAPI *original_copy_ex)(LPCWSTR, LPCWSTR, LPPROGRESS_ROUTINE, LPVOID, LPBOOL, DWORD);
+static BOOL (WINAPI *original_move_ex)(LPCWSTR, LPCWSTR, DWORD);
 static BOOL (WINAPI *original_replace)(LPCWSTR, LPCWSTR, LPCWSTR, DWORD, LPVOID, LPVOID);
 static BOOL (WINAPI *original_copy_a)(LPCSTR, LPCSTR, BOOL);
 static BOOL (WINAPI *original_copy_ex_a)(LPCSTR, LPCSTR, LPPROGRESS_ROUTINE, LPVOID, LPBOOL, DWORD);
@@ -64,6 +65,35 @@ static BOOL WINAPI hook_copy_ex(LPCWSTR source, LPCWSTR target, LPPROGRESS_ROUTI
     WCHAR paths[3][GUARD_PATH_CHARS];
     return approve_compound(18, source, target, NULL, paths)
         && original_copy_ex(paths[0], paths[1], progress, context, cancel, flags);
+}
+
+static BOOL WINAPI hook_move_ex(LPCWSTR source, LPCWSTR target, DWORD flags) {
+    if (busy() || !source || !target || (flags & MOVEFILE_DELAY_UNTIL_REBOOT))
+        return original_move_ex(source, target, flags);
+    WCHAR from[GUARD_PATH_CHARS], to[GUARD_PATH_CHARS];
+    GuardDeleteScope *scope = NULL;
+    guard(1);
+    BOOL allowed = capture_absolute_path(source, from) && capture_absolute_path(target, to);
+    if (allowed) {
+        if ((flags & MOVEFILE_REPLACE_EXISTING) && _wcsicmp(from, to) != 0) {
+            scope = guard_begin_replace(from, to, NULL, 2);
+            allowed = scope != NULL;
+        } else {
+            allowed = decide_pair(16, from, to);
+        }
+    }
+    guard(0);
+    if (!allowed) { SetLastError(ERROR_ACCESS_DENIED); return FALSE; }
+
+    BOOL moved = original_move_ex(from, to, flags);
+    if (!scope) return moved;
+    DWORD error = moved ? ERROR_SUCCESS : GetLastError();
+    guard(1);
+    moved = guard_finish_replace(scope, NULL, moved ? 0 : -1, error);
+    error = GetLastError();
+    guard(0);
+    SetLastError(error);
+    return moved;
 }
 
 static BOOL WINAPI hook_replace(LPCWSTR target, LPCWSTR source, LPCWSTR backup, DWORD flags,
@@ -197,6 +227,7 @@ static BOOL WINAPI hook_hardlink_a(LPCSTR link, LPCSTR source, LPSECURITY_ATTRIB
 static LONG install_compound_file_hooks(HMODULE kernel) {
     LONG status = guard_attach(GetProcAddress(kernel, "CopyFileW"), hook_copy, (PVOID *)&original_copy);
     if (!status) status = guard_attach(GetProcAddress(kernel, "CopyFileExW"), hook_copy_ex, (PVOID *)&original_copy_ex);
+    if (!status) status = guard_attach(GetProcAddress(kernel, "MoveFileExW"), hook_move_ex, (PVOID *)&original_move_ex);
     if (!status) status = guard_attach(GetProcAddress(kernel, "ReplaceFileW"), hook_replace, (PVOID *)&original_replace);
     if (!status) status = guard_attach(GetProcAddress(kernel, "CopyFileA"), hook_copy_a, (PVOID *)&original_copy_a);
     if (!status) status = guard_attach(GetProcAddress(kernel, "CopyFileExA"), hook_copy_ex_a, (PVOID *)&original_copy_ex_a);

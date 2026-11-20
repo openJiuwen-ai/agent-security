@@ -371,6 +371,16 @@ static BOOL(WINAPI *g_delete_file)(LPCWSTR);
 static BOOL(WINAPI *g_remove_directory)(LPCWSTR);
 
 static HANDLE g_pending_handle[PENDING_MAX];
+typedef struct {
+    HANDLE handle;
+    HANDLE reference;
+    BY_HANDLE_FILE_INFORMATION identity;
+    BOOL recycled;
+} DeleteProxy;
+static DeleteProxy g_delete_proxy[PENDING_MAX];
+static NTSTATUS (NTAPI *query_handle_object)(HANDLE, ULONG, PVOID, ULONG, ULONG *);
+static BOOL (WINAPI *compare_object_handles)(HANDLE, HANDLE);
+static int directory_is_empty(const wchar_t *path);
 static BOOL g_pending_reserved[PENDING_MAX];
 static wchar_t *g_pending_path[PENDING_MAX];
 static GUID g_pending_operation[PENDING_MAX];
@@ -1939,6 +1949,110 @@ static int pending_has_operation(const GUID *operation) {
     return found;
 }
 
+static BOOL handle_has_delete(HANDLE handle) {
+    /* PUBLIC_OBJECT_BASIC_INFORMATION begins with Attributes and GrantedAccess. */
+    ULONG basic[14] = {0};
+    return query_handle_object && query_handle_object(handle, 0, basic, sizeof basic, NULL) >= 0
+        && (basic[1] & DELETE) != 0;
+}
+
+static DeleteProxy *find_delete_proxy(HANDLE handle) {
+    /* Caller holds g_lock. */
+    for (int i = 0; i < PENDING_MAX; ++i) {
+        if (g_delete_proxy[i].handle == handle) return &g_delete_proxy[i];
+    }
+    return NULL;
+}
+
+static BOOL remember_delete_proxy(HANDLE handle) {
+    BY_HANDLE_FILE_INFORMATION identity;
+    if (GetFileType(handle) != FILE_TYPE_DISK || !GetFileInformationByHandle(handle, &identity)
+        || (identity.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) return FALSE;
+    HANDLE self = GetCurrentProcess(), reference = NULL;
+    if (!DuplicateHandle(self, handle, self, &reference, 0, FALSE, DUPLICATE_SAME_ACCESS)) return FALSE;
+    EnterCriticalSection(&g_lock);
+    DeleteProxy *slot = find_delete_proxy(handle);
+    if (slot) {
+        g_nt_close(slot->reference);
+        pending_clear(handle);
+    } else {
+        slot = find_delete_proxy(NULL);
+    }
+    if (slot) *slot = (DeleteProxy){.handle = handle, .reference = reference, .identity = identity};
+    LeaveCriticalSection(&g_lock);
+    if (!slot) g_nt_close(reference);
+    return slot != NULL;
+}
+
+static BOOL get_delete_proxy(HANDLE handle, DeleteProxy *proxy) {
+    if (!handle) return FALSE;
+    EnterCriticalSection(&g_lock);
+    DeleteProxy *slot = find_delete_proxy(handle);
+    if (slot && !compare_object_handles(handle, slot->reference)) {
+        /* A close outside NtClose can leave a stale numeric handle in the table. */
+        HANDLE reference = slot->reference;
+        ZeroMemory(slot, sizeof *slot);
+        g_nt_close(reference);
+        pending_clear(handle);
+        slot = NULL;
+    }
+    if (slot) *proxy = *slot;
+    LeaveCriticalSection(&g_lock);
+    return slot != NULL;
+}
+
+static BOOL delete_proxy_eligible(ACCESS_MASK access, OBJECT_ATTRIBUTES_ *oa, ULONG share, ULONG options) {
+    /* Only JiuwenBox recovery with a bound broker can issue virtual delete rights. */
+    if (!recovery_mode || authorize_delete || !recovery_config.bound
+        || !compare_object_handles
+        || !parse_port(recovery_config.port) || !recovery_config.token[0]
+        || !(access & DELETE) || (access & (MAXIMUM_ALLOWED | GENERIC_ALL))
+        || !(share & FILE_SHARE_DELETE) || (options & (FILE_OPEN_BY_FILE_ID | FILE_OPEN_REPARSE_POINT))
+        || !memory_ok(oa, sizeof *oa, 0) || (oa->Attributes & OBJ_INHERIT)) return FALSE;
+    wchar_t *path = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, PATH_CAP * sizeof *path);
+    if (!path) return FALSE;
+    BOOL eligible = path_from_object(oa, path, PATH_CAP) && !softdelete_exempt(path);
+    HeapFree(GetProcessHeap(), 0, path);
+    return eligible;
+}
+
+static NTSTATUS recycle_delete_proxy(const DeleteProxy *proxy, LPCWSTR path, const GUID *operation) {
+    BY_HANDLE_FILE_INFORMATION identity;
+    if (!compare_object_handles(proxy->handle, proxy->reference)
+        || !GetFileInformationByHandle(proxy->handle, &identity)
+        || identity.dwVolumeSerialNumber != proxy->identity.dwVolumeSerialNumber
+        || identity.nFileIndexHigh != proxy->identity.nFileIndexHigh
+        || identity.nFileIndexLow != proxy->identity.nFileIndexLow) return STATUS_ACCESS_DENIED;
+    if (proxy->recycled) return STATUS_SUCCESS;
+    if (!recycle_delegation_configured() || !path[0] || !same_file(path, &identity))
+        return STATUS_ACCESS_DENIED;
+    if ((identity.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && !directory_is_empty(path))
+        return (NTSTATUS)0xC0000101L; /* STATUS_DIRECTORY_NOT_EMPTY */
+
+    /* Bound broker configuration makes recover_path broker-only for this operation. */
+    int disposition = recover_path(path, 1, operation);
+    if (disposition != 3) return STATUS_ACCESS_DENIED;
+    EnterCriticalSection(&g_lock);
+    DeleteProxy *slot = find_delete_proxy(proxy->handle);
+    if (slot && slot->reference == proxy->reference) slot->recycled = TRUE;
+    LeaveCriticalSection(&g_lock);
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS close_delete_proxy(HANDLE handle) {
+    EnterCriticalSection(&g_lock);
+    NTSTATUS status = g_nt_close(handle);
+    if (status >= 0) {
+        DeleteProxy *slot = find_delete_proxy(handle);
+        if (slot) {
+            g_nt_close(slot->reference);
+            ZeroMemory(slot, sizeof *slot);
+        }
+    }
+    LeaveCriticalSection(&g_lock);
+    return status;
+}
+
 static void set_iosb(IO_STATUS_BLOCK_ *iosb, NTSTATUS status) {
     if (iosb == NULL || !memory_ok(iosb, sizeof(*iosb), 1)) {
         return;
@@ -2068,8 +2182,24 @@ static NTSTATUS NTAPI hook_NtClose(HANDLE handle) {
     saved = GetLastError();
     GUID operation;
     wchar_t *policy_path=NULL;
+    DeleteProxy proxy;
+    BOOL virtual_delete = get_delete_proxy(handle, &proxy);
     path = pending_take(handle, &operation, &policy_path);
     pending = path != NULL;
+    if (virtual_delete) {
+        status = pending ? recycle_delete_proxy(&proxy, path, &operation) : STATUS_SUCCESS;
+        if (status < 0) {
+            /* Keep the handle and pending intent alive when close is refused. */
+            pending_record(handle, path, &operation, policy_path);
+        } else {
+            if (pending) finish_recovery(&operation, 3, ERROR_SUCCESS, policy_path);
+            status = close_delete_proxy(handle);
+        }
+        HeapFree(GetProcessHeap(), 0, policy_path);
+        HeapFree(GetProcessHeap(), 0, path);
+        SetLastError(saved);
+        return status;
+    }
     if (!pending) {
         SetLastError(saved);
         return g_nt_close(handle);
@@ -2187,6 +2317,14 @@ static NTSTATUS NTAPI hook_NtSetInformationFile(
     }
     saved = GetLastError();
     const ULONG header = FIELD_OFFSET(FILE_RENAME_INFO, FileName);
+    DeleteProxy proxy;
+    BOOL virtual_delete = get_delete_proxy(file, &proxy);
+    if ((virtual_delete && (cls == FILE_RENAME_INFORMATION || cls == FILE_RENAME_INFORMATION_EX))
+        || (!virtual_delete && !handle_has_delete(file))) {
+        set_iosb(iosb, STATUS_ACCESS_DENIED);
+        SetLastError(saved);
+        return STATUS_ACCESS_DENIED;
+    }
     if (info == NULL || length == 0 || !memory_ok(info, length < header ? length : header, 0)) {
         SetLastError(saved);
         return STATUS_ACCESS_DENIED;
@@ -2222,7 +2360,31 @@ static NTSTATUS NTAPI hook_NtSetInformationFile(
         return STATUS_ACCESS_DENIED;
     }
     memcpy(bytes, info, length);
-    if (bytes != NULL && (cls == FILE_DISPOSITION_INFORMATION || cls == FILE_DISPOSITION_INFORMATION_EX)) {
+    if (virtual_delete) {
+        ULONG flags = 0;
+        if (cls == FILE_DISPOSITION_INFORMATION_EX && length >= sizeof flags)
+            memcpy(&flags, bytes, sizeof flags);
+        status = STATUS_ACCESS_DENIED;
+        /* A proxy cannot perform the kernel's force-image-section check. */
+        if (!(flags & (~0x1fUL | 4UL))) {
+            if (disposition_clears_delete(cls, bytes, length)) {
+                pending_clear(file);
+                status = STATUS_SUCCESS;
+            } else if (disposition_wants_delete(cls, bytes, length)) {
+                path_from_handle(file, path, PATH_CAP);
+                GUID operation;
+                if ((flags & 8UL) && *path && !softdelete_exempt(path)) {
+                    if (pending_put(file, path)) status = STATUS_SUCCESS;
+                } else if (SUCCEEDED(CoCreateGuid(&operation))) {
+                    status = recycle_delete_proxy(&proxy, path, &operation);
+                    if (!proxy.recycled)
+                        finish_recovery(&operation, status >= 0 ? 3 : 0, status_error(status), path);
+                }
+            }
+        }
+        set_iosb(iosb, status);
+        handled = 1;
+    } else if (cls == FILE_DISPOSITION_INFORMATION || cls == FILE_DISPOSITION_INFORMATION_EX) {
         if (disposition_clears_delete(cls, bytes, length)) {
             pending_clear(file);
         } else if (disposition_wants_delete(cls, bytes, length)) {
@@ -2321,6 +2483,21 @@ static NTSTATUS NTAPI hook_NtCreateFile(
     status = g_nt_create_file(
         file_handle, access, oa, iosb, alloc_size, attributes, share, disposition,
         cleaned, ea, ea_length);
+    if (status == STATUS_ACCESS_DENIED && disposition == 1 /* FILE_OPEN */
+        && memory_ok(file_handle, sizeof *file_handle, 1) && memory_ok(iosb, sizeof *iosb, 1)
+        && delete_proxy_eligible(access, oa, share, options)) {
+        HANDLE opened = NULL;
+        IO_STATUS_BLOCK_ proxy_io = {0};
+        NTSTATUS retry = g_nt_create_file(&opened, (access & ~DELETE) | FILE_READ_ATTRIBUTES,
+            oa, &proxy_io, alloc_size, attributes, share, disposition, cleaned, ea, ea_length);
+        if (retry >= 0) {
+            if (remember_delete_proxy(opened)) {
+                *file_handle = opened;
+                *iosb = proxy_io;
+                status = retry;
+            } else g_nt_close(opened);
+        }
+    }
     if(slot>=0) {
         HANDLE opened=status>=0 && file_handle && memory_ok(file_handle,sizeof(*file_handle),0) ? *file_handle : NULL;
         pending_open_end(slot,opened,status_error(status));
@@ -2364,6 +2541,21 @@ static NTSTATUS NTAPI hook_NtOpenFile(
         }
     }
     status = g_nt_open_file(file_handle, access, oa, iosb, share, cleaned);
+    if (status == STATUS_ACCESS_DENIED
+        && memory_ok(file_handle, sizeof *file_handle, 1) && memory_ok(iosb, sizeof *iosb, 1)
+        && delete_proxy_eligible(access, oa, share, options)) {
+        HANDLE opened = NULL;
+        IO_STATUS_BLOCK_ proxy_io = {0};
+        NTSTATUS retry = g_nt_open_file(&opened, (access & ~DELETE) | FILE_READ_ATTRIBUTES,
+            oa, &proxy_io, share, cleaned);
+        if (retry >= 0) {
+            if (remember_delete_proxy(opened)) {
+                *file_handle = opened;
+                *iosb = proxy_io;
+                status = retry;
+            } else g_nt_close(opened);
+        }
+    }
     if(slot>=0) {
         HANDLE opened=status>=0 && file_handle && memory_ok(file_handle,sizeof(*file_handle),0) ? *file_handle : NULL;
         pending_open_end(slot,opened,status_error(status));
@@ -3187,6 +3379,7 @@ static void write_load_error(const wchar_t *text) {
 }
 
 void softdelete_bind(const GuardFileCalls *api, GuardFileCalls *handlers) {
+    query_handle_object = (void *)GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryObject");
     if (!g_lock_ready) InitializeCriticalSection(&g_lock);
     g_lock_ready = 1;
     g_nt_create_file = (FnNtCreateFile)api->create;
@@ -3206,6 +3399,10 @@ void softdelete_bind(const GuardFileCalls *api, GuardFileCalls *handlers) {
 }
 
 void softdelete_release(void) {
+    for (int i = 0; i < PENDING_MAX; ++i) {
+        if (g_delete_proxy[i].reference) g_nt_close(g_delete_proxy[i].reference);
+    }
+    ZeroMemory(g_delete_proxy, sizeof g_delete_proxy);
     if (g_lock_ready) {
         for (int i=0; i<PENDING_MAX; ++i) {
             if (g_pending_path[i]) {
@@ -3254,6 +3451,8 @@ static BOOL remove_hooks(void) {
 }
 
 static int install_detours(void) {
+    query_handle_object = (void *)GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryObject");
+    compare_object_handles = (void *)GetProcAddress(GetModuleHandleW(L"kernelbase.dll"), "CompareObjectHandles");
     g_create_process = (FnCreateProcessInternalW)GetProcAddress(GetModuleHandleW(L"kernelbase.dll"), "CreateProcessInternalW");
     if (!g_create_process) {
         return 0;

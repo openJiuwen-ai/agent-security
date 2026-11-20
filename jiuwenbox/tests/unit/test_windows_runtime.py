@@ -10,6 +10,8 @@ account, WFP filter, Job Object, or NTFS DACL mutation is required.
 
 from __future__ import annotations
 
+import json
+import socket
 import sys
 
 import pytest
@@ -26,6 +28,7 @@ from jiuwenbox.server.runtime.windows.runtime import (
     _summarize_command,
 )
 from jiuwenbox.supervisor.win_proxy import EgressFilter
+from jiuwenbox.supervisor import win_exec
 
 
 class TestPlatformGuard:
@@ -147,7 +150,9 @@ class TestEgressFilter:
         assert allowed is False
         assert "blocked" in reason
 
-    def test_wildcard_domain_matches_subdomains(self):
+    def test_wildcard_domain_matches_subdomains(self, monkeypatch):
+        record = (socket.AF_INET, socket.SOCK_STREAM, 0, "", (ipv4(192, 0, 2, 10), 0))
+        monkeypatch.setattr(socket, "getaddrinfo", lambda *_args: [record])
         f = self._filter(NetworkRulePolicy(
             default="deny", allowed_domains=["*.example.com"],
         ))
@@ -183,6 +188,52 @@ class TestEgressFilter:
         f = self._filter(NetworkRulePolicy(default="allow"))
         f.disable_all = True
         assert f.allow("example.com", 443) == (False, "network disabled (disable_all)")
+
+
+@pytest.mark.parametrize("tool", ["node", "npm.cmd", "npx", "python"])
+def test_configured_runtime_uses_declared_files_and_preserves_args(tmp_path, monkeypatch, tool):
+    root = tmp_path.resolve()
+    monkeypatch.setenv(win_exec.MANAGED_NODE_DIR_ENV, str(root))
+    monkeypatch.setenv(win_exec.MANAGED_PYTHON_DIR_ENV, str(root))
+    program = root / ("python.exe" if tool == "python" else "node.exe")
+    program.touch()
+    npm_bin = root / "node_modules/npm/bin"
+    npm_bin.mkdir(parents=True)
+    prefix = [str(program)]
+    if tool in {"npm.cmd", "npx"}:
+        cli = npm_bin / f"{tool.removesuffix('.cmd')}-cli.js"
+        cli.touch()
+        prefix.append(str(cli))
+    args = ["some directory", "quoted argument"]
+    assert win_exec.resolve_managed_command([tool, *args]) == (str(program), [*prefix, *args])
+
+    monkeypatch.setenv(win_exec.MANAGED_WRITABLE_DIRS_ENV, json.dumps([str(root)]))
+    with pytest.raises(PermissionError, match="sandbox-writable"):
+        win_exec.resolve_managed_command([tool, *args])
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="uses Win32 sharing flags")
+def test_windows_write_preserves_sharing_error_with_bounded_retries(tmp_path, monkeypatch):
+    win32file = pytest.importorskip("win32file")
+    import win32con
+
+    path = tmp_path / "document.txt"
+    path.write_bytes(b"existing")
+    delays = []
+    monkeypatch.setattr(win_exec.time, "sleep", delays.append)
+    reader = win32file.CreateFile(str(path), win32con.GENERIC_READ, win32con.FILE_SHARE_READ,
+                                 None, win32con.OPEN_EXISTING, 0, None)
+    try:
+        with pytest.raises(OSError) as error:
+            win_exec.open_runner_write_stream(str(path))
+    finally:
+        reader.Close()
+    assert error.value.winerror == 32
+    assert len(delays) == 3
+    assert path.read_bytes() == b"existing"
+    with win_exec.open_runner_write_stream(str(path)) as file:
+        file.write(b"new")
+    assert path.read_bytes() == b"new"
 
 
 class TestExecDowngradeToSync:

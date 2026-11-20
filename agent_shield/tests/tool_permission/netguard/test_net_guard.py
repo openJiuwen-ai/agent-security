@@ -142,6 +142,20 @@ def test_host_globs_cannot_consume_another_authority_or_port():
     )
 
 
+_ENDPOINT_IPV6 = ipv6("2001", "4860", "", "8888")
+_ENDPOINT_IPV6_ALTERNATE = ipv6("2001", "4860", "0", "", "8888")
+
+
+@pytest.mark.parametrize("rule, url, other_port", [
+    ("*.example.com:443", "https://api.example.com/a", "https://api.example.com:8443/a"),
+    (f"[{_ENDPOINT_IPV6}]:443", f"https://[{_ENDPOINT_IPV6_ALTERNATE}]/a", f"https://[{_ENDPOINT_IPV6}]:8443/a"),
+])
+def test_host_and_port_rules_match_canonical_endpoints(rule, url, other_port):
+    component = checker({rule: "ask"})
+    assert evaluate(component, url).permission is L.ASK
+    assert evaluate(component, other_port).permission is L.ALLOW
+
+
 def test_idna_ipv6_default_ports_and_legacy_path_prefix():
     component = checker(
         {"https://bücher.example:443/safe": "deny",

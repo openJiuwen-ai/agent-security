@@ -800,6 +800,7 @@ version = "0.1.0"
 source = { editable = "jiuwenbox" }
 dependencies = [
     { name = "fastapi" },
+    { name = "h11" },
     { name = "httpx" },
     { name = "mcp" },
     { name = "pydantic" },
@@ -823,6 +824,7 @@ soft-delete = [
 requires-dist = [
     { name = "agent-security-dll", marker = "sys_platform == 'win32' and extra == 'soft-delete'", editable = "foundation/agent-security-dll" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "h11", specifier = ">=0.16" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "mcp", specifier = ">=1.27.2,<2" },
     { name = "pydantic", specifier = ">=2.0" },

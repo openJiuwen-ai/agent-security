@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from .builtin_rules import package_net_urls
 from .url_safety import MAX_URL_CHARS, UrlTarget, normalize_host, parse_url
 
 MAX_URL_RULES = 10_000
+_HOST_PORT = re.compile(r"(\[[^\]]+\]|[^:\[\]]+):([0-9]{1,5})")
 
 
 def parse_action(value: object) -> PermissionLevel:
@@ -40,12 +42,15 @@ class NetUrlRule:
     target: UrlTarget | None
     path_glob: re.Pattern[str] | None
     query_glob: re.Pattern[str] | None
+    port: int | None = None
 
     def matches(self, target: UrlTarget) -> bool:
         if self.host_glob is not None:
             if self.host_glob.fullmatch(target.host) is None:
                 return False
         elif self.host != target.host:
+            return False
+        if self.port is not None and self.port != target.port:
             return False
         if self.target is None:
             return True
@@ -66,13 +71,24 @@ class NetUrlRule:
 
 def compile_rule(pattern: str, action: PermissionLevel) -> NetUrlRule:
     target = parse_url(pattern, pattern=True) if "://" in pattern else None
-    host = target.host if target is not None else normalize_host(pattern, pattern=True)
+    endpoint = _HOST_PORT.fullmatch(pattern) if target is None else None
+    port = None
+    if endpoint is not None:
+        raw_host, raw_port = endpoint.groups()
+        port = int(raw_port)
+        if not 1 <= port <= 65535:
+            raise ValueError("Invalid network rule port")
+        if raw_host.startswith("["):
+            raw_host = str(ipaddress.IPv6Address(raw_host[1:-1]))
+        host = normalize_host(raw_host, pattern=True)
+    else:
+        host = target.host if target is not None else normalize_host(pattern, pattern=True)
     host_glob = compile_glob(host) if "*" in host or "?" in host else None
     path_glob = compile_glob(target.path) if target is not None and "*" in target.path else None
     query_glob = None
     if target is not None and ("*" in target.query or "?" in target.query):
         query_glob = compile_glob(target.query)
-    return NetUrlRule(pattern, action, host, host_glob, target, path_glob, query_glob)
+    return NetUrlRule(pattern, action, host, host_glob, target, path_glob, query_glob, port)
 
 
 def build_net_urls(urls: object, *, include_package: bool) -> tuple[NetUrlRule, ...]:
