@@ -352,6 +352,40 @@ class TestAgentSSASBackend:
         assert fresh_path.exists()
 
 
+class TestReportEventAfterCloseContract:
+    """backend close 后 report_event 行为契约(jiuwenswarm 集成依赖)。
+
+    jiuwenswarm 集成层在初始化失败/超时剔除时后台 close backend,但已装配
+    rail 经 _SharedSSASBackendProxy 持有的引用仍指向已关闭实例,后续事件
+    仍会经该引用调用 report_event。本契约固化该场景的行为:
+    1. close 后 report_event 不抛异常(fail-open,业务不阻断);
+    2. 返回 RiskAssessment(无风险事件评估为 Safe,fail-open 路径亦为 Safe);
+    3. 入口 _ensure_initialized 触发 initialize() 自愈重新加载检测模块
+       (close 将 _initialized 重置为 False,下次事件重新初始化)。
+    """
+
+    @staticmethod
+    @pytest.mark.unit
+    @pytest.mark.level0
+    async def test_report_event_after_close_fail_open_and_reinit(
+        ssas_home: Path,
+    ) -> None:
+        """验证 close 后 report_event fail-open 且自愈重新初始化。"""
+        config = AgentSSASConfig(ssas_home=str(ssas_home))
+        backend = AgentSSASBackend(config)
+        await backend.initialize()
+        await backend.close()
+        assert backend._initialized is False  # pylint: disable=protected-access
+
+        assessment = await backend.report_event(_make_raw_event())
+
+        # fail-open 契约:close 后的事件上报不抛异常,返回无风险评估
+        assert isinstance(assessment, RiskAssessment)
+        assert assessment.risk_level == RiskLevel.SAFE
+        # 自愈契约:入口已重新触发 initialize(),backend 恢复初始化态
+        assert backend._initialized is True  # pylint: disable=protected-access
+
+
 class TestPeriodicTTLCleanup:
     """周期性 TTL 后台清理任务(数据生命周期 P5 修复)。
 
