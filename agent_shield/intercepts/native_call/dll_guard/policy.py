@@ -20,6 +20,7 @@ from agent_shield.tool_permission.runtime.command_identity import (
 from agent_shield.tool_permission.runtime.confirmation import TOOL_NAME_ALIASES
 from agent_shield.tool_permission.runtime.grants import (
     GRANT_MATCH_TYPE,
+    LINKED_FILE_IDENTITIES,
     build_operation_grant,
     matches_subject,
     operation_subject,
@@ -340,22 +341,25 @@ def resource_grant_matches(grant: Mapping[str, Any], subject: dict, *, exact_onl
     tools = grant.get("tools")
     if not isinstance(tools, list) or len(tools) != 1 or not isinstance(tools[0], str):
         return False
-    if exact_only:
+    is_file = subject.get("kind") == "file"
+    if exact_only or is_file:
         try:
-            if json.loads(grant["pattern"])["scope"] != "exact":
+            payload = json.loads(grant["pattern"])
+            if exact_only and payload["scope"] != "exact":
                 return False
-        except (KeyError, TypeError, ValueError):
+            if is_file and payload["subject"].get(LINKED_FILE_IDENTITIES) != subject.get(LINKED_FILE_IDENTITIES):
+                return False
+        except (AttributeError, KeyError, TypeError, ValueError):
             return False
     if matches_subject(grant, subject):
         return True
     if (
         grant.get("match_type") != GRANT_MATCH_TYPE
         or grant.get("action") != "allow"
-        or subject.get("kind") != "file"
+        or not is_file
     ):
         return False
     try:
-        payload = json.loads(grant["pattern"])
         approved = payload["subject"]
         if payload["scope"] != "exact" or approved["kind"] != "file":
             return False

@@ -2107,8 +2107,8 @@ def _proxy_ports_ready(port_start: int, port_end: int) -> bool:
         # Legacy installations must use existing setup to establish SID proof.
         return False
     try:
-        wfp_ready = win_wfp.proxy_permits_installed(port_start, port_end)
-    except win_wfp.LegacyDnsPermitError:
+        wfp_ready = win_wfp.proxy_permits_installed(port_start, port_end, sandbox_user_sid=sid)
+    except win_wfp.NetworkRuleVerificationError:
         return False
     except OSError as exc:
         # Ordinary users can open BFE but typically cannot enumerate filters.
@@ -2117,7 +2117,8 @@ def _proxy_ports_ready(port_start: int, port_end: int) -> bool:
         logger.debug("WFP permit query unavailable", exc_info=True)
         # Overlapping fallback evidence makes an old mixed receipt ambiguous.
         # Require its live rule check rather than trusting the cached WFP half.
-        wfp_ready = _wfp_read_access_denied(exc) and not firewall_recorded
+        wfp_ready = (_wfp_read_access_denied(exc) and not firewall_recorded
+                     and record.get("wfp_content_verified") is True)
     except RuntimeError:
         wfp_ready = False
     if wfp_recorded and wfp_ready:
@@ -2152,6 +2153,8 @@ def _record_proxy_permits(sid: str, port_start: int, port_end: int, backend: str
     }
     if backend == "firewall":
         updated["firewall_legacy_dns_verified"] = True
+    if backend == "wfp" or (record.get("sid") == sid and record.get("wfp_content_verified") is True):
+        updated["wfp_content_verified"] = True
     range_key = f"{backend}_ranges"
     ranges = updated.get(range_key)
     if ranges is None:
@@ -2165,11 +2168,15 @@ def _install_proxy_permits(sid: str, port_start: int, port_end: int) -> str:
     """Install the requested range and return the backend to record."""
     from jiuwenbox.supervisor import win_wfp
 
+    record = _proxy_permit_record()
+    ranges = _permit_ranges(record, sid, "wfp")
     win_wfp.remove_legacy_dns_firewall_rules()
     try:
-        win_wfp.install_wfp_filters(sid, port_start, port_end)
+        win_wfp.install_wfp_filters(sid, port_start, port_end, preserve_ranges=ranges or None)
         return "wfp"
-    except win_wfp.LegacyDnsPermitError:
+    except win_wfp.NetworkRuleVerificationError:
+        if record.get("sid") == sid and record.pop("wfp_content_verified", None):
+            _reg_set_str(_PROXY_PERMIT_RECORD, json.dumps(record))
         raise
     except (OSError, RuntimeError) as exc:
         logger.warning("WFP 代理端口授权失败, 检查防火墙降级条件", exc_info=True)

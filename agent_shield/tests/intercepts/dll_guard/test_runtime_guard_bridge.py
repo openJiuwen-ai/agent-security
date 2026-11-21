@@ -1,6 +1,8 @@
 """Execution-scoped approval lifecycle and policy changes during a live wait."""
 
 import asyncio
+import os
+import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -12,6 +14,7 @@ from agent_shield.intercepts.native_call.dll_guard.bridge import (
 )
 from agent_shield.intercepts.native_call.dll_guard.context import RuntimeGuardContext
 from agent_shield.tool_permission.runtime.engine import PermissionEngine
+from agent_shield.tool_permission.runtime.grants import LINKED_FILE_IDENTITIES
 from agent_shield.tool_permission.runtime.models import PermissionConfirmResponse
 
 
@@ -227,6 +230,43 @@ def make_execution(tmp_path, emit, registry, *, read="ask", write="ask"):
     )
     execution.job = SimpleNamespace(contains=lambda pid: pid == 123, close=lambda: None)
     return target, execution
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows hard-link metadata")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["denied_alias", "stable_approval", "changed_aliases"])
+async def test_hard_link_write_checks_all_names_and_revalidates_before_persisting(tmp_path, scenario):
+    registry = RuntimeApprovalRequests()
+    alias = tmp_path / "second-name.txt"
+    events = []
+    saved = []
+
+    async def emit(event):
+        events.append(event)
+        assert LINKED_FILE_IDENTITIES not in event["resource"]
+        if scenario == "changed_aliases":
+            os.link(target, tmp_path / "late-name.txt")
+        registry.resolve("s", event["request_id"], PermissionConfirmResponse(
+            approved=True, auto_confirm=True, persist_allow=True,
+        ))
+
+    target, execution = make_execution(tmp_path, emit, registry, write="allow")
+    target.touch()
+    os.link(target, alias)
+    engine = execution.engine()
+    config = engine.config
+    engine.update_config({
+        **config,
+        "file_guard": {
+            **config["file_guard"],
+            "paths": [*config["file_guard"]["paths"],
+                      {"path": str(alias), "write": "deny" if scenario == "denied_alias" else "ask"}],
+        },
+    })
+    execution.persist = lambda *args, **kwargs: saved.append((args, kwargs)) or True
+    assert await execution.check_access(123, str(target), 2) is (scenario == "stable_approval")
+    assert len(events) == int(scenario != "denied_alias")
+    assert len(saved) == int(scenario == "stable_approval")
 
 
 @pytest.mark.asyncio

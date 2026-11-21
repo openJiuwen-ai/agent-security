@@ -57,6 +57,7 @@ from jiuwenbox.models.sandbox import (
     ExecResult,
     KillBackgroundJobResult,
 )
+from jiuwenbox.server.environment import strip_service_credentials
 from jiuwenbox.server.runtime.base import (
     BackgroundJobNotFoundError,
     RuntimeAdapter,
@@ -915,6 +916,7 @@ class BubblewrapRuntime(RuntimeAdapter):
         process_gid = config.gid
         if sandbox_env:
             config.env.update(sandbox_env)
+        strip_service_credentials(config.env)
         if workdir:
             config.workdir = workdir
 
@@ -1909,6 +1911,7 @@ class BubblewrapRuntime(RuntimeAdapter):
         daemon_cmd = self._wrap_command_in_namespace(bwrap_args, netns_name)
 
         process_env = {**os.environ, **(env or {})}
+        strip_service_credentials(process_env)
         # ``LISTENER_FD_ENV`` is injected into the sandboxed process via
         # ``BwrapConfig.env`` -> ``bwrap --setenv``; bwrap itself never
         # consumes it, so we no longer set it on the bwrap parent env.
@@ -2327,7 +2330,9 @@ class BubblewrapRuntime(RuntimeAdapter):
             "stdin_size": len(call.stdin_bytes or b""),
         }
         if call.env:
-            request_payload["env"] = dict(call.env)
+            command_env = dict(call.env)
+            strip_service_credentials(command_env)
+            request_payload["env"] = command_env
         if call.workdir:
             request_payload["workdir"] = call.workdir
         if call.timeout is not None:
@@ -2383,7 +2388,9 @@ class BubblewrapRuntime(RuntimeAdapter):
             "stdin_size": len(call.stdin_bytes or b""),
         }
         if call.env:
-            request_payload["env"] = dict(call.env)
+            command_env = dict(call.env)
+            strip_service_credentials(command_env)
+            request_payload["env"] = command_env
         if call.workdir:
             request_payload["workdir"] = call.workdir
         header_blob = encode_request(
