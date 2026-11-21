@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from jiuwenbox.logging_config import configure_logging
+from jiuwenbox.server.environment import strip_service_credentials
 from jiuwenbox.supervisor import win_constants as const
 from jiuwenbox.supervisor.daemon_ipc import (
     LOG_FIELD_LEVEL,
@@ -407,6 +408,8 @@ def _build_env_block(env: dict[str, str]) -> ctypes.Array:
     格式: 一串 "KEY=VALUE\\0" 序列, 末尾额外一个 "\\0" (双 null 终止).
     CreateProcessWithLogonW 要求 UNICODE (UTF-16) 环境块.
     """
+    env = env.copy()
+    strip_service_credentials(env)
     parts = []
     for key, value in env.items():
         invalid_key = not key or "=" in key or "\0" in key
@@ -1049,6 +1052,7 @@ def _create_process_as_user(  # pylint: disable=huawei-too-many-arguments
     env_block_buf = None
     env_block_ptr = None
     env = dict(env or {})
+    strip_service_credentials(env)
     # 兜底补齐 DLL 加载/子进程运行所需基本变量: 缺 SystemRoot 等会 STATUS_DLL_INIT_FAILED (0xC0000142).
     # box-server 端 (WindowsRuntime.create) 已补一次, 经 IPC 序列化后调用方 env
     # 可能残缺, 第二跳再补 (setdefault 不覆盖).

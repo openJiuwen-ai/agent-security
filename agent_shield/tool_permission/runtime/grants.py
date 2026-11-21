@@ -30,6 +30,7 @@ from .compat import (
 
 GRANT_MATCH_TYPE = "exact_operation"
 SHELL_GRANT_MATCH_TYPE = "shell_subcommand"
+LINKED_FILE_IDENTITIES = "_linked_file_identities"
 
 
 def merge_operation_grants(existing: list[dict] | None, additions: list[dict] | None) -> list[dict]:
@@ -372,7 +373,7 @@ def _file_resource_receipt(resource: dict, scope: str) -> dict:
 
 def has_file_resource_grant(config: Mapping, subject: dict) -> bool:
     """Only new resource receipts are shared across tools; no legacy widening."""
-    if subject.get("kind") != "file" or not subject.get("accesses"):
+    if subject.get("kind") != "file" or not subject.get("accesses") or LINKED_FILE_IDENTITIES in subject:
         return False
     return all(
         any(
@@ -396,6 +397,7 @@ def _resource_atom_matches(grant: dict, path: str, action: str) -> bool:
             and grant.get("match_type") == GRANT_MATCH_TYPE
             and payload["scope"] == "exact"
             and payload["subject"]["kind"] == "file"
+            and LINKED_FILE_IDENTITIES not in payload["subject"]
             and (os.path.normcase(path), action)
             in {(os.path.normcase(p), a) for p, a in payload["subject"]["accesses"]}
         )
@@ -470,6 +472,8 @@ def matches_subject(grant: Mapping[str, Any], subject: dict) -> bool:
         payload = json.loads(grant["pattern"])
         approved, scope = payload["subject"], payload["scope"]
         if approved["kind"] != subject["kind"]:
+            return False
+        if subject["kind"] == "file" and approved.get(LINKED_FILE_IDENTITIES) != subject.get(LINKED_FILE_IDENTITIES):
             return False
         if scope == "exact":
             if (

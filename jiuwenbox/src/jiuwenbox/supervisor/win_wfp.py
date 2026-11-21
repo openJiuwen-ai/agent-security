@@ -104,7 +104,7 @@ _WFP_ERROR_NAMES: dict[int, str] = {
     0x80320021: "FWP_E_MATCH_TYPE_MISMATCH",
     0x80320023: "FWP_E_INVALID_AUTH_VALUE",
     0x80320024: "FWP_E_INVALID_KEY",
-    0x80320031: "FWP_E_KEY_NOT_FOUND",
+    0x80320031: "FWP_E_INCOMPATIBLE_DH_GROUP",
     0xC0360017: "FWP_E_TRUSTED_PACKAGE_MISMATCH",
 }
 
@@ -808,7 +808,11 @@ def _legacy_dns_permit_keys() -> set[str]:
     }
 
 
-class LegacyDnsPermitError(RuntimeError):
+class NetworkRuleVerificationError(RuntimeError):
+    """Live WFP policy could not be certified."""
+
+
+class LegacyDnsPermitError(NetworkRuleVerificationError):
     """Old WFP permits must be removed before accepting network setup."""
 
 
@@ -832,11 +836,102 @@ def verify_legacy_dns_permits_absent() -> None:
         fwpu.FwpmEngineClose0(engine)
 
 
-def proxy_permits_installed(port_start: int, port_end: int) -> bool:
+def _descriptor_bytes(condition: FwpmFilterCondition0) -> bytes:
+    blob_ptr = ctypes.cast(condition.conditionValue.value.sd, ctypes.POINTER(FwpByteBlob))
+    blob = blob_ptr.contents
+    return ctypes.string_at(blob.data, blob.size)
+
+
+def _matches_proxy_filter(flt: FwpmFilter0, layer: str, port: int | None, descriptor: bytes) -> bool:
+    permit = port is not None
+    if (_guid_to_str(flt.layer_key).lower() != layer.lower()
+            or flt.flags != const.FWPM_FILTER_FLAG_PERSISTENT
+            or flt.action.type != (const.FWP_ACTION_PERMIT if permit else const.FWP_ACTION_BLOCK)
+            or flt.weight.type != const.FWP_UINT8
+            or flt.weight.value.uint8 != (const.FWP_WEIGHT_PERMIT if permit else const.FWP_WEIGHT_BLOCK)
+            or flt.num_filter_conditions != (3 if permit else 1) or not flt.filter_condition):
+        return False
+    conditions = {
+        _guid_to_str(c.field_key).lower(): c for c in flt.filter_condition[:flt.num_filter_conditions]
+    }
+    if any(c.match_type != const.FWP_MATCH_EQUAL for c in conditions.values()):
+        return False
+    user = conditions.get(const.FWPM_CONDITION_ALE_USER_ID.lower())
+    if not user or user.conditionValue.type != const.FWP_SECURITY_DESCRIPTOR_TYPE:
+        return False
+    ptr = ctypes.cast(user.conditionValue.value.sd, ctypes.POINTER(FwpByteBlob))
+    if not ptr or ptr.contents.size != len(descriptor) or not ptr.contents.data:
+        return False
+    if _descriptor_bytes(user) != descriptor:
+        return False
+    if not permit:
+        return True
+    remote_port = conditions.get(const.FWPM_CONDITION_IP_REMOTE_PORT.lower())
+    address = conditions.get(const.FWPM_CONDITION_IP_REMOTE_ADDRESS.lower())
+    if (not address or not remote_port or remote_port.conditionValue.type != const.FWP_UINT16
+            or remote_port.conditionValue.value.uint16 != port):
+        return False
+    value = address.conditionValue
+    if layer == const.FWPM_LAYER_ALE_AUTH_CONNECT_V4.lower():
+        if value.type != const.FWP_V4_ADDR_MASK or not value.value.v4AddrMask:
+            return False
+        v4 = ctypes.cast(value.value.v4AddrMask, ctypes.POINTER(FwpAddrMaskV4)).contents
+        return v4.addr == const.LOOPBACK_IPV4_INT and v4.mask == 0xFFFFFFFF
+    if value.type != const.FWP_V6_ADDR_AND_MASK or not value.value.v6AddrMask:
+        return False
+    v6 = ctypes.cast(value.value.v6AddrMask, ctypes.POINTER(FwpAddrMaskV6)).contents
+    return bytes(v6.addr) == bytes(15) + b"\x01" and v6.prefix_length == 128
+
+
+def _verified_proxy_ports(engine, sandbox_user_sid: str) -> set[int]:
+    """Validate the product sublayer while its native filter buffers are live."""
+    user, keepalive = _build_ale_user_condition(sandbox_user_sid)
+    descriptor = _descriptor_bytes(user)
+    del keepalive
+    v4 = const.FWPM_LAYER_ALE_AUTH_CONNECT_V4.lower()
+    v6 = const.FWPM_LAYER_ALE_AUTH_CONNECT_V6.lower()
+    blocks = {const.JBX_FILTER_BLOCK_KEY_V4.lower(): v4, const.JBX_FILTER_BLOCK_KEY_V6.lower(): v6}
+    permits = {v4: const.JBX_FILTER_PERMIT_KEY_V4, v6: const.JBX_FILTER_PERMIT_KEY_V6}
+    legacy = {key.lower() for key in _legacy_dns_permit_keys()}
+    found_blocks: set[str] = set()
+    ports: dict[str, set[int]] = {v4: set(), v6: set()}
+
+    def inspect(key, flt):
+        key = key.lower()
+        if key in legacy:
+            raise LegacyDnsPermitError("Legacy WFP DNS permits remain installed")
+        layer = blocks.get(key)
+        port = None
+        if layer is None:
+            layer = _guid_to_str(flt.layer_key).lower()
+            if layer in permits and flt.num_filter_conditions == 3 and flt.filter_condition:
+                for condition in flt.filter_condition[:3]:
+                    if (_guid_to_str(condition.field_key).lower() == const.FWPM_CONDITION_IP_REMOTE_PORT.lower()
+                            and condition.conditionValue.type == const.FWP_UINT16):
+                        port = int(condition.conditionValue.value.uint16)
+                        break
+            if not port or key != _permit_filter_guid_str(permits[layer], port).lower():
+                raise NetworkRuleVerificationError("Unexpected filter in the JiuwenBox WFP sublayer")
+        if not _matches_proxy_filter(flt, layer, port, descriptor):
+            raise NetworkRuleVerificationError("JiuwenBox WFP filter conditions do not match the current policy")
+        if port is None:
+            found_blocks.add(key)
+        else:
+            ports[layer].add(port)
+
+    installed = _enumerate_sublayer_filters(engine, strict=True, inspect=inspect)
+    if installed and (found_blocks != blocks.keys() or ports[v4] != ports[v6]):
+        raise NetworkRuleVerificationError("JiuwenBox WFP policy is incomplete across IPv4 and IPv6")
+    return ports[v4]
+
+
+def proxy_permits_installed(port_start: int, port_end: int, *, sandbox_user_sid: str | None = None) -> bool:
     """Check the requested v4/v6 permit keys without modifying shared filters."""
     _require_windows()
     engine = _open_engine()
     try:
+        if sandbox_user_sid is not None:
+            return set(range(port_start, port_end + 1)) <= _verified_proxy_ports(engine, sandbox_user_sid)
         installed = {key.lower() for key in _enumerate_sublayer_filters(engine, strict=True)}
         if not installed.isdisjoint(key.lower() for key in _legacy_dns_permit_keys()):
             raise LegacyDnsPermitError("Legacy WFP DNS permits remain installed")
@@ -855,6 +950,8 @@ def install_wfp_filters(
     sandbox_user_sid: str,
     permit_port_start: int,
     permit_port_end: int,
+    *,
+    preserve_ranges: list[list[int]] | None = None,
 ) -> None:
     """安装 Block + Permit WFP filter set.
 
@@ -869,6 +966,9 @@ def install_wfp_filters(
     # keeps_alive 列表: 持有所有条件构造返回的 ctypes 局部对象引用,
     # 直到全部 FwpmFilterAdd0 完成才允许 GC (否则 v4AddrMask/SD blob 指针悬垂).
     keeps: list[object] = []
+    permit_ports = set(range(permit_port_start, permit_port_end + 1))
+    for start, end in preserve_ranges or ():
+        permit_ports.update(range(start, end + 1))
 
     engine = _open_engine()
     try:
@@ -881,7 +981,7 @@ def install_wfp_filters(
             # exceptions atomically with the rest of the policy.
             for key in _legacy_dns_permit_keys():
                 status = fwpu.FwpmFilterDeleteByKey0(engine, ctypes.byref(_guid_from_str(key)))
-                if status not in (0, 0x80320031, 0x80320003):
+                if status not in (0, 0x80320003):
                     raise _wfp_error(status, "FwpmFilterDeleteByKey0 (legacy DNS)")
                 removed_legacy_dns |= status == 0
 
@@ -912,7 +1012,7 @@ def install_wfp_filters(
                 # 按 layer Guid 显式判断 V4/V6, 不能用 "V4" in base_key (base_key 是纯 hex Guid 字符串不含 V4/V6).
                 # 误判会让 V4 层装 IPv6 条件 → condition 类型与 layer 不匹配 → 0x80320027 → 降级防火墙.
                 is_v4 = (layer == const.FWPM_LAYER_ALE_AUTH_CONNECT_V4)
-                for port in range(permit_port_start, permit_port_end + 1):
+                for port in sorted(permit_ports):
                     user_cond, user_ka = _build_ale_user_condition(sandbox_user_sid)
                     keeps.append(user_ka)
                     if is_v4:
@@ -932,6 +1032,12 @@ def install_wfp_filters(
                         f"JiuwenBox-Permit-Loopback-{base_key}-{port}",
                     )
 
+            # Enumerate in the same transaction so failed readback rolls back
+            # the staged rules, including the legacy DNS removal.
+            verified_ports = _verified_proxy_ports(engine, sandbox_user_sid)
+            if not permit_ports <= verified_ports:
+                raise NetworkRuleVerificationError("JiuwenBox WFP policy does not cover the requested ports")
+
             status = fwpu.FwpmTransactionCommit0(engine)
             if status:
                 raise _wfp_error(status, "FwpmTransactionCommit0")
@@ -948,7 +1054,7 @@ def install_wfp_filters(
     )
 
 
-def _enumerate_sublayer_filters(engine, *, strict: bool = False) -> list[str]:
+def _enumerate_sublayer_filters(engine, *, strict: bool = False, inspect=None) -> list[str]:
     """枚举 JBX sublayer 下所有 filter 的 filterKey (Guid 字符串).
 
     review #1: uninstall 用枚举法删全部 filter, 不依赖端口范围即可干净卸载
@@ -999,8 +1105,13 @@ def _enumerate_sublayer_filters(engine, *, strict: bool = False) -> list[str]:
                         flt = entries_ptr[i].contents
                         # 按 sub_layer_key 过滤: 只收本 sublayer 的 filter.
                         if _guid_equal(flt.sub_layer_key, sublayer_guid):
-                            keys.append(_guid_to_str(flt.filter_key))
+                            key = _guid_to_str(flt.filter_key)
+                            if inspect is not None:
+                                inspect(key, flt)
+                            keys.append(key)
                     except Exception:  # noqa: BLE001 - 单条解析失败不中断
+                        if strict:
+                            raise
                         logger.debug("枚举 filter[%d] 解析失败", i, exc_info=True)
             finally:
                 # BFE 分配的 entries 数组必须用 FwpmFreeMemory0 释放.
@@ -1074,7 +1185,7 @@ def _delete_sublayer_idempotent(fwpu, engine, max_attempts: int = 3) -> None:
     import time
 
     sublayer_guid = _guid_from_str(const.JBX_SUBLAYER_KEY)
-    sublayer_not_found = 0x80320031
+    sublayer_not_found = 0x80320007
     in_use = 0x8032000A
     for attempt in range(1, max_attempts + 1):
         try:
@@ -1102,11 +1213,11 @@ def _delete_filter_by_key(fwpu, engine, fkey: str) -> None:
     """按 key 删除单个 WFP filter (幂等, not-found 静默).
 
     W3: 旧版把 0x800700B7 (ERROR_ALREADY_EXISTS, add 路径才出现) 当 not-found 忽略,
-    但 delete 的 not-found 是 FWP_E_KEY_NOT_FOUND=0x80320031 / FWP_E_FILTER_NOT_FOUND=
+    但 delete 的 not-found 是 FWP_E_FILTER_NOT_FOUND=
     0x80320003 (0x80320xxx 段)。改为忽略正确的 not-found 码, 其余用 _wfp_error。
     """
     # delete 路径的 "不存在" 码: 视为幂等成功, 静默。
-    delete_not_found = {0x80320031, 0x80320003}
+    delete_not_found = {0x80320003}
     try:
         hr = fwpu.FwpmFilterDeleteByKey0(
             engine, ctypes.byref(_guid_from_str(fkey)),

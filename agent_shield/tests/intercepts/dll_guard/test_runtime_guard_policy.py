@@ -26,6 +26,7 @@ from agent_shield.intercepts.native_call.dll_guard.shell_launch import (
 )
 from agent_shield.tool_permission.runtime.confirmation import normalize_confirmation_scope
 from agent_shield.tool_permission.runtime.engine import PermissionEngine
+from agent_shield.tool_permission.runtime.grants import LINKED_FILE_IDENTITIES, has_file_resource_grant
 from agent_shield.tool_permission.runtime.models import PermissionConfirmResponse
 
 
@@ -41,6 +42,24 @@ NEEDS_BASH_PARSER = pytest.mark.skipif(
 NEEDS_TLD = pytest.mark.skipif(
     importlib.util.find_spec("tld") is None, reason="tld is required for domain scope"
 )
+
+
+def test_linked_file_grant_needs_the_same_identity_and_cannot_be_projected_to_a_path(tmp_path):
+    first = str(tmp_path / "first.txt")
+    second = str(tmp_path / "second.txt")
+    ordinary = {"kind": "file", "accesses": [(first, "write"), (second, "write")]}
+    linked = {**ordinary, LINKED_FILE_IDENTITIES: {first: [1, "original", [first, second]]}}
+    replaced = {**linked, LINKED_FILE_IDENTITIES: {first: [1, "replacement", [first, second]]}}
+    answer = PermissionConfirmResponse(approved=True)
+    legacy = resource_grant(ordinary, answer)
+    approved = resource_grant(linked, answer)
+
+    assert resource_grant_matches(legacy, ordinary)
+    assert not resource_grant_matches(legacy, linked)
+    assert resource_grant_matches(approved, linked)
+    assert not resource_grant_matches(approved, replaced)
+    assert not has_file_resource_grant({"approval_overrides": [approved]}, ordinary)
+    assert not has_file_resource_grant({"approval_overrides": [legacy]}, linked)
 
 
 def make_execution(tmp_path, emit, registry, *, read="ask", write="ask"):
