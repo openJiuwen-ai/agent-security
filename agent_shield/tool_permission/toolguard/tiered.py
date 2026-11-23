@@ -87,7 +87,10 @@ def _compile_wildcard(pattern: str) -> re.Pattern[str] | None:
     escaped = "".join("\\" + char if char in to_escape else char for char in normalized_pattern)
     escaped = escaped.replace("?", chars)
     if escaped.endswith(" *"):
-        escaped = escaped[:-2] + "( " + chars + "*)?"
+        # Convert every wildcard *before* re-appending the trailing optional
+        # group; otherwise an interior * stays literal and is compiled as a
+        # regex quantifier (e.g. "python * -c *" would only match "python-c").
+        escaped = escaped[:-2].replace("*", chars + "*") + "( " + chars + "*)?"
     else:
         escaped = escaped.replace("*", chars + "*")
     flags = re.IGNORECASE if sys.platform == "win32" else 0
