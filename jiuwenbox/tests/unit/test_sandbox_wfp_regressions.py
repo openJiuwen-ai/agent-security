@@ -140,7 +140,7 @@ def test_existing_filter_key_is_replaced_with_current_conditions(monkeypatch, fa
     assert store['unrelated-live-port'] == 123
 
 
-@pytest.mark.parametrize('failure', ['begin', 'legacy_delete', 'commit'])
+@pytest.mark.parametrize('failure', ['begin', 'legacy_delete', 'verify', 'commit'])
 def test_failed_wfp_transaction_cannot_report_success(monkeypatch, failure):
     dll = Mock()
     dll.FwpmTransactionBegin0.return_value = 5 if failure == 'begin' else 0
@@ -154,11 +154,79 @@ def test_failed_wfp_transaction_cannot_report_success(monkeypatch, failure):
         monkeypatch.setattr(wfp, name, Mock(return_value=(wfp.FwpmFilterCondition0(), None)))
     add = Mock()
     monkeypatch.setattr(wfp, '_add_filter', add)
-    with pytest.raises(OSError):
-        wfp.install_wfp_filters('S-current', 61100, 61100)
-    assert add.call_count == (4 if failure == 'commit' else 0)  # Block and loopback per family.
+    expected_ports = {61100, 61101}
+    verify = Mock(return_value={61100} if failure == 'verify' else expected_ports)
+    monkeypatch.setattr(wfp, '_verified_proxy_ports', verify)
+    error = wfp.NetworkRuleVerificationError if failure == 'verify' else OSError
+    with pytest.raises(error):
+        wfp.install_wfp_filters('S-current', 61100, 61100, preserve_ranges=[[61101, 61101]])
+    assert add.call_count == (6 if failure in {'verify', 'commit'} else 0)
+    assert dll.FwpmTransactionCommit0.call_count == (failure == 'commit')
     assert dll.FwpmTransactionAbort0.call_count == (failure != 'begin')
     dll.FwpmEngineClose0.assert_called_once_with(123)
+
+
+def _user_condition(sid):
+    payload = (ctypes.c_uint8 * len(sid)).from_buffer_copy(sid.encode())
+    blob = wfp.FwpByteBlob(len(sid), payload)
+    result = wfp.FwpmFilterCondition0()
+    result.field_key = wfp._guid_from_str(const.FWPM_CONDITION_ALE_USER_ID)
+    result.match_type = const.FWP_MATCH_EQUAL
+    result.conditionValue.type = const.FWP_SECURITY_DESCRIPTOR_TYPE
+    result.conditionValue.value.sd = ctypes.cast(ctypes.pointer(blob), ctypes.c_void_p)
+    return result, (payload, blob)
+
+
+@pytest.mark.parametrize('drift', [None, 'sid', 'action', 'inactive', 'address', 'port', 'missing_v6'])
+def test_live_wfp_filter_keys_require_matching_contents(monkeypatch, drift):
+    monkeypatch.setattr(wfp, '_require_windows', Mock())
+    monkeypatch.setattr(wfp, '_open_engine', lambda: 123)
+    monkeypatch.setattr(wfp, '_get_fwpuclnt', Mock())
+    monkeypatch.setattr(wfp, '_build_ale_user_condition', _user_condition)
+    entries, keepalive = {}, []
+    port = 61100
+    for v4, layer, block, permit in (
+        (True, const.FWPM_LAYER_ALE_AUTH_CONNECT_V4, const.JBX_FILTER_BLOCK_KEY_V4, const.JBX_FILTER_PERMIT_KEY_V4),
+        (False, const.FWPM_LAYER_ALE_AUTH_CONNECT_V6, const.JBX_FILTER_BLOCK_KEY_V6, const.JBX_FILTER_PERMIT_KEY_V6),
+    ):
+        for key, allowed in ((block, False), (wfp._permit_filter_guid_str(permit, port), True)):
+            if drift == 'missing_v6' and not v4 and allowed:
+                continue
+            user, descriptor = _user_condition('S-old' if drift == 'sid' and not allowed else 'S-current')
+            conditions = [user]
+            keepalive.append(descriptor)
+            if allowed:
+                addr, mask = wfp.build_loopback_v4_condition() if v4 else wfp._build_loopback_v6_condition()
+                if drift == 'address' and not v4:
+                    mask.prefix_length = 64
+                keepalive.append(mask)
+                conditions.extend([addr, wfp._build_port_eq_condition(port + (drift == 'port'))])
+            flt = wfp.FwpmFilter0()
+            flt.layer_key = wfp._guid_from_str(layer)
+            flt.flags = 0 if drift == 'inactive' else const.FWPM_FILTER_FLAG_PERSISTENT
+            flt.action.type = const.FWP_ACTION_PERMIT if allowed or drift == 'action' else const.FWP_ACTION_BLOCK
+            flt.weight.type = const.FWP_UINT8
+            flt.weight.value.uint8 = const.FWP_WEIGHT_PERMIT if allowed else const.FWP_WEIGHT_BLOCK
+            flt.num_filter_conditions = len(conditions)
+            array = (wfp.FwpmFilterCondition0 * len(conditions))(*conditions)
+            keepalive.append(array)
+            # Set the pointer field as the native API would, without ctypes array assignment.
+            pointer_slot = ctypes.addressof(flt) + wfp.FwpmFilter0.filter_condition.offset
+            ctypes.c_void_p.from_address(pointer_slot).value = ctypes.addressof(array)
+            entries[key] = flt
+
+    def enumerate_filters(_engine, *, strict, inspect):
+        assert strict
+        for key, flt in entries.items():
+            inspect(key, flt)
+        return list(entries)
+
+    monkeypatch.setattr(wfp, '_enumerate_sublayer_filters', enumerate_filters)
+    if drift is None:
+        assert wfp.proxy_permits_installed(port, port, sandbox_user_sid='S-current')
+    else:
+        with pytest.raises(wfp.NetworkRuleVerificationError):
+            wfp.proxy_permits_installed(port, port, sandbox_user_sid='S-current')
 
 
 def test_legacy_dns_rules_prevent_positive_wfp_readback(monkeypatch):

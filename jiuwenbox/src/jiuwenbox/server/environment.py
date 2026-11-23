@@ -16,6 +16,8 @@ import re
 import sys
 
 ENV_ALLOWLIST = "JIUWENBOX_ENV_ALLOWLIST"
+_SERVICE_CREDENTIAL = "JIUWENBOX_API_TOKEN"
+_INJECT_ENV = "JIUWENBOX_INJECT_ENV"
 
 _SYSTEM_KEYS = frozenset({
     "PATH", "PATHEXT", "SystemRoot", "windir", "COMSPEC", "SystemDrive",
@@ -29,6 +31,29 @@ _LOADER_KEYS = frozenset({
 _WINDOWS_PROFILE_KEYS = frozenset({
     "USERPROFILE", "HOME", "LOCALAPPDATA", "APPDATA", "TEMP", "TMP", "TMPDIR",
 })
+
+
+def strip_service_credentials(env: dict[str, str]) -> None:
+    """Keep the service's management token out of sandbox environments."""
+    for key in list(env):
+        name = key.upper()
+        if name == _SERVICE_CREDENTIAL:
+            del env[key]
+        elif name == _INJECT_ENV:
+            try:
+                injected = json.loads(env[key])
+            except (TypeError, ValueError):
+                env.pop(key)
+                continue
+            if not isinstance(injected, dict):
+                env.pop(key)
+                continue
+            cleaned = {
+                nested_key: value for nested_key, value in injected.items()
+                if nested_key.upper() != _SERVICE_CREDENTIAL
+            }
+            if len(cleaned) != len(injected):
+                env[key] = json.dumps(cleaned)
 
 
 def inherited_environment(*, for_runner: bool = False) -> dict[str, str]:
@@ -68,4 +93,5 @@ def inherited_environment(*, for_runner: bool = False) -> dict[str, str]:
             continue
         if lookup_key in key_names or (for_runner and lookup_key.startswith("JIUWENBOX_")):
             inherited[key_names.get(lookup_key, key)] = value
+    strip_service_credentials(inherited)
     return inherited
