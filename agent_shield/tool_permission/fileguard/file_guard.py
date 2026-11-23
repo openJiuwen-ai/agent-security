@@ -844,8 +844,20 @@ class FileGuardChecker:
         hits: dict[str, list[tuple[int, PermissionLevel, FileGuardPathRule]]] = {
             source: [] for source in self._effective.source_order
         }
+        # Rules synthesised outside the layer model (e.g. the discard-sink
+        # allow rules for /dev/null) carry no ``source``; they must still take
+        # part in composed evaluation as plain ALLOW candidates.  They rank
+        # below any layer hit (a user/cloud deny or ask wins), matching the
+        # deny > ask > allow precedence of non-composed mode.
+        unscoped_allow = False
         for rule in self._effective.paths:
             if rule.source not in hits or action not in rule.explicit_axes:
+                if (
+                    not rule.source
+                    and _level_for_action(rule, action) == PermissionLevel.ALLOW
+                    and rule.matches(path_posix)
+                ):
+                    unscoped_allow = True
                 continue
             if rule.matches(path_posix):
                 length = len(rule.path.rstrip("/")) if rule.match == "prefix" else 0
@@ -863,6 +875,8 @@ class FileGuardChecker:
             candidates = ([max(prefixes, key=lambda hit: hit[0])] if prefixes else []) + globs
             chosen = min(candidates, key=lambda hit: _LEVEL_ORDER[hit[1]])
             return chosen[1], f"file_guard:source:{source}:{chosen[2].match}:{chosen[2].path}"
+        if unscoped_allow:
+            return PermissionLevel.ALLOW, "file_guard:builtin:allow"
         defaults = self._effective.defaults
         return getattr(defaults, action), "file_guard:defaults"
 
