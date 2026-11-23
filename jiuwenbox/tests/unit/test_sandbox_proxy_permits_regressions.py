@@ -75,7 +75,7 @@ def test_port_repair_never_uninstalls_another_instances_filters(monkeypatch):
     monkeypatch.setattr(wfp, 'install_wfp_filters', install)
     monkeypatch.setattr(wfp, 'uninstall_wfp_filters', uninstall)
     setup._repair_proxy_permits(61100, 61102)
-    install.assert_called_once_with('S-test', 61100, 61102)
+    install.assert_called_once_with('S-test', 61100, 61102, preserve_ranges=None)
     uninstall.assert_not_called()
 
 
@@ -192,6 +192,7 @@ def test_nonadmin_custom_range_stays_ready_after_successful_privileged_repair(mo
     record = json.loads(values[setup._PROXY_PERMIT_RECORD])
     assert record['sid'] == 'S-test'
     assert record['wfp_ranges'] == [[61100, 61102]]
+    assert record['wfp_content_verified'] is True
     setup.ensure_windows_setup(proxy_port_start=61100, proxy_port_end=61102, allow_elevation=False)
     install.assert_called_once()
 
@@ -206,12 +207,13 @@ def test_old_receipt_cannot_certify_dns_rule_migration(monkeypatch):
 
 @pytest.mark.parametrize('query', [True, False, PermissionError(13, 'denied'), OSError('BFE unavailable')])
 @pytest.mark.parametrize('sid', ['S-test', 'S-old'])
-def test_wfp_evidence_requires_sid_range_and_no_authoritative_negative(monkeypatch, query, sid):
-    _registry(monkeypatch, {'sid': sid, 'wfp_ranges': [[61100, 61102]]})
+@pytest.mark.parametrize('verified', [False, True])
+def test_wfp_evidence_requires_sid_range_and_no_authoritative_negative(monkeypatch, query, sid, verified):
+    _registry(monkeypatch, {'sid': sid, 'wfp_ranges': [[61100, 61102]], 'wfp_content_verified': verified})
     mock = Mock(side_effect=query) if isinstance(query, Exception) else Mock(return_value=query)
     monkeypatch.setattr(wfp, 'proxy_permits_installed', mock)
     assert setup._proxy_ports_ready(61100, 61102) is (
-        sid == 'S-test' and (query is True or isinstance(query, PermissionError)))
+        sid == 'S-test' and (query is True or (verified and isinstance(query, PermissionError))))
     assert not setup._proxy_ports_ready(61100, 61103)
 
 
@@ -242,6 +244,22 @@ def test_wfp_success_preserves_wfp_ranges_but_invalidates_firewall_evidence(monk
     assert record['sid'] == 'S-new'
     assert record['wfp_ranges'] == [[61300, 61301]]
     assert record['firewall_ranges'] == []
+
+
+def test_failed_wfp_integrity_check_invalidates_cached_proof_without_claiming_fallback(monkeypatch):
+    values = _registry(monkeypatch, {'sid': 'S-test', 'wfp_ranges': [[61100, 61102]],
+                                   'wfp_content_verified': True})
+    install = Mock(side_effect=wfp.NetworkRuleVerificationError('wrong SID'))
+    fallback = Mock()
+    monkeypatch.setattr(wfp, 'install_wfp_filters', install)
+    monkeypatch.setattr(wfp, 'install_firewall_rule_fallback', fallback)
+    with pytest.raises(wfp.NetworkRuleVerificationError, match='wrong SID'):
+        setup._repair_proxy_permits(61200, 61201)
+    install.assert_called_once_with('S-test', 61200, 61201, preserve_ranges=[[61100, 61102]])
+    fallback.assert_not_called()
+    record = json.loads(values[setup._PROXY_PERMIT_RECORD])
+    assert record['wfp_ranges'] == [[61100, 61102]]
+    assert 'wfp_content_verified' not in record
 
 
 @pytest.mark.parametrize('exists', [False, True])
@@ -316,7 +334,7 @@ def test_firewall_receipt_requires_live_rules_and_cannot_skip_the_wfp_query(monk
     monkeypatch.setattr(wfp, 'proxy_permits_installed', wfp_query)
     monkeypatch.setattr(wfp, 'firewall_permits_installed', firewall, raising=False)
     assert setup._proxy_ports_ready(61100, 61102) is (live is True)
-    wfp_query.assert_called_once_with(61100, 61102)
+    wfp_query.assert_called_once_with(61100, 61102, sandbox_user_sid='S-test')
     firewall.assert_called_once_with('S-test', 61100, 61102)
 
 
@@ -403,6 +421,7 @@ def test_nonadmin_service_rejects_a_firewall_receipt_when_actual_rules_are_gone(
 
 def test_nonoverlapping_firewall_range_does_not_invalidate_other_wfp_instances(monkeypatch):
     _registry(monkeypatch, {'sid': 'S-test', 'wfp_ranges': [[61100, 61102]],
+                          'wfp_content_verified': True,
                           'firewall_ranges': [[61200, 61202]]})
     monkeypatch.setattr(wfp, 'proxy_permits_installed', Mock(side_effect=PermissionError(13, 'denied')))
     live = Mock(return_value=False)

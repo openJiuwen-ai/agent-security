@@ -10,6 +10,7 @@ import logging
 import os
 import secrets
 import struct
+import sys
 from collections.abc import Awaitable, Callable
 from contextlib import ExitStack
 from copy import deepcopy
@@ -25,6 +26,7 @@ from agent_shield.tool_permission.runtime.command_identity import (
 )
 from agent_shield.tool_permission.runtime.confirmation import normalize_confirmation_scope
 from agent_shield.tool_permission.runtime.engine import PermissionEngine
+from agent_shield.tool_permission.runtime.grants import LINKED_FILE_IDENTITIES
 from agent_shield.tool_permission.runtime.models import (
     PermissionConfirmResponse,
     PermissionLevel,
@@ -45,6 +47,7 @@ from .errors import (
     GuardPolicyDenied,
     GuardStartupError,
 )
+from .file_identity import WindowsFileIdentity, read_file_identity
 from .launcher import start_guarded_factory
 from .policy import (
     canonical_domain,
@@ -822,37 +825,64 @@ class WindowsGuardExecution:
     async def check_access(self, pid: int, raw_path: str, action: int) -> bool:
         return await self.check_file_batch(pid, [(raw_path, action)])
 
+    def _file_access_snapshot(self, resources, *, check_identity: bool):
+        accesses: set[tuple[str, str]] = set()
+        identities: dict[str, WindowsFileIdentity | None] = {}
+        for raw_path, mask in resources:
+            path = self.file_path(raw_path)
+            name = str(path)
+            accesses.update(
+                (name, operation)
+                for bit, operation in ((1, "read"), (2, "write"), (4, "exec"), (8, "delete"))
+                if mask & bit
+            )
+            if check_identity and mask & 2 and name not in identities:
+                identity = read_file_identity(path)
+                identities[name] = identity
+                if identity is not None:
+                    # A write changes the same file through every hard-link name.
+                    accesses.update((str(alias), "write") for alias in identity.link_paths)
+        return sorted(accesses), identities
+
     async def check_file_batch(self, pid: int, resources) -> bool:
         if not self.context.active or self.job is None or not self.job.contains(pid):
             return False
-        accesses: list[tuple[Path, str]] = []
-        for raw_path, action in resources:
-            if action not in range(1, 16):
-                return False
-            path = self.file_path(raw_path)
-            accesses.extend(
-                (path, name)
-                for bit, name in ((1, "read"), (2, "write"), (4, "exec"), (8, "delete"))
-                if action & bit
-            )
-        if not accesses:
+        resources = tuple(resources)
+        if not resources or any(type(mask) is not int or mask not in range(1, 16) for _, mask in resources):
             return False
-        accesses = sorted(set(accesses))
-        subject = {
-            "kind": "file",
-            "accesses": [(str(path), operation) for path, operation in accesses],
-        }
-        allowed = await self.check_resource(pid, subject)
-        # Approval may take minutes. Do not apply an answer to a link that was
-        # replaced while waiting. The short kernel-open TOCTOU remains a stated
-        # user-mode limitation, not a claim of filesystem isolation.
-        current = []
-        for raw, mask in resources:
-            for bit, name in ((1, "read"), (2, "write"), (4, "exec"), (8, "delete")):
-                if mask & bit:
-                    current.append((self.file_path(raw), name))
-        current = sorted(set(current))
-        return allowed and current == accesses
+        check_identity = sys.platform == "win32" and any(mask & 2 for _, mask in resources)
+
+        async def snapshot():
+            if check_identity:
+                return await asyncio.to_thread(self._file_access_snapshot, resources, check_identity=True)
+            return self._file_access_snapshot(resources, check_identity=False)
+
+        try:
+            original = await snapshot()
+            accesses, identities = original
+            linked = {
+                path: identity.approval_key() for path, identity in identities.items()
+                if identity is not None and identity.link_paths
+            }
+            subject = {"kind": "file", "accesses": accesses}
+            if linked:
+                subject[LINKED_FILE_IDENTITIES] = linked
+            if not await self.check_resource(pid, subject):
+                return False
+            if not check_identity:
+                return await snapshot() == original
+            version = self._policy()[1]
+            # The object can change while a decision is pending. The check
+            # does not pin the later native open performed by the target.
+            current = await snapshot()
+            return (current == original and self.context.active and self.job.contains(pid)
+                    and self._policy()[1] == version)
+        except (OSError, RuntimeError, ValueError) as exc:
+            logging.getLogger(__name__).warning(
+                "DLL Guard file identity or path could not be verified pid=%s error_type=%s winerror=%s",
+                pid, type(exc).__name__, getattr(exc, "winerror", None),
+            )
+            return False
 
     async def check_transport_resource(self, pid, subject):
         """An authorized WinHTTP URL covers transport defaults, never explicit rules."""
@@ -883,7 +913,7 @@ class WindowsGuardExecution:
                 decision = engine.check_file_accesses([(Path(path), checked)])
                 if decision.needs_approval:
                     pending.append((path, action))
-            matching_subject = {"kind": "file", "accesses": pending}
+            matching_subject = {**subject, "accesses": pending}
         if not force_once and remembered_resource(engine.config, matching_subject):
             self._remember_resource(subject, version)
             return True
@@ -915,6 +945,13 @@ class WindowsGuardExecution:
 
     async def _recheck_approval(self, subject, version, result, *, added_grant=None):
         """Validate one pending decision after a host callback, before recording grants."""
+        linked = subject.get(LINKED_FILE_IDENTITIES)
+        if linked:
+            try:
+                if not await asyncio.to_thread(self._linked_file_identities_match, linked):
+                    return None
+            except (OSError, RuntimeError, ValueError):
+                return None
         if not self.context.active:
             return None
         engine, current, compatible = self._refresh_policy(added_grant=added_grant)
@@ -929,10 +966,19 @@ class WindowsGuardExecution:
             return None
         return engine, current
 
+    @staticmethod
+    def _linked_file_identities_match(linked: dict) -> bool:
+        for path, expected in linked.items():
+            identity = read_file_identity(Path(path))
+            if identity is None or identity.approval_key() != expected:
+                return False
+        return True
+
     async def _approve(self, subject, version, force_once, result):
+        display_subject = {key: value for key, value in subject.items() if key != LINKED_FILE_IDENTITIES}
         answer = await self.approvals.request(
             self.context,
-            {**subject, "can_remember": self.persist is not None and not force_once},
+            {**display_subject, "can_remember": self.persist is not None and not force_once},
             self.emit,
             self.approval_timeout,
             channel=self.channel,

@@ -1,8 +1,11 @@
 """Execution-scoped approval lifecycle and policy changes during a live wait."""
 
 import asyncio
+import os
+import sys
+from pathlib import PureWindowsPath
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -11,7 +14,9 @@ from agent_shield.intercepts.native_call.dll_guard.bridge import (
     WindowsGuardExecution,
 )
 from agent_shield.intercepts.native_call.dll_guard.context import RuntimeGuardContext
+from agent_shield.intercepts.native_call.dll_guard.file_identity import _extended_path, _policy_volume_mount
 from agent_shield.tool_permission.runtime.engine import PermissionEngine
+from agent_shield.tool_permission.runtime.grants import LINKED_FILE_IDENTITIES
 from agent_shield.tool_permission.runtime.models import PermissionConfirmResponse
 
 
@@ -227,6 +232,65 @@ def make_execution(tmp_path, emit, registry, *, read="ask", write="ask"):
     )
     execution.job = SimpleNamespace(contains=lambda pid: pid == 123, close=lambda: None)
     return target, execution
+
+
+@pytest.mark.parametrize(("path", "expected"), [
+    ("C:\\", "\\\\?\\C:\\"),
+    (r"C:\directory\file.txt", r"\\?\C:\directory\file.txt"),
+    ("\\\\server\\share\\", "\\\\?\\UNC\\server\\share\\"),
+    (r"\\server\share\file.txt", r"\\?\UNC\server\share\file.txt"),
+    (r"\\?\Volume{12345678-1234-1234-1234-123456789012}\file.txt",
+     r"\\?\Volume{12345678-1234-1234-1234-123456789012}\file.txt"),
+])
+def test_extended_path_preserves_windows_namespaces(path, expected):
+    assert _extended_path(PureWindowsPath(path)) == expected
+
+
+@pytest.mark.parametrize(("mount", "expected"), [
+    ("\\\\?\\UNC\\server\\share\\", "\\\\server\\share\\"),
+    (r"\\?\unc\server\share\folder", r"\\server\share\folder"),
+])
+def test_policy_volume_mount_preserves_unc_root_and_tail(mount, expected):
+    assert _policy_volume_mount(mount) == expected
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows hard-link metadata")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["denied_alias", "stable_approval", "changed_aliases"])
+async def test_hard_link_write_checks_all_names_and_revalidates_before_persisting(tmp_path, scenario):
+    registry = RuntimeApprovalRequests()
+    alias = tmp_path / "second-name.txt"
+    events = []
+
+    async def emit(event):
+        events.append(event)
+        assert LINKED_FILE_IDENTITIES not in event["resource"]
+        assert set(event["resource"]["accesses"]) == {
+            (str(target.resolve()), "write"), (str(alias.resolve()), "write"),
+        }
+        if scenario == "changed_aliases":
+            os.link(target, tmp_path / "late-name.txt")
+        registry.resolve("s", event["request_id"], PermissionConfirmResponse(
+            approved=True, auto_confirm=True, persist_allow=True,
+        ))
+
+    target, execution = make_execution(tmp_path, emit, registry, write="allow")
+    target.touch()
+    os.link(target, alias)
+    engine = execution.engine()
+    config = engine.config
+    engine.update_config({
+        **config,
+        "file_guard": {
+            **config["file_guard"],
+            "paths": [*config["file_guard"]["paths"],
+                      {"path": str(alias), "write": "deny" if scenario == "denied_alias" else "ask"}],
+        },
+    })
+    execution.persist = Mock(return_value=True)
+    assert await execution.check_access(123, str(target), 2) is (scenario == "stable_approval")
+    assert len(events) == int(scenario != "denied_alias")
+    assert execution.persist.call_count == int(scenario == "stable_approval")
 
 
 @pytest.mark.asyncio
