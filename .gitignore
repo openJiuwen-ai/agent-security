@@ -13,6 +13,7 @@ ENV/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
+.eggs/
 .coverage
 .coverage.*
 coverage.xml
@@ -69,3 +70,13 @@ workspace/agent/memory/*.db-wal
 
 # Build-time Node runtime cache used by packaging scripts.
 vendor/node/
+
+# Native outputs are produced by the product build.
+*.dll
+*.exe
+*.obj
+*.exp
+*.lib
+*.pdb
+*.whl
+foundation/agent-security-dll/src/agent_security_dll/bin/

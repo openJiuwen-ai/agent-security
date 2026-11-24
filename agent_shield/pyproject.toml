@@ -1,0 +1,91 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-shield"
+version = "0.1.0"
+description = "Agent security components: behavior policy, intercepts, tool permission, and content detection"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+dependencies = [
+    "PyYAML>=6",
+    "tree-sitter>=0.25.0,<0.26.0",
+    "tree-sitter-bash>=0.25.0,<0.26.0",
+    "tree-sitter-pwsh>=0.38.0",
+    "tree-sitter-batch>=0.11.0",
+]
+
+[project.optional-dependencies]
+dll-guard = [
+    "agent-security-dll==0.2.0; sys_platform == 'win32'",
+    "tld>=0.13,<0.14",
+    "tree-sitter>=0.25.0,<0.26.0",
+    "tree-sitter-bash>=0.25.0,<0.26.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "jsonschema>=4",
+    # Runtime approval scopes and native HTTP/TLS regressions.
+    "tld>=0.13,<0.14",
+    "requests>=2.32",
+    "cryptography>=43",
+]
+
+[project.scripts]
+agent-pdp = "agent_shield.policy_engine.server.cli:main"
+
+[tool.setuptools]
+# Flat layout: this directory is itself the agent_shield package.
+license-files = ["LICENSE"]
+package-dir = {"agent_shield" = "."}
+packages = [
+    "agent_shield",
+    "agent_shield.detection",
+    "agent_shield.tool_permission",
+    "agent_shield.tool_permission.delguard",
+    "agent_shield.tool_permission.fileguard",
+    "agent_shield.tool_permission.hostguard",
+    "agent_shield.tool_permission.netguard",
+    "agent_shield.tool_permission.toolguard",
+    "agent_shield.tool_permission.runtime",
+    "agent_shield.policy_engine",
+    "agent_shield.policy_engine.matchers",
+    "agent_shield.policy_engine.models",
+    "agent_shield.policy_engine.core",
+    "agent_shield.policy_engine.builtin",
+    "agent_shield.policy_engine.events",
+    "agent_shield.policy_engine.server",
+    "agent_shield.intercepts",
+    "agent_shield.intercepts.tool_call",
+    "agent_shield.intercepts.tool_call.adapters",
+    "agent_shield.intercepts.tool_call.adapters.jiuwenswarm",
+    "agent_shield.intercepts.native_call",
+    "agent_shield.intercepts.native_call.dll_guard",
+    "agent_shield.intercepts.tool_output",
+    "agent_shield.intercepts.tool_output.adapters",
+    "agent_shield.intercepts.tool_output.adapters.jiuwenswarm",
+]
+
+[tool.setuptools.package-data]
+agent_shield = ["py.typed"]
+"agent_shield.tool_permission.runtime" = ["defaults.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "performance: Performance tests",
+    "slow: Slow running tests",
+    "async: Async tests",
+]
+
+[tool.ruff]
+src = [".."]
+line-length = 100

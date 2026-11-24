@@ -1,25 +1,52 @@
 # jiuwenbox
 
-`jiuwenbox` is a lightweight Linux sandbox service for running agent tools and
-code snippets with layered isolation.
+English | [简体中文](./README_CN.md)
+
+`jiuwenbox` is a lightweight sandbox service for running agent tools and code
+snippets with layered isolation, on Linux and Windows.
 
 It exposes a FastAPI server for sandbox lifecycle management, file transfer,
-file listing/search, and command execution. The server applies the configured
-isolation policy in-process by spawning `bubblewrap` directly for each sandbox
-(long-lived per-sandbox daemon plus on-demand background commands).
+file listing/search, and command execution. The server hands the parsed policy
+to the platform runtime: on Linux, `bubblewrap` starts each sandbox process (a
+long-lived daemon per sandbox plus on-demand background commands); on Windows,
+restricted tokens, a Job object, WFP, and NTFS ACLs enforce the isolation.
+
+## Core concepts
+
+- **Sandbox**: one isolated execution environment created by the server, addressed by `sandbox_id` and running its own process tree.
+- **Policy**: the static YAML document loaded at server startup that supplies the base filesystem, process, network, and resource rules, which a create request may override or append to.
+- **Runtime**: the platform adapter that turns a policy into isolation primitives (`bubblewrap` on Linux, `windows` on Windows).
+- **WFP** (Windows Filtering Platform): the Windows packet filter that blocks sandbox egress except the egress proxy ports.
+- **NTFS ACL**: Windows filesystem permissions granted or denied to the sandbox user; the Windows counterpart of Linux mount permissions.
+- **file-snapshot**: an API operation that reads or conditionally replaces one file inside a sandbox without spawning a command.
+- **Proxy-only mode**: a startup mode where the policy configures only `inference_privacy_proxies` with `listen_port > 0`, so the sandbox subsystem is skipped.
+- **Egress proxy**: the Windows loopback proxy that sandboxed processes must use for outbound traffic; WFP blocks all other egress.
+- **Inference privacy proxy**: a separate HTTP proxy that routes LLM API calls and injects upstream API keys.
+
+Runtime selection:
+
+| Priority | Source | Notes |
+| --- | --- | --- |
+| 1 | `sandbox_runtime` in the create request | Explicit per-sandbox choice |
+| 2 | `JIUWENBOX_RUNTIME_PROFILE` | Service-level default |
+| 3 | Platform default | `windows` on Windows, `bubblewrap` on Linux |
+
+`process` is a legacy alias for `bubblewrap`. `conch` has no implementation in
+this repository; an explicit request for it fails instead of falling back.
 
 ## Features
 
-- Process isolation with `bubblewrap`
-- Static policy-based filesystem access rules
+- Process isolation with `bubblewrap` on Linux, and restricted-token plus Job object containment on Windows
+- Static policy-based filesystem access rules, using NTFS ACLs on Windows
 - Server-managed sandbox backing storage (`~/.jiuwenbox/workspace`)
-- Optional network isolation with Linux network namespaces and firewall rules
+- Optional Linux network namespaces and firewall rules; WFP plus the egress proxy on Windows
 - Namespace and Linux capability controls
 - Landlock filesystem enforcement when supported by the kernel
 - Seccomp syscall filtering
+- Windows soft delete: deletes go to the recycle bin, with a same-volume archive fallback
 - Python and JavaScript execution support when the corresponding runtimes exist
 - Audit logging and persisted sandbox lifecycle state
-- Inference Privacy Proxy for LLM API request routing with automatic API key injection
+- Inference privacy proxy for LLM API request routing with automatic API key injection
 
 ## Architecture
 
@@ -27,17 +54,19 @@ isolation policy in-process by spawning `bubblewrap` directly for each sandbox
   - FastAPI app that manages sandbox lifecycle, policy loading, audit logs, and
     API routing.
 - `server/runtime`
-  - In-process runtime adapter that translates each sandbox policy into a
-    `bubblewrap` command line and spawns it directly from the server (one
-    long-lived daemon per sandbox plus per-call background commands).
-- `server/proxy_manager`
-  - Manages inference privacy proxies for LLM API routing with API key injection.
-- `server/policy_reader`
-  - Shared policy file reader for sandbox and proxy managers.
+  - Runtime adapter layer. It selects an implementation from `sandbox_runtime`,
+    `JIUWENBOX_RUNTIME_PROFILE`, or the platform default.
+  - `bubblewrap`: translates each sandbox policy into a `bubblewrap` command line
+    and spawns it from the server process.
+  - `windows`: two-hop restricted-token launch, Job object, WFP egress control,
+    egress proxy, and NTFS ACLs.
+  - `conch`: reserved for the AgentOS cloud backend; not shipped in this repository.
 - `supervisor`
   - Policy-to-isolation translation helpers (`bubblewrap` argv builder,
-    Landlock payload, seccomp filter, cgroup/network setup) consumed by the
-    runtime adapter.
+    Landlock payload, seccomp filter, cgroup/network setup, and the Windows
+    `win_*` modules) consumed by the runtime adapters.
+- `native`
+  - Windows native components, including the soft-delete DLL.
 - `proxy`
   - HTTP-aware inference privacy proxy with path-based routing and API key
     injection (supports OpenAI and Anthropic formats).
@@ -47,14 +76,16 @@ isolation policy in-process by spawning `bubblewrap` directly for each sandbox
 
 ## Requirements
 
-- Linux
-- Python 3.11+
-- `bubblewrap`
-- `iproute2`, `iptables`, and `nftables` when `network.mode: isolated` is used
+| Platform | Requirements |
+| --- | --- |
+| Linux | Python 3.11+, `bubblewrap`; `network.mode: isolated` needs `iproute2`, `iptables`, `nftables`; Landlock and seccomp need kernel support |
+| Windows | Windows x64; a one-time administrator setup for accounts, WFP, and ACLs; Python 3.11+ |
+
 - `NET_ADMIN` capability and `net.ipv4.ip_forward=1` on the host when isolated
   mode uses uplink egress
-- Kernel support for Landlock and seccomp when those features are enabled
 - `nodejs` if JavaScript execution is needed
+- Concurrent sandbox creation waits for the xtables lock, so iptables races do
+  not fail the create
 
 On Ubuntu:
 
@@ -63,10 +94,82 @@ sudo apt-get update
 sudo apt-get install -y bubblewrap iproute2 iptables nftables python3-pip python3-venv nodejs
 ```
 
+## Runtime selection and Windows
+
+The runtime is selected as described in [Core concepts](#core-concepts).
+
+`GET /api/v1/capabilities` reports each runtime's availability and capability
+set: local PID, background jobs, fast file IO, recursive search, filesystem ACL,
+process-tree containment, egress filter, soft delete, and so on.
+
+The Windows runtime needs a one-time administrator setup and validation:
+
+- Create the local account `jbx-sandbox` and the group `jbx-sandbox-users`.
+- Validate WFP and the egress proxy port range. When the environment is not
+  ready, the service fails to start instead of reporting a successful start that
+  cannot serve traffic.
+- Prepare an NTFS ACL for every `allow_write` path in the policy. A missing
+  required ACL fails the create and rolls it back; it never degrades silently.
+
+Isolation works in three steps:
+
+1. The server launches each sandbox through a restricted token under
+   `jbx-sandbox` (two-hop launch), so sandbox processes never inherit the
+   server's privileges.
+2. WFP blocks all outbound traffic from the sandbox user SID except the
+   configured loopback proxy ports.
+3. The egress proxy accepts that loopback traffic and forwards only the domains,
+   IPs, and ports allowed by the policy.
+
+This is why a one-time administrator setup is required: creating the local
+account and group, installing the WFP filters, and pre-creating the NTFS ACLs
+all need elevation, and the service refuses to start when they are missing.
+
+Isolation layers on Windows:
+
+| Layer | Role |
+| --- | --- |
+| Restricted token | Two-hop launch under `jbx-sandbox`, so sandbox processes do not inherit the server's privileges |
+| Job object | Caps memory, CPU rate, and process count; closing the job terminates the whole tree |
+| WFP | Blocks egress by sandbox user SID and permits only the egress proxy ports |
+| Egress proxy | HTTP CONNECT / SOCKS5 proxy that filters domains, IPs, and ports by policy |
+| NTFS ACL | Grants or denies read/write for the sandbox user; policy `read_only` becomes `deny_write` |
+| Soft delete | With `JIUWENBOX_SOFT_DELETE=1`, deletes go to the recycle bin, with a same-volume archive fallback |
+
+`windows-policy.yaml` uses a dedicated `windows` block:
+
+| Field | Notes |
+| --- | --- |
+| `filesystem.allow_write` | Paths the sandbox user may write; the first entry is the workspace root and replaces `{{ workspace }}` at runtime |
+| `filesystem.deny_write` | Paths denied write inside the `allow_write` scope, e.g. `.git` and `.env` |
+| `filesystem.allow_read` | Paths explicitly granted read access |
+| `filesystem.deny_read` | Paths explicitly denied read access |
+| `filesystem.read_acl_preinstall` | Paths whose read ACL is installed once during administrator setup |
+| `filesystem.tool_paths` | Object with `git_dir`, `node_dir`, `python_dir`, and `bash_path` for tools outside their default install locations |
+| `proxy.port_range_start` / `proxy.port_range_end` | Port range reserved for the egress proxy; WFP permits only these loopback ports |
+| `network.mode` | `wfp_loopback_proxy` filters egress through the proxy; `disabled` installs no WFP filter |
+| `resource.memory_max` | Job object memory limit |
+| `resource.cpu_rate` | CPU rate as an integer percentage from 1 to 100 |
+| `resource.max_processes` | Maximum number of processes in the job |
+
+The Linux-only `process`, `namespace`, `capabilities`, `landlock`, `syscall`,
+`cgroup`, and `network.uplink` fields are ignored on Windows.
+
+> Linux `filesystem_policy.read_only` maps to Windows `deny_write`, and
+> `read_write` maps to ACL allow.
+
+Runtime and network environment variables:
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `JIUWENBOX_RUNTIME_PROFILE` | Platform default | Service-level default runtime: `bubblewrap` / `windows` / `conch` |
+| `JIUWENBOX_SOFT_DELETE` | Unset | Set to `1` to enable Windows soft delete |
+| `JIUWENBOX_IPTABLES_LOCK_WAIT_TIME` | `5` | Seconds passed to `iptables -w` on Linux |
+
 ## Install From Source
 
 ```bash
-cd jiuwenswarm/jiuwenbox
+cd jiuwenbox
 uv venv
 source .venv/bin/activate
 uv sync
@@ -105,7 +208,7 @@ sudo env \
 Build the image:
 
 ```bash
-cd jiuwenswarm/jiuwenbox/scripts
+cd jiuwenbox/scripts
 sudo ./build_docker.sh
 ```
 
@@ -155,9 +258,11 @@ sudo env \
 ```
 
 `run_docker.sh` skips the management-API TCP port mapping under UDS mode and
-bind-mounts the host socket directory into the container; **the proxy port
-`${JIUWENBOX_PROXY_PORT:-8322}` is still mapped as TCP** because the
-Inference Privacy Proxy is an independent TCP listener.
+bind-mounts the host socket directory into the container; **the inference
+privacy proxy port `${JIUWENBOX_PROXY_PORT:-8322}` is still mapped as TCP**
+because the inference privacy proxy is an independent TCP listener. The
+inference privacy proxy only listens when the policy sets `listen_port > 0`;
+the default `0` disables it, so no proxy port is opened in that case.
 
 Reach the server:
 
@@ -314,6 +419,10 @@ not enabled.
 | `bind_mounts` | Explicit host-to-sandbox bind mounts with `host_path`, `sandbox_path`, and `mode` (`ro` / `rw`). `host_path` cannot be the literal `"*"`. |
 | `bind_root_entries` | Bind every **first-level** child under `host_root` to `sandbox_path/{name}`. Supports `mode`, `include_hidden` (hidden entries excluded by default), and `exclude` (fnmatch globs). Useful for bulk-mounting immediate children of `/usr` and similar trees. |
 | `device` | Device nodes exposed inside the sandbox with `bwrap --dev-bind`; each item has `host_path` and `sandbox_path`. |
+
+Note on `read_only`: on Linux it is a read-only bind mount (the path still has
+to exist through `bind_mounts` / `directories`); on Windows it becomes an NTFS
+`deny_write` ACL. `read_write` maps to ACL allow on Windows.
 
 #### `process`
 
@@ -561,7 +670,40 @@ network:
       - 22
 ```
 
-## Enabling jiuwenbox from jiuwenswarm's config file
+## HTTP API
+
+Full fields and examples are in [`docs/jiuwenbox_server_api.md`](docs/jiuwenbox_server_api.md). Current routes:
+
+| Path | Purpose |
+| --- | --- |
+| `GET /health`, `GET /api/v1/capabilities` | Liveness; runtime availability and capability probe |
+| `POST/GET /api/v1/sandboxes`, `GET/DELETE /api/v1/sandboxes/{id}` | Create, list, inspect, and delete sandboxes |
+| `POST /api/v1/sandboxes/{id}/start`, `stop`, `restart` | Start, stop, and restart |
+| `POST /api/v1/sandboxes/{id}/exec`, `exec_background` | Synchronous and background execution |
+| `GET /api/v1/sandboxes/{id}/background*` | Query, list, and kill background jobs |
+| `GET /api/v1/sandboxes/{id}/logs` | Audit log (empty by default; persisted only with `--save-logs`) |
+| `POST /api/v1/sandboxes/{id}/upload`, `GET .../download` | File transfer |
+| `GET /api/v1/sandboxes/{id}/files`, `search` | Directory listing and glob search |
+| `POST /api/v1/sandboxes/{id}/file-snapshot` | Read a file or perform a conditional replace inside the sandbox |
+| `GET /api/v1/policies/{id}`, `GET/PUT /api/v1/timeout` | Policy inspection and idle-reaper settings |
+| `/api/v1/proxies/*` | Inference privacy proxy management |
+| `/mcp` | MCP Streamable HTTP endpoint |
+
+`file-snapshot` lets a caller read or safely replace a file inside the sandbox
+without exec, so it cannot clobber another writer. It has two operations:
+
+| Operation | Behavior |
+| --- | --- |
+| `read` | Returns existence, SHA-256, and size; the route adds `content_base64`. |
+| `compare_replace` | Requires both `options.expected_exists` and `options.expected_content_sha256`, compares under a per-path lock, then publishes through a temporary file and atomic replace. |
+
+Mismatches return `conflict`, lock waits return `lock_timeout`, and a broken
+write transfer returns `outcome_unknown`, which must not be replayed. Paths must
+be absolute and must not traverse symlinks or reparse points; the per-file limit
+is 256 MiB. The capability is currently implemented by the bubblewrap runtime;
+other runtimes return `unsupported`.
+
+## Enabling jiuwenbox from jiuwenswarm config
 
 jiuwenswarm decides **whether the sandbox is on, which jiuwenbox to talk to, whether to spawn its own jiuwenbox subprocess, and which policy file to use** via the `sandbox` section of its `config.yaml`. The TUI's `/sandbox` command writes back to the same section, so you can also pre-populate it by hand.
 
@@ -574,7 +716,7 @@ sandbox:
   type: "jiuwenbox"                 # sandbox provider name; currently only "jiuwenbox"
 
   # -- Startup & policy --
-  startup_mode: "internal"          # internal = agent-server spawns jiuwenbox-server; external = you start it yourself
+  startup_mode: "internal"          # internal = jiuwenswarm spawns jiuwenbox-server; external = you start it yourself
   policy_file: "code-agent-policy.yaml"   # bare name -> jiuwenbox/configs/<name>; otherwise an absolute / explicit path
   preserve_file_sharing_mode: "mount"     # only `mount` is supported; any other value is rejected
 
@@ -582,6 +724,7 @@ sandbox:
   enabled: true                     # whether sandbox mode is on
   excluded_commands:                # shell globs whose matches run locally instead of in the sandbox
     - "git *"
+  fallback_on_failure: false        # fall back to local execution when jiuwenbox exec errors (non-zero exit does not fall back)
   files:                            # user-configured write policy; auto-managed paths are injected by the server, no need to repeat them here
     allow: []
     deny: []
@@ -593,16 +736,17 @@ Field reference:
 | --- | --- | --- | --- |
 | `sandbox.url` | URL string | `http://127.0.0.1:8321` | jiuwenbox management API endpoint. TCP: `http://host:port`; UDS: `unix:///abs/socket/path` (mirrors `JIUWENBOX_LISTEN`). |
 | `sandbox.type` | string | `jiuwenbox` | Sandbox provider name. Currently jiuwenswarm only wires up `jiuwenbox`. |
-| `sandbox.startup_mode` | `internal` / `external` | `internal` | `internal`: agent-server spawns `jiuwenbox-server` at boot and persists the effective `url` (auto-picks a free port if the configured one is busy). `external`: agent-server never touches jiuwenbox; you must start it yourself per the top of this README. |
-| `sandbox.policy_file` | filename or path | `code-agent-policy.yaml` | Bare filename → resolved relative to `jiuwenbox/configs/`; otherwise expanded (`~`, `$VAR`) and used verbatim. **Only honored under `startup_mode=internal`**; in `external` mode the policy is chosen by whoever started jiuwenbox-server (via `JIUWENBOX_DEFAULT_POLICY_PATH`). |
+| `sandbox.startup_mode` | `internal` / `external` | `internal` | `internal`: jiuwenswarm spawns `jiuwenbox-server` at boot and persists the effective `url` (auto-picks a free port if the configured one is busy). `external`: jiuwenswarm never touches jiuwenbox; you must start it yourself per the top of this README. |
+| `sandbox.policy_file` | filename or path | `code-agent-policy.yaml` | Bare filename → resolved relative to `jiuwenbox/configs/`; otherwise expanded (`~`, `$VAR`) and used verbatim. **Only honored under `startup_mode=internal`**; in `external` mode the policy is chosen by whoever started jiuwenbox-server (via `JIUWENBOX_POLICY_PATH`). |
 | `sandbox.preserve_file_sharing_mode` | `mount` | `mount` | Intrinsic files (`AGENT.md` etc.) and `project_dir` are bind-mounted, with `project_dir/config/config.yaml` auto-added to `deny_write`. Writing any other value is rejected. |
 | `sandbox.enabled` | bool | `false` | When true, agent rebuilds route tools through the sandbox provider; toggled by `/sandbox enable`. |
 | `sandbox.excluded_commands` | list[str] | `[]` | Shell globs matched against the **full command string**; a match makes that single call run locally instead of in the sandbox. |
-| `sandbox.files.allow` / `sandbox.files.deny` | list | `[]` | User-configured write policy. The effective set shown by `/sandbox status` is `auto_managed ∪ user_configured`; see [the `/sandbox` design doc](../../agent-core/docs/en/2.Development%20Guide/Sandbox%20and%20sandbox%20command.md). |
+| `sandbox.fallback_on_failure` | bool | `false` | Fall back to host-local execution when `jiuwenbox exec` errors (connection failure, daemon unavailable). A non-zero exit inside the sandbox does not trigger a fallback. |
+| `sandbox.files.allow` / `sandbox.files.deny` | list | `[]` | User-configured write policy. The effective set shown by `/sandbox status` is `auto_managed ∪ user_configured`; see the `/sandbox` design doc in the jiuwenswarm repository. |
 
 ### Two typical deployment shapes
 
-#### Shape A: `startup_mode: internal` (agent-server spawns jiuwenbox for you)
+#### Shape A: `startup_mode: internal` (jiuwenswarm spawns jiuwenbox for you)
 
 Good for local development and single-host deployments. Drop this into `config.yaml`:
 
@@ -615,11 +759,11 @@ sandbox:
   enabled: true
 ```
 
-At boot the agent-server will:
+At boot jiuwenswarm will:
 
 1. Resolve `policy_file` to a host absolute path (bare name → `jiuwenbox/configs/<name>`; otherwise expand `~` / `$VAR` and use as-is).
 2. Probe the port in `url`; if taken, switch to a free one and persist the new `url` back into `config.yaml`, so `/sandbox status` shows the real port.
-3. Spawn `jiuwenbox-server` with the resolved policy path. On failure, agent-server logs the last 10 lines of stderr; you can retry from the TUI via `/sandbox enable`.
+3. Spawn `jiuwenbox-server` with the resolved policy path. On failure, jiuwenswarm logs the last 10 lines of stderr; you can retry from the TUI via `/sandbox enable`.
 
 #### Shape B: `startup_mode: external` (you start jiuwenbox-server yourself)
 
@@ -633,7 +777,7 @@ sandbox:
   enabled: true
 ```
 
-Under this mode agent-server **does not** try to spawn jiuwenbox, and `sandbox.policy_file` has **no effect** (the policy is whatever you passed to `jiuwenbox-server` via `JIUWENBOX_DEFAULT_POLICY_PATH`). See [`Start The Server`](#start-the-server) and [`Unix Domain Socket Deployment`](#unix-domain-socket-deployment) above for how to start jiuwenbox-server in TCP or UDS mode.
+Under this mode jiuwenswarm **does not** try to spawn jiuwenbox, and `sandbox.policy_file` has **no effect** (the policy is whatever you passed to `jiuwenbox-server` via `JIUWENBOX_POLICY_PATH`). See [`Start The Server`](#start-the-server) and [`Unix Domain Socket Deployment`](#unix-domain-socket-deployment) above for how to start jiuwenbox-server in TCP or UDS mode.
 
 For cross-host setups, the jiuwenbox host has to be able to reach jiuwenswarm's intrinsic agent files on the same host paths: `preserve_file_sharing_mode` is now fixed to `mount`, so jiuwenswarm bind-mounts the intrinsic files (`AGENT.md`, `HEARTBEAT.md`, `IDENTITY.md`, `SOUL.md`, `USER.md`, `memory/daily_memory/`) and `project_dir` into the sandbox. Make the relevant directories visible on the jiuwenbox machine (via shared filesystem, container volume, etc.) and confirm the policy allows writes into them (the bundled `jiuwenbox/configs/code-agent-policy.yaml` already does).
 
@@ -693,8 +837,8 @@ The inference privacy proxy enables secure LLM API access from edge servers:
 
 - Path-based routing to different LLM providers (OpenAI, Anthropic, custom)
 - Automatic API key injection (OpenAI `Authorization: Bearer`, Anthropic `X-Api-Key`)
-- Hot-pluggable via REST API (create/start/stop/update/delete)
-- Configured via policy YAML or dynamically through API
+- Manageable through the REST API at runtime (create/start/stop/update/delete)
+- Configured via policy YAML or dynamically through the API
 
 **Architecture**:
 
@@ -712,29 +856,47 @@ When the policy YAML file **only configures `inference_privacy_proxies`** (top-l
 
 - The sandbox subsystem is skipped entirely (no `ProcessRuntime`, no zombie reaper, no idle reaper).
 - `GET /health` keeps working and reports `sandboxes_active = 0`.
-- Sandbox-side routes (`/api/v1/sandboxes/*`, `/api/v1/policy/*`) return `503 Service Unavailable` until the policy file adds sandbox configuration.
-- The proxy routes (`/api/v1/proxy/*`) and the inference proxy itself work normally.
+- Sandbox-side routes (`/api/v1/sandboxes/*`, `/api/v1/policies/*`, `/api/v1/timeout`) return `503 Service Unavailable` because the startup policy has no sandbox configuration.
+- The inference privacy proxy routes (`/api/v1/proxies/*`) and the proxy itself work normally.
 
-The startup log emits `Proxy-only policy detected (no sandbox config); skipping sandbox subsystem startup`, followed by `Inference privacy proxy listening on http://<host>:<port>` so operators can verify the listener address at a glance.
+The startup log emits `Proxy-only policy detected (no sandbox config); skipping sandbox subsystem startup`, followed by `Inference privacy proxy listening on http://<host>:<port>` so operators can verify the listener address at a glance. The policy is loaded only at startup, so to leave proxy-only mode you must add sandbox configuration to the policy file and restart the server.
 
 See the reference config at [`src/jiuwenbox/configs/inference-policy.yaml`](src/jiuwenbox/configs/inference-policy.yaml) (installed as `jiuwenbox/configs/inference-policy.yaml`).
 
 ### Proxy Configuration
 
-Policy YAML configuration schema:
+A runnable policy file (a file containing only this section starts in
+proxy-only mode):
 
 ```yaml
-inference_privacy_proxies:
-  listen_host: ipaddress, IP address to bind  # MUST
-  listen_port: number, listen port             # MUST, non-zero enables proxy
+version: 1
+name: "inference-policy"
 
-  # OPTIONAL, can be managed via REST API after startup
+inference_privacy_proxies:
+  listen_host: "127.0.0.1"   # valid IP address; required when listen_port > 0
+  listen_port: 8080          # 0 disables the proxy
   routes:
-   - path_prefix: str, path name for forwarding rule
-      target_endpoint: URL, target endpoint
-      api_key: str, api key to inject when forwarding
-      skip_cert_verify: boolean, skip cert verify for self-signed https targets, debug only
+    - path_prefix: "openai"
+      target_endpoint: "https://api.openai.com"
+      api_key: "sk_sandbox_managed_openai_key"
+      skip_cert_verify: false
 ```
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `listen_host` | string (IP address) | yes when `listen_port > 0` | Address to bind |
+| `listen_port` | integer | yes | `0` disables the proxy; a non-zero port enables it |
+| `routes[].path_prefix` | string | yes | Single-level path prefix, e.g. `openai` or `/openai`; root `/` is rejected |
+| `routes[].target_endpoint` | string (URL) | yes | `http` or `https` upstream base URL |
+| `routes[].api_key` | string | no | Key injected when forwarding |
+| `routes[].skip_cert_verify` | boolean | no | Skip certificate verification for self-signed HTTPS targets; debug only |
+
+Routes can also be managed through the REST API after startup.
+
+### URL Routing
+
+`http://<listen_host>:<listen_port>/<path_prefix>/<api_path>` is forwarded to
+`<target_endpoint>/<api_path>`.
 
 ### API Key Injection
 
@@ -748,16 +910,17 @@ inference_privacy_proxies:
 #### Policy YAML Example
 
 ```yaml
-inference_privacy_proxies:
+version: 1
+name: "inference-policy"
 
+inference_privacy_proxies:
   listen_host: "127.0.0.1"
   listen_port: 8080
-  
   routes:
     - path_prefix: "openai"
       target_endpoint: "https://api.openai.com"
       api_key: "sk_sandbox_managed_openai_key"
-   - path_prefix: "custom"
+    - path_prefix: "custom"
       target_endpoint: "http://192.168.1.100:9000"
       api_key: "sk_sandbox_managed_custom_key"
 ```

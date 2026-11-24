@@ -1,0 +1,5313 @@
+[
+  {
+    "id": "001",
+    "label": "workspace read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_001",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/README.md",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "002",
+    "label": "workspace read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_002",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/src/app.py",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "003",
+    "label": "workspace read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_003",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/docs/guide.md",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "004",
+    "label": "workspace read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_004",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/tests/test_app.py",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "005",
+    "label": "workspace read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_005",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/package.json",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "006",
+    "label": "workspace read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_006",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/Makefile",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "007",
+    "label": "workspace read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_007",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/LICENSE",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "008",
+    "label": "workspace read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_008",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/src/util.py",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "009",
+    "label": "sensitive read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_009",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/.env",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "010",
+    "label": "sensitive read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_010",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/.env.local",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "011",
+    "label": "sensitive read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_011",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/.ssh/id_rsa",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "012",
+    "label": "sensitive read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_012",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/.ssh/id_ed25519",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "013",
+    "label": "sensitive read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_013",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/secrets/api.pem",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "014",
+    "label": "sensitive read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_014",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/certs/server.pfx",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "015",
+    "label": "sensitive read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_015",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/.aws/credentials",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "016",
+    "label": "sensitive read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_016",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/.kube/config",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "017",
+    "label": "sensitive read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_017",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/.npmrc",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "018",
+    "label": "sensitive read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_018",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/.ssh/authorized_keys",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "019",
+    "label": "workspace write",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_019",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "C:/Users/me/proj/notes.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "020",
+    "label": "workspace write",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_020",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "C:/Users/me/proj/src/new.py",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "021",
+    "label": "workspace write",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_021",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "C:/Users/me/proj/out/report.md",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "022",
+    "label": "workspace write",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_022",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "C:/Users/me/proj/data/table.csv",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "023",
+    "label": "workspace write",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_023",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "C:/Users/me/proj/src/b.py",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "024",
+    "label": "workspace write",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_024",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "C:/Users/me/proj/tmp/log.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "025",
+    "label": "outside write",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_025",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "D:/tmp/a.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "026",
+    "label": "outside write",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_026",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "D:/drop/b.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "027",
+    "label": "outside write",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_027",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "C:/Users/other/c.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "028",
+    "label": "outside write",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_028",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "E:/share/d.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "029",
+    "label": "outside write",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_029",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "C:/temp/e.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "030",
+    "label": "outside write",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_030",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "D:/work/f.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "031",
+    "label": "system new file",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_031",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "C:/Windows/Temp/new-0.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "032",
+    "label": "system new file",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_032",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "C:/Windows/Temp/new-1.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "033",
+    "label": "system new file",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_033",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "C:/Windows/Temp/new-2.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "034",
+    "label": "system new file",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_034",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "C:/Windows/Temp/new-3.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "035",
+    "label": "workspace delete",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_035",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.delete",
+            "path": "C:/Users/me/proj/old.log",
+            "path_kind": "file",
+            "device_class": null,
+            "force": false,
+            "bulk": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "036",
+    "label": "workspace delete",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_036",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.delete",
+            "path": "C:/Users/me/proj/build/out.o",
+            "path_kind": "file",
+            "device_class": null,
+            "force": false,
+            "bulk": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "037",
+    "label": "workspace delete",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_037",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.delete",
+            "path": "C:/Users/me/proj/tmp/cache.db",
+            "path_kind": "file",
+            "device_class": null,
+            "force": false,
+            "bulk": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "038",
+    "label": "workspace delete",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_038",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.delete",
+            "path": "C:/Users/me/proj/dist/app.js",
+            "path_kind": "file",
+            "device_class": null,
+            "force": false,
+            "bulk": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "039",
+    "label": "outside delete",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_039",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.delete",
+            "path": "D:/tmp/old.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "force": false,
+            "bulk": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "040",
+    "label": "outside delete",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_040",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.delete",
+            "path": "C:/Users/other/old.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "force": false,
+            "bulk": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "041",
+    "label": "outside delete",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_041",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.delete",
+            "path": "E:/share/old.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "force": false,
+            "bulk": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "042",
+    "label": "outside delete",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_042",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.delete",
+            "path": "C:/temp/old.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "force": false,
+            "bulk": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "043",
+    "label": "outside force delete",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_043",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.delete",
+            "path": "D:/tmp/locked.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "force": true,
+            "bulk": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "044",
+    "label": "outside force delete",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_044",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.delete",
+            "path": "C:/Users/other/locked.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "force": true,
+            "bulk": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "045",
+    "label": "outside force delete",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_045",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.delete",
+            "path": "E:/share/locked.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "force": true,
+            "bulk": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "046",
+    "label": "system critical delete",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_046",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.delete",
+            "path": "C:/Windows/System32/drivers/etc/hosts",
+            "path_kind": "file",
+            "device_class": null,
+            "force": false,
+            "bulk": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "047",
+    "label": "system critical delete",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_047",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.delete",
+            "path": "C:/Windows/System32/kernel32.dll",
+            "path_kind": "file",
+            "device_class": null,
+            "force": false,
+            "bulk": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "048",
+    "label": "system critical delete",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_048",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.delete",
+            "path": "C:/Windows/SysWOW64/ntdll.dll",
+            "path_kind": "file",
+            "device_class": null,
+            "force": false,
+            "bulk": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "049",
+    "label": "bulk delete",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_049",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.delete",
+            "path": "C:/Users/me/proj/a.tmp",
+            "path_kind": "file",
+            "device_class": null,
+            "force": false,
+            "bulk": true
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "050",
+    "label": "bulk delete",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_050",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.delete",
+            "path": "C:/Users/me/proj/b.tmp",
+            "path_kind": "file",
+            "device_class": null,
+            "force": false,
+            "bulk": true
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "051",
+    "label": "bulk delete",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_051",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.delete",
+            "path": "C:/Users/me/proj/c.tmp",
+            "path_kind": "file",
+            "device_class": null,
+            "force": false,
+            "bulk": true
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "052",
+    "label": "git force push",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_052",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "process.exec",
+            "argv": [
+              "git",
+              "push",
+              "--force",
+              "origin",
+              "main"
+            ],
+            "cwd": "C:/Users/me/proj",
+            "shell_meta": {
+              "obfuscated": false,
+              "unknown_structure": false,
+              "interpreter_sink": false,
+              "privilege": false
+            }
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "053",
+    "label": "git force push",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_053",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "process.exec",
+            "argv": [
+              "git",
+              "push",
+              "-f"
+            ],
+            "cwd": "C:/Users/me/proj",
+            "shell_meta": {
+              "obfuscated": false,
+              "unknown_structure": false,
+              "interpreter_sink": false,
+              "privilege": false
+            }
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "054",
+    "label": "git force push",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_054",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "process.exec",
+            "argv": [
+              "git",
+              "push",
+              "--force-with-lease"
+            ],
+            "cwd": "C:/Users/me/proj",
+            "shell_meta": {
+              "obfuscated": false,
+              "unknown_structure": false,
+              "interpreter_sink": false,
+              "privilege": false
+            }
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "055",
+    "label": "git force push entailed",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_055",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": {
+        "text": "请强制推送到 origin main"
+      },
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "process.exec",
+            "argv": [
+              "git",
+              "push",
+              "--force",
+              "origin",
+              "main"
+            ],
+            "cwd": "C:/Users/me/proj",
+            "shell_meta": {
+              "obfuscated": false,
+              "unknown_structure": false,
+              "interpreter_sink": false,
+              "privilege": false
+            }
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "056",
+    "label": "privilege",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_056",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "process.exec",
+            "argv": [
+              "sudo",
+              "rm",
+              "-rf",
+              "C:/Windows/System32"
+            ],
+            "cwd": "C:/Users/me/proj",
+            "shell_meta": {
+              "obfuscated": false,
+              "unknown_structure": false,
+              "interpreter_sink": false,
+              "privilege": true
+            }
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "057",
+    "label": "privilege",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_057",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "process.exec",
+            "argv": [
+              "pkexec",
+              "bash"
+            ],
+            "cwd": "C:/Users/me/proj",
+            "shell_meta": {
+              "obfuscated": false,
+              "unknown_structure": false,
+              "interpreter_sink": false,
+              "privilege": true
+            }
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "058",
+    "label": "privilege",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_058",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "process.exec",
+            "argv": [
+              "gsudo",
+              "cmd"
+            ],
+            "cwd": "C:/Users/me/proj",
+            "shell_meta": {
+              "obfuscated": false,
+              "unknown_structure": false,
+              "interpreter_sink": false,
+              "privilege": true
+            }
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "059",
+    "label": "obfuscated intercepted",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_059",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "process.exec",
+            "argv": [
+              "cu''rl",
+              "https://example.com"
+            ],
+            "cwd": "C:/Users/me/proj",
+            "shell_meta": {
+              "obfuscated": true,
+              "unknown_structure": false,
+              "interpreter_sink": false,
+              "privilege": false
+            }
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": true,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "060",
+    "label": "obfuscated unobserved",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_060",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "process.exec",
+            "argv": [
+              "powershell",
+              "-enc",
+              "QQ=="
+            ],
+            "cwd": "C:/Users/me/proj",
+            "shell_meta": {
+              "obfuscated": true,
+              "unknown_structure": false,
+              "interpreter_sink": false,
+              "privilege": false
+            }
+          }
+        ],
+        "normalization": {
+          "status": "partial",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "061",
+    "label": "remote script",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_061",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "process.exec",
+            "argv": [
+              "bash"
+            ],
+            "cwd": "C:/Users/me/proj",
+            "shell_meta": {
+              "obfuscated": false,
+              "unknown_structure": false,
+              "interpreter_sink": true,
+              "privilege": false
+            }
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "062",
+    "label": "metadata fetch",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_062",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "net.fetch",
+            "method": "GET",
+            "url": "http://169.254.169.254/latest",
+            "host": "169.254.169.254"
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "063",
+    "label": "localhost connect",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_063",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "net.connect",
+            "host": "localhost",
+            "port": 80
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "064",
+    "label": "pypi fetch",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_064",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "net.fetch",
+            "method": "GET",
+            "url": "https://pypi.org/simple",
+            "host": "pypi.org"
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "065",
+    "label": "files pypi fetch",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_065",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "net.fetch",
+            "method": "GET",
+            "url": "https://files.pypi.org/packages/x",
+            "host": "files.pypi.org"
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "066",
+    "label": "unlisted head",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_066",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "net.fetch",
+            "method": "HEAD",
+            "url": "https://example.com/file",
+            "host": "example.com"
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "067",
+    "label": "git status",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_067",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "process.exec",
+            "argv": [
+              "git",
+              "status"
+            ],
+            "cwd": "C:/Users/me/proj",
+            "shell_meta": {
+              "obfuscated": false,
+              "unknown_structure": false,
+              "interpreter_sink": false,
+              "privilege": false
+            }
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "068",
+    "label": "pypi head",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_068",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "net.fetch",
+            "method": "HEAD",
+            "url": "https://pypi.org/simple",
+            "host": "pypi.org"
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "069",
+    "label": "unlisted get",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_069",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "net.fetch",
+            "method": "GET",
+            "url": "https://example.com/",
+            "host": "example.com"
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "070",
+    "label": "unlisted get",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_070",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "net.fetch",
+            "method": "GET",
+            "url": "https://github.com/",
+            "host": "github.com"
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "071",
+    "label": "unlisted get",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_071",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "net.fetch",
+            "method": "GET",
+            "url": "https://registry.npmjs.org/",
+            "host": "registry.npmjs.org"
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "072",
+    "label": "unlisted connect",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_072",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "net.connect",
+            "host": "example.com",
+            "port": 443
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "073",
+    "label": "unlisted connect",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_073",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "net.connect",
+            "host": "github.com",
+            "port": 443
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "074",
+    "label": "plain egress",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_074",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "net.egress",
+            "method": "POST",
+            "url": "https://example.com/hook",
+            "host": "example.com",
+            "has_body": true,
+            "secret_like": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "075",
+    "label": "secret egress",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_075",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "net.egress",
+            "method": "POST",
+            "url": "https://example.com/hook",
+            "host": "example.com",
+            "has_body": true,
+            "secret_like": true
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "076",
+    "label": "sensitive upload",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_076",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "net.egress",
+            "method": "POST",
+            "url": "https://example.com/upload",
+            "host": "example.com",
+            "has_body": true,
+            "secret_like": false,
+            "local_file_attached": true,
+            "local_files": [
+              "C:/Users/me/proj/.env"
+            ]
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "077",
+    "label": "raw disk write",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_077",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "\\\\.\\PhysicalDrive0",
+            "path_kind": "device",
+            "device_class": "raw_disk"
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "078",
+    "label": "volume write",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_078",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "\\\\.\\C:",
+            "path_kind": "device",
+            "device_class": "volume"
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "079",
+    "label": "com port write",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_079",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "\\\\.\\COM1",
+            "path_kind": "device",
+            "device_class": "other"
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "080",
+    "label": "pipe read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_080",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "\\\\.\\pipe\\agent",
+            "path_kind": "named_pipe",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "081",
+    "label": "partial without intercept",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_081",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/README.md",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "partial",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "082",
+    "label": "failed without intercept",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_082",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/README.md",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "failed",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "083",
+    "label": "partial with intercept",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_083",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "process.exec",
+            "argv": [
+              "bash"
+            ],
+            "cwd": "C:/Users/me/proj",
+            "shell_meta": {
+              "obfuscated": true,
+              "unknown_structure": false,
+              "interpreter_sink": false,
+              "privilege": false
+            }
+          }
+        ],
+        "normalization": {
+          "status": "partial",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": true,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "084",
+    "label": "schedule",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_084",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "schedule.create",
+            "name": "nightly"
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "085",
+    "label": "outside nonsensitive read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_085",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "D:/public/readme.txt",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "086",
+    "label": "trusted dir read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_086",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "D:/shared/notes.txt",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "087",
+    "label": "outside write is not preauthorized",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_087",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "D:/tmp/covered.txt",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": false
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "088",
+    "label": "sandbox plane keeps force push",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_088",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "process.exec",
+            "argv": [
+              "git",
+              "push",
+              "--force"
+            ],
+            "cwd": "C:/Users/me/proj",
+            "shell_meta": {
+              "obfuscated": false,
+              "unknown_structure": false,
+              "interpreter_sink": false,
+              "privilege": false
+            }
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "sandbox",
+        "provider": "host",
+        "intercept": true,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "089",
+    "label": "model call",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_089",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "model_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "090",
+    "label": "no effect",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_090",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "091",
+    "label": "invalid empty",
+    "body": {}
+  },
+  {
+    "id": "092",
+    "label": "invalid missing id",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/README.md",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "093",
+    "label": "invalid os",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_093",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [],
+        "os": "macos"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/README.md",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "094",
+    "label": "escaped sandbox",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_094",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/Users/me/proj/README.md",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "sandbox",
+        "provider": "host",
+        "intercept": false,
+        "escaped": true,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "095",
+    "label": "outside read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_095",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "D:/public/a.txt",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "096",
+    "label": "outside read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_096",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "D:/public/b.txt",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "097",
+    "label": "outside read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_097",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "E:/docs/c.txt",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "098",
+    "label": "outside read",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_098",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.read",
+            "path": "C:/temp/readme.txt",
+            "path_kind": "file",
+            "device_class": null
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "099",
+    "label": "system critical write",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_099",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "C:/Windows/System32/drivers/etc/hosts",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": true
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  },
+  {
+    "id": "100",
+    "label": "system critical write",
+    "body": {
+      "spec": "agent-event/v1",
+      "id": "evt_100",
+      "time": "2026-10-20T00:00:00Z",
+      "source": {
+        "framework": "jiuwenswarm",
+        "session_id": "e2e",
+        "agent_id": "leader"
+      },
+      "workspace": {
+        "root": "C:/Users/me/proj",
+        "trusted_dirs": [
+          "D:/shared"
+        ],
+        "os": "windows"
+      },
+      "user_intent": null,
+      "action": {
+        "category": "tool_call",
+        "raw": {
+          "name": "bash",
+          "args": {}
+        },
+        "effects": [
+          {
+            "type": "fs.write",
+            "path": "C:/Windows/SysWOW64/new.dll",
+            "path_kind": "file",
+            "device_class": null,
+            "exists": true
+          }
+        ],
+        "normalization": {
+          "status": "ok",
+          "warnings": []
+        }
+      },
+      "host_capabilities": {
+        "hitl": true,
+        "auto_intent": true
+      },
+      "execution": {
+        "plane": "host",
+        "provider": "host",
+        "intercept": false,
+        "escaped": false,
+        "escape_reason": ""
+      }
+    }
+  }
+]

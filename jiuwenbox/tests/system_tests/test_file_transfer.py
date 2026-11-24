@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """File transfer tests - upload performance and integrity."""
 
 from __future__ import annotations
