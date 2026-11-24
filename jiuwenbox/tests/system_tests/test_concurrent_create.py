@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Concurrent sandbox creation tests."""
 
 from __future__ import annotations

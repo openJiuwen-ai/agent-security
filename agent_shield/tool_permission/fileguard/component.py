@@ -1,0 +1,170 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
+"""W2 path guard components wired into :class:`PermissionEngine`."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from copy import deepcopy
+from pathlib import Path
+from typing import Any
+
+from ..config_access import (
+    builtin_section,
+    runtime_immutable_roots,
+    runtime_path,
+    runtime_trusted_dirs,
+    runtime_workspace_root,
+)
+from .file_guard import FileGuardChecker, build_file_guard_checker
+from .native_context import native_accesses
+from .immutable_control_plane import ImmutableControlPlaneGuard
+from .sensitive_paths import merge_builtin_sensitive_paths
+from ..models import PermissionResult
+from ..routing import CandidateKind, RouteContext
+
+
+def _permissions_for_file_guard(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Merge top-level ``file_guard.paths`` with ``builtin.sensitive_paths``."""
+
+    perms = dict(config)
+    raw_paths = builtin_section(config).get("sensitive_paths")
+    return merge_builtin_sensitive_paths(
+        perms,
+        raw_paths,
+        package_builtin_rules=config.get("package_builtin_rules"),
+    )
+
+
+class FileGuardComponent:
+    """Native / legacy file_guard path policy (Pipeline B)."""
+
+    def __init__(self) -> None:
+        self._checker: FileGuardChecker | None = None
+        self._read_deny_only = False
+
+    def configure(self, config: Mapping[str, object]) -> None:
+        if not isinstance(config, Mapping):
+            raise TypeError("Engine configuration must be a mapping")
+        workspace = runtime_path(config, "workspace_root") or runtime_workspace_root(config)
+        agent_cwd = runtime_path(config, "cwd")
+        trusted = [Path(item) for item in runtime_trusted_dirs(config)]
+        perms = _permissions_for_file_guard(config)
+        section = perms.get("file_guard")
+        self._read_deny_only = isinstance(section, Mapping) and section.get("read_deny_only") is True
+        enabled = True
+        if isinstance(section, Mapping) and section.get("enabled") is False:
+            enabled = False
+        if not enabled:
+            self._checker = None
+            return
+        self._checker = build_file_guard_checker(
+            perms,
+            workspace_root=workspace,
+            trusted_dirs=trusted,
+            agent_cwd=agent_cwd,
+        )
+
+    def active(self) -> bool:
+        """True after configure built a checker. A disabled file_guard stays inactive."""
+
+        return self._checker is not None
+
+    def collect_ask_accesses(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, object],
+    ) -> list[tuple[str, str]]:
+        """ASK paths from the configured checker. Inactive file_guard returns none."""
+
+        if self._checker is None:
+            return []
+        return [
+            (path, action)
+            for path, action in self._checker.collect_ask_accesses(tool_name, tool_args)
+        ]
+
+    async def evaluate(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, object],
+        *,
+        route: RouteContext | None = None,
+    ) -> PermissionResult | None:
+        accesses = native_accesses()
+        if accesses is not None:
+            if route is not None and route.kind is not CandidateKind.ORIGINAL:
+                return None
+            return self._checker.evaluate_accesses(accesses) if self._checker is not None else None
+        # Standard extraction follows nested shell scopes itself. An unwrapped
+        # permission view flattens those scopes and can invent resource paths.
+        # Keep the legacy read_deny_only dispatch contract unchanged.
+        if route is not None and route.kind is CandidateKind.SUBCOMMAND:
+            return None
+        if route is not None and route.kind is CandidateKind.UNWRAPPED and not self._read_deny_only:
+            return None
+        if self._checker is None:
+            return None
+        return self._checker.evaluate(tool_name, tool_args)
+
+
+class ImmutableControlPlaneComponent:
+    """Host control-plane write protection.
+
+    Independent of ``file_guard.enabled``. Unloaded when the top-level
+    ``enabled`` switch is false, including raw policy queries.
+    """
+
+    def __init__(self) -> None:
+        self._guard: ImmutableControlPlaneGuard | None = None
+
+    def configure(self, config: Mapping[str, object]) -> None:
+        if not isinstance(config, Mapping):
+            raise TypeError("Engine configuration must be a mapping")
+        # Same master switch as PermissionEngine.check_permission. A false
+        # value unloads the guard before root validation, so a disabled
+        # engine can still be built when roots are present.
+        if config.get("enabled", True) is False:
+            self._guard = None
+            return
+        roots = runtime_immutable_roots(config)
+        workspace = runtime_path(config, "workspace_root") or runtime_workspace_root(config)
+        agent_cwd = runtime_path(config, "cwd")
+        perms = config
+        if not roots:
+            self._guard = None
+            return
+        # The original guard resolved relative paths against the workspace, or
+        # the process cwd when the workspace was missing. The cwd now has to
+        # be passed in. Without either base, a relative write would skip the
+        # control plane.
+        if workspace is None and agent_cwd is None:
+            raise ValueError(
+                "runtime.immutable_control_roots requires runtime.workspace_root "
+                "or runtime.cwd"
+            )
+        self._guard = ImmutableControlPlaneGuard(
+            list(roots),
+            workspace_root=workspace,
+            permission_config=deepcopy(dict(perms)) if isinstance(perms, Mapping) else None,
+            agent_cwd=agent_cwd,
+        )
+
+    async def evaluate(
+        self,
+        tool_name: str,
+        tool_args: Mapping[str, object],
+        *,
+        route: RouteContext | None = None,
+    ) -> PermissionResult | None:
+        if route is not None and route.kind is not CandidateKind.ORIGINAL:
+            return None
+        if self._guard is None or not self._guard.enabled:
+            return None
+        accesses = native_accesses()
+        if accesses is not None:
+            return self._guard.evaluate_accesses(accesses)
+        return self._guard.evaluate(tool_name, tool_args)
+
+
+__all__ = ["FileGuardComponent", "ImmutableControlPlaneComponent"]

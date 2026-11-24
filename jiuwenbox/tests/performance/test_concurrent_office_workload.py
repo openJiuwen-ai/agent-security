@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Performance tests for concurrent jiuwenbox office-style workloads."""
 
 from __future__ import annotations

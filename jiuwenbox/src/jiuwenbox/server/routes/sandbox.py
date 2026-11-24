@@ -3,8 +3,9 @@
 
 from __future__ import annotations
 
+import base64
 import logging
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, File, Query, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
@@ -23,7 +24,12 @@ from jiuwenbox.models.sandbox import (
     SandboxRef,
     SandboxSpec,
 )
-from jiuwenbox.server.sandbox_manager import SandboxBackgroundExecRequest, SandboxExecRequest, SandboxListRequest
+from jiuwenbox.server.sandbox_manager import (
+    SandboxBackgroundExecRequest,
+    SandboxExecRequest,
+    SandboxListRequest,
+)
+from jiuwenbox.supervisor.daemon_ipc import MAX_FILE_BYTES
 
 router = APIRouter(tags=["sandboxes"])
 configure_logging()
@@ -35,12 +41,91 @@ def _mgr():
     return get_manager()
 
 
+class FileSnapshotRequest(BaseModel):
+    operation: Literal["read", "compare_replace"]
+    path: str = ""
+    options: dict[str, Any] = Field(default_factory=dict)
+    content_base64: str = Field(default="", max_length=((MAX_FILE_BYTES + 2) // 3) * 4)
+
+
+@router.post("/sandboxes/{sandbox_id}/file-snapshot")
+async def file_snapshot(sandbox_id: str, request: FileSnapshotRequest):
+    """Conditional publish executes inside the sandbox's existing security context."""
+    try:
+        content = base64.b64decode(request.content_base64, validate=True)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"ok": False, "error": "bad_request"})
+    if request.operation != "compare_replace" and content:
+        return JSONResponse(status_code=400, content={"ok": False, "error": "bad_request"})
+    if len(content) > MAX_FILE_BYTES:
+        return JSONResponse(status_code=413, content={"ok": False, "error": "too_large"})
+    response, raw = await _mgr().file_snapshot(
+        sandbox_id,
+        {"operation": request.operation, "path": request.path, "options": request.options},
+        content,
+    )
+    if response.get("ok") and request.operation == "read":
+        response = {**response, "content_base64": base64.b64encode(raw).decode("ascii")}
+    return response
+
+
+@router.get("/capabilities")
+async def capabilities():
+    """Report the server's supported runtime backends and their capabilities.
+
+    Used for pre-deployment probing (design doc section 5.3 rule 4). A
+    runtime that cannot be loaded on this host is reported as unavailable
+    rather than silently listed.
+    """
+    from jiuwenbox.server.runtime.registry import (
+        available_runtime_names,
+        load_runtime_class,
+        resolve_runtime_name,
+    )
+
+    result: dict[str, Any] = {
+        "default_runtime": resolve_runtime_name(None),
+        "runtimes": {},
+    }
+    for name in ("bubblewrap", "windows", "conch"):
+        if name not in available_runtime_names():
+            result["runtimes"][name] = {"available": False}
+            continue
+        try:
+            cls = load_runtime_class(name)
+            caps = cls().capabilities()
+            reported = {}
+            for field in (
+                "local_pid",
+                "background_jobs",
+                "fast_file_io",
+                "recursive_search",
+                "live_policy_update",
+                "network_identity",
+                "filesystem_acl",
+                "process_tree_containment",
+                "egress_filter",
+                "soft_delete",
+            ):
+                reported[field] = getattr(caps, field)
+            result["runtimes"][name] = {
+                "available": True,
+                "capabilities": reported,
+            }
+        except Exception as exc:  # noqa: BLE001
+            result["runtimes"][name] = {"available": False, "error": str(exc)}
+    return result
+
+
 class CreateSandboxRequest(BaseModel):
     command: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     policy: dict[str, Any] | None = None
     policy_mode: PolicyMode = PolicyMode.OVERRIDE
     sandbox_id: str | None = None
+    #: Explicit runtime backend selection (``bubblewrap`` / ``windows`` /
+    #: ``conch``); defaults to the server default / platform default.
+    sandbox_runtime: str | None = None
 
 
 class ExecRequest(BaseModel):
@@ -65,7 +150,11 @@ async def create_sandbox(request: CreateSandboxRequest):
         sandbox_id = None
     else:
         sandbox_id = request.sandbox_id
-    spec = SandboxSpec(env=request.env, sandbox_id=sandbox_id)
+    spec = SandboxSpec(
+        env=request.env,
+        sandbox_id=sandbox_id,
+        sandbox_runtime=request.sandbox_runtime,
+    )
     return await _mgr().create_sandbox(
         spec,
         policy_data=request.policy,

@@ -13,11 +13,9 @@ import asyncio
 import base64
 import dataclasses
 import errno
-import grp
 import json
 import logging
 import os
-import pwd
 import shutil
 import signal
 import socket
@@ -30,7 +28,25 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+try:
+    import grp
+    import pwd
+except ModuleNotFoundError:
+    grp = None
+    pwd = None
+
 import yaml
+
+# ``grp`` / ``pwd`` are POSIX-only. This module is the Linux
+# ``bubblewrap`` runtime adapter; it must fail *loudly* (not partially) when
+# imported on a non-POSIX platform. The module-level guard keeps the failure
+# explicit and prevents the WindowsRuntime discovery path from importing
+# this module's OS primitives on Windows.
+if sys.platform == "win32":
+    raise ImportError(
+        "jiuwenbox.server.runtime.process (BubblewrapRuntime) is Linux-only; "
+        "use jiuwenbox.server.runtime.windows.WindowsRuntime on Windows"
+    )
 
 from jiuwenbox.logging_config import configure_logging
 from jiuwenbox.models.policy import NetworkMode, SecurityPolicy
@@ -42,11 +58,14 @@ from jiuwenbox.models.sandbox import (
     KillBackgroundJobResult,
 )
 from jiuwenbox.server.runtime.base import (
+    BackgroundJobNotFoundError,
     RuntimeAdapter,
     RuntimeBackgroundExecRequest,
     RuntimeExecRequest,
     RuntimeFileOpResult,
+    RuntimeInstance,
 )
+from jiuwenbox.server.runtime.capabilities import RuntimeCapabilities
 from jiuwenbox.server.workspace import SANDBOX_WORKSPACE
 from jiuwenbox.supervisor import cgroup as cgroup_module
 from jiuwenbox.supervisor import network as network_module
@@ -59,6 +78,7 @@ from jiuwenbox.supervisor.daemon_ipc import (
     REQUEST_TYPE_BG_STATUS,
     REQUEST_TYPE_EXEC,
     REQUEST_TYPE_EXEC_BACKGROUND,
+    REQUEST_TYPE_FILE_SNAPSHOT,
     REQUEST_TYPE_LIST_DIR,
     REQUEST_TYPE_READ_FILE,
     REQUEST_TYPE_SHUTDOWN,
@@ -347,10 +367,6 @@ class BackgroundJob:
     stderr: str = ""
 
 
-class BackgroundJobNotFoundError(Exception):
-    """Raised when a background job id is unknown for a sandbox."""
-
-
 def _resolve_zombie_reaper_interval() -> float:
     """Return the periodic-reaper interval in seconds.
 
@@ -545,8 +561,8 @@ def _summarize_command(command: list[str], max_length: int = 180) -> str:
     return f"{text[:max_length]}... ({len(text)} chars)"
 
 
-class ProcessRuntime(RuntimeAdapter):
-    """Runtime that spawns supervisor as a local process.
+class BubblewrapRuntime(RuntimeAdapter):
+    """Linux bubblewrap runtime (the ``develop`` mainline local process backend).
 
     Sandbox stdout/stderr (both the daemon and any background ``exec``)
     is dropped at the kernel level via ``subprocess.DEVNULL``: the
@@ -555,7 +571,31 @@ class ProcessRuntime(RuntimeAdapter):
     which already carries truncated stdout/stderr per command. Anyone
     needing the raw byte stream should attach a debugger or run the
     container with ``-it``; we no longer persist it to disk.
+
+    This is the runtime formerly named ``ProcessRuntime``. It is kept as a
+    Linux-only adapter so the registry can import it lazily; the historical
+    alias is preserved for backwards compatibility (see module bottom).
     """
+
+    runtime_name = "bubblewrap"
+    supported_platforms = ("linux",)
+
+    def capabilities(self) -> RuntimeCapabilities:
+        return RuntimeCapabilities(
+            runtime_name=self.runtime_name,
+            local_pid=True,
+            background_jobs=True,
+            fast_file_io=True,
+            recursive_search=True,
+            network_identity=True,
+            filesystem_acl=True,
+            process_tree_containment=True,
+            egress_filter=True,
+            soft_delete=False,
+            notes=(
+                "bwrap + landlock + seccomp + cgroup + netns isolation",
+            ),
+        )
 
     def __init__(self) -> None:
         self._processes: dict[str, subprocess.Popen] = {}
@@ -609,7 +649,7 @@ class ProcessRuntime(RuntimeAdapter):
 
     @staticmethod
     def _load_policy(policy_path: Path) -> SecurityPolicy:
-        with open(policy_path) as f:
+        with open(policy_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return SecurityPolicy.model_validate(data)
 
@@ -1807,7 +1847,7 @@ class ProcessRuntime(RuntimeAdapter):
         sandbox_id: str,
         policy_path: Path,
         env: dict[str, str] | None = None,
-    ) -> int:
+    ) -> RuntimeInstance:
         existing = self._processes.get(sandbox_id)
         if existing is not None:
             if existing.poll() is None:
@@ -1845,12 +1885,16 @@ class ProcessRuntime(RuntimeAdapter):
             seccomp_fd = self._open_seccomp_fd_from_bytes(
                 self._ensure_seccomp_bpf(sandbox_id, policy),
             )
-        except Exception:
-            logger.warning(
-                "Failed to build seccomp filter for sandbox %s; continuing without seccomp",
-                sandbox_id,
-                exc_info=True,
-            )
+        except Exception as exc:
+            try:
+                listener.close()
+            except OSError:
+                logger.debug("Failed to close daemon listener for %s", sandbox_id, exc_info=True)
+            try:
+                self._cleanup_sandbox_artifacts(sandbox_id, netns_name)
+            except Exception:
+                logger.warning("Failed to clean up sandbox %s after seccomp error", sandbox_id, exc_info=True)
+            raise RuntimeError(f"Failed to prepare seccomp filter for sandbox {sandbox_id}") from exc
 
         bwrap_args = self._build_sandbox_bwrap_args(
             sandbox_id,
@@ -2004,7 +2048,13 @@ class ProcessRuntime(RuntimeAdapter):
             except OSError:
                 pass
         logger.info("Sandbox daemon started for %s (pid=%d)", sandbox_id, proc.pid)
-        return proc.pid
+        return RuntimeInstance(
+            runtime_name=self.runtime_name,
+            instance_id=sandbox_id,
+            pid=proc.pid,
+            ip_address=None,
+            metadata={"netns": netns_name},
+        )
 
     async def _wait_daemon_ready(
         self,
@@ -2617,6 +2667,34 @@ class ProcessRuntime(RuntimeAdapter):
             except OSError:
                 pass
 
+    def _file_snapshot_blocking(
+        self,
+        socket_path: Path,
+        payload: dict[str, Any],
+        content: bytes,
+    ) -> tuple[dict[str, Any], bytes]:
+        header_blob = encode_request(request_type=REQUEST_TYPE_FILE_SNAPSHOT, payload=payload)
+        sock = self._connect_daemon_socket(socket_path)
+        try:
+            sock.settimeout(DAEMON_FILE_OP_TIMEOUT_SECONDS)
+            self._send_request_blob(sock, header_blob, content)
+            try:
+                sock.shutdown(socket.SHUT_WR)
+            except OSError:
+                pass
+            response = self._read_response_blob(sock)
+            raw = b""
+            if response.get("ok") and payload["operation"] == "read":
+                raw = recv_frame(sock, MAX_FILE_BYTES)
+                if len(raw) != response.get("content_size"):
+                    raise ConnectionError("Snapshot response content size mismatch")
+            return response, raw
+        finally:
+            try:
+                sock.close()
+            except OSError:
+                pass
+
     def _list_dir_via_daemon_blocking(
         self, call: _DaemonListDirCall,
     ) -> dict[str, Any]:
@@ -2736,6 +2814,41 @@ class ProcessRuntime(RuntimeAdapter):
             return RuntimeFileOpResult(ok=True, content=content)
         return self._file_op_result_from_response(response)
 
+    async def file_snapshot(
+        self,
+        sandbox_id: str,
+        payload: dict[str, Any],
+        content: bytes = b"",
+    ) -> tuple[dict[str, Any], bytes]:
+        payload = {**payload, "content_size": len(content)}
+        writing = payload.get("operation") == "compare_replace"
+
+        def execute():
+            socket_path = self._control_socket_host_path(sandbox_id)
+            if socket_path is None or not self._daemon_ipc_available(sandbox_id):
+                return {"ok": False, "error": "daemon_unavailable"}, b""
+            return self._file_snapshot_blocking(socket_path, payload, content)
+
+        worker = asyncio.create_task(asyncio.to_thread(execute))
+        settled = asyncio.gather(worker, return_exceptions=True)
+        cancelled = False
+        while not worker.done():
+            try:
+                await asyncio.shield(settled)
+            except asyncio.CancelledError:
+                cancelled = True
+        if cancelled:
+            worker.exception()
+            raise asyncio.CancelledError
+        try:
+            return worker.result()
+        except (OSError, ValueError) as exc:
+            return {
+                "ok": False,
+                "error": "outcome_unknown" if writing else "transport_failure",
+                "stderr": str(exc),
+            }, b""
+
     async def list_dir(
         self,
         sandbox_id: str,
@@ -2817,7 +2930,7 @@ class ProcessRuntime(RuntimeAdapter):
                 loop.run_in_executor(None, _ask_shutdown, socket_path),
                 timeout=DAEMON_SHUTDOWN_TIMEOUT_SECONDS,
             )
-        except (asyncio.TimeoutError, OSError) as exc:
+        except OSError as exc:
             logger.debug(
                 "Failed to send daemon shutdown for %s: %s",
                 sandbox_id,
@@ -3126,3 +3239,10 @@ class ProcessRuntime(RuntimeAdapter):
         # Runtime log files used to live here too; they were removed in
         # favour of the single ``audit.log`` written by ``AuditLogger``.
         # Nothing extra to clean up on this side any more.
+
+
+# Backwards-compatibility alias: ``ProcessRuntime`` was the pre-unification
+# name for the Linux local-process runtime. Historical callers (the manager,
+# tests, and operator code) can keep importing it; new code should use
+# :class:`BubblewrapRuntime` or the runtime registry.
+ProcessRuntime = BubblewrapRuntime

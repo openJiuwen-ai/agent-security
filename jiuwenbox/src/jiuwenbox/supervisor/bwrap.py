@@ -95,9 +95,9 @@ class BwrapConfig:
     # ``--die-with-parent``: arm ``PR_SET_PDEATHSIG=SIGKILL`` on every bwrap
     # process in the sandbox chain (outer monitor, inner pid-namespace init,
     # and the launched command). When jiuwenbox-server dies for *any* reason
-    # -- clean lifespan shutdown, crash, SIGKILL by an operator, parent
-    # jiuwenswarm being SIGKILLed before its grace window expired -- the
-    # kernel immediately SIGKILLs the bwrap monitor, which in turn cascades
+    # -- clean lifespan shutdown, crash, SIGKILL by an operator, or the
+    # parent host process being SIGKILLed before its grace window expired --
+    # the kernel immediately SIGKILLs the bwrap monitor, which in turn cascades
     # the kill into the pid namespace via bwrap's own ``--die-with-parent``
     # propagation. Without this flag the sandbox-daemon.py + bwrap monitor
     # stay alive after box-server vanishes (they were spawned with
@@ -164,8 +164,9 @@ class BwrapConfig:
         # bind_root_entries is the "wildcard / generic" parent mount (e.g.
         # ``host_root="/"`` expanded into every immediate child of the host
         # rootfs), while ``bind_mounts`` are user-explicit per-path overrides
-        # (``/sandbox files allow|deny <path>`` lowered by jiuwenswarm's
-        # ``sysop_builder``). bwrap's later-overrides-earlier mount semantics
+        # (``/sandbox files allow|deny <path>`` lowered by the calling
+        # application's ``sysop_builder``). bwrap's later-overrides-earlier
+        # mount semantics
         # means whichever entry we ``append`` last wins on conflicting paths;
         # putting bind_root_entries first guarantees the explicit
         # bind_mounts can selectively flip a child to rw (allow) or stack a
@@ -255,17 +256,25 @@ class BwrapConfig:
     @staticmethod
     def _apply_process(cfg: BwrapConfig, proc: ProcessPolicy) -> None:
         # Resolve user/group names to numeric IDs; fall back to 65534 (nobody)
-        import pwd
-        import grp
+        try:  # posix only
+            import pwd as _pwd_mod  # type: ignore[import-not-found]
+        except ImportError:  # pragma: no cover - Windows
+            _pwd_mod = None
+        try:  # posix only
+            import grp as _grp_mod  # type: ignore[import-not-found]
+        except ImportError:  # pragma: no cover - Windows
+            _grp_mod = None
 
-        try:
-            cfg.uid = pwd.getpwnam(proc.run_as_user).pw_uid
-        except KeyError:
-            cfg.uid = 65534
-        try:
-            cfg.gid = grp.getgrnam(proc.run_as_group).gr_gid
-        except KeyError:
-            cfg.gid = 65534
+        if _pwd_mod is not None:
+            try:
+                cfg.uid = _pwd_mod.getpwnam(proc.run_as_user).pw_uid
+            except KeyError:
+                cfg.uid = 65534
+        if _grp_mod is not None:
+            try:
+                cfg.gid = _grp_mod.getgrnam(proc.run_as_group).gr_gid
+            except KeyError:
+                cfg.gid = 65534
 
     @staticmethod
     def _apply_namespace(cfg: BwrapConfig, namespace: NamespacePolicy) -> None:
@@ -383,7 +392,7 @@ class BwrapConfig:
         rw_binds = [(src, dst) for src, dst in rw_binds_in if dst != "/"]
         if root_rw_binds:
             # A read-write root bind already exposes every absolute child path.
-            # Re-binding private children such as /home/<user>/.jiuwenswarm can
+            # Re-binding private children such as /home/<user>/.jiuwenbox can
             # fail because bwrap may open sources after entering userns.
             # Keep synthetic binds whose source differs from the sandbox path,
             # such as the Landlock launcher mounted into /run.
@@ -467,13 +476,25 @@ class BwrapConfig:
             else:
                 args.extend(["--tmpfs", path])
 
-        # read-only binds
+        # Emit read-only and read-write binds ordered by *target depth* so a
+        # read-write parent directory is mounted *before* any read-only child
+        # nested beneath it. bwrap applies later mounts over earlier ones, so
+        # mounting the rw parent first and the ro child second lets the child
+        # win and stay read-only (design doc section 4.4 / dev-stable patch
+        # fb0dc85de). Within the same depth, read-only binds are emitted
+        # before read-write ones so a same-path rw bind correctly overrides
+        # an ro bind (design doc dev-stable patch 32a5caead).
+        bind_entries: list[tuple[int, str, str]] = []
         for src, dst in ro_binds:
-            args.extend(["--ro-bind", src, dst])
-
-        # read-write binds
+            bind_entries.append((0, src, dst))
         for src, dst in rw_binds:
-            args.extend(["--bind", src, dst])
+            bind_entries.append((1, src, dst))
+        bind_entries.sort(key=lambda entry: (_path_depth(entry[2]), entry[0]))
+        for order, src, dst in bind_entries:
+            if order == 0:
+                args.extend(["--ro-bind", src, dst])
+            else:
+                args.extend(["--bind", src, dst])
 
         for src, dst in self.device_binds:
             args.extend(["--dev-bind", src, dst])

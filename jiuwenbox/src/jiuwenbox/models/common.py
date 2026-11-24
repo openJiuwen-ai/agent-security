@@ -9,6 +9,13 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+#: Environment variable names reserved by the runtime itself. Clients and
+#: policies must never be able to override these (design doc section 4.7 /
+#: 5.5). ``SANDBOX_IP`` is the network identity the runtime injects; letting
+#: a client or a policy set it would let sandbox code spoof its own identity.
+RESERVED_ENV_VARS: frozenset[str] = frozenset({"SANDBOX_IP"})
+
+
 class AuditEventType(str, enum.Enum):
     SANDBOX_CREATED = "sandbox_created"
     SANDBOX_STARTED = "sandbox_started"

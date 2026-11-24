@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audit-event/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["time", "event_id", "framework", "session_id", "action", "raw_action", "winner_rule_id", "tool_raw_name"],
+  "properties": {
+    "time": { "type": "string" },
+    "event_id": { "type": "string" },
+    "framework": { "type": "string" },
+    "session_id": { "type": "string" },
+    "action": { "enum": ["allow", "ask", "deny", "undetermined"] },
+    "raw_action": { "enum": ["allow", "ask", "deny", "undetermined"] },
+    "winner_rule_id": { "type": ["string", "null"] },
+    "tool_raw_name": { "type": "string" }
+  }
+}

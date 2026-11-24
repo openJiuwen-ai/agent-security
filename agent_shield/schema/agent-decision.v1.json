@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-decision/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["spec", "event_id", "action", "raw_action", "winner_rule_id", "advice", "grants"],
+  "properties": {
+    "spec": { "const": "agent-decision/v1" },
+    "event_id": { "type": "string" },
+    "action": { "enum": ["allow", "ask", "deny", "undetermined"] },
+    "raw_action": { "enum": ["allow", "ask", "deny", "undetermined"] },
+    "winner_rule_id": { "type": ["string", "null"] },
+    "advice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["user_visible"],
+      "properties": {
+        "user_visible": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["summary", "content", "risk"],
+          "properties": {
+            "summary": { "type": "string" },
+            "content": { "type": "string" },
+            "risk": { "enum": ["无风险", "低风险", "中风险", "高风险", "严重风险"] }
+          }
+        }
+      }
+    },
+    "grants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "object"],
+        "properties": {
+          "id": { "type": "string" },
+          "object": { "enum": ["file", "domain", "command", "agentTools", "nativeTools"] },
+          "ops": { "type": "array", "items": { "type": "string" } },
+          "path": { "type": "string" },
+          "hosts": { "type": "array", "items": { "type": "string" } },
+          "tokens": { "type": "array", "items": { "type": "string" } },
+          "names": { "type": "array", "items": { "type": "string" } },
+          "subject_id": { "type": "string" },
+          "provenance": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["decision_id", "approved_at", "via"],
+            "properties": {
+              "decision_id": { "type": "string" },
+              "approved_at": { "type": "string" },
+              "via": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -45,7 +45,7 @@ Authorization: Bearer <token>
 `401`，响应体 `{"error":"unauthorized"}`。
 
 服务端与 jiuwenbox CLI 共用 `JIUWENBOX_API_TOKEN`；CLI 亦支持 `--api-token`
-（优先级高于 env）。jiuwenclaw / openjiuwen provider 当前不会自动发送该
+（优先级高于 env）。jiuwenswarm provider 当前不会自动发送该
 header，启用认证后需自行在 HTTP 客户端层携带 token。
 
 ### 通用接入示例
@@ -136,7 +136,19 @@ JIUWENBOX_URL=unix:///tmp/jiuwenbox-sock/jiuwenbox.sock jiuwenbox health
 | `400` | 请求参数错误或 policy 校验失败 |
 | `404` | 沙箱、策略、文件、目录或代理不存在 |
 | `409` | 当前状态不允许执行该操作 |
+| `413` | 文件快照内容超过大小上限 |
 | `500` | 服务端内部错误 |
+
+### 平台差异
+
+服务端按 `sandbox_runtime`、`JIUWENBOX_RUNTIME_PROFILE` 或平台默认值选择运行时。`bubblewrap` 与 `windows` 已有实现，`conch` 为保留名称。`GET /api/v1/capabilities` 会报告实际可用的运行时。
+
+Windows 运行时当前的行为差异：
+
+- `file-snapshot` 返回 `unsupported`。
+- `landlock_supported` 为 `false`；Linux 专有的 namespace、capability、seccomp、cgroup 字段被忽略。
+- 删除在 `JIUWENBOX_SOFT_DELETE=1` 时先进回收站，失败转到同卷归档目录。
+- 网络由 WFP 与出站代理（egress proxy）共同约束，策略入口是 `windows` 配置块。
 
 ## 通用数据结构
 
@@ -146,10 +158,12 @@ JIUWENBOX_URL=unix:///tmp/jiuwenbox-sock/jiuwenbox.sock jiuwenbox health
 | --- | --- | --- |
 | `id` | string | 沙箱 ID |
 | `phase` | string | 沙箱状态，取值为 `provisioning`、`ready`、`stopped`、`error`、`deleting` |
-| `runtime` | string | 当前固定为 `process` |
+| `runtime` | string | 实际运行时：`bubblewrap`、`windows`；旧版别名 `process` 仍可被接受 |
 | `pid` | integer/null | 沙箱生命周期进程 PID |
+| `ip_address` | string/null | 运行时探测到的网络标识；不提供网络标识的运行时为 `null` |
 | `created_at` | string | 创建时间 |
 | `started_at` | string/null | 启动时间 |
+| `last_active_at` | string/null | 最后一次 exec / 文件 IO / 列目录等活动时间 |
 | `error_message` | string/null | 错误信息 |
 | `env` | object | 创建沙箱时注入的环境变量 |
 
@@ -159,7 +173,7 @@ JIUWENBOX_URL=unix:///tmp/jiuwenbox-sock/jiuwenbox.sock jiuwenbox health
 {
   "id": "abc123def456",
   "phase": "ready",
-  "runtime": "process",
+  "runtime": "bubblewrap",
   "pid": 12345,
   "created_at": "2026-04-25T11:30:00.000000",
   "started_at": "2026-04-25T11:30:01.000000+00:00",
@@ -193,8 +207,8 @@ JIUWENBOX_URL=unix:///tmp/jiuwenbox-sock/jiuwenbox.sock jiuwenbox health
 | --- | --- | --- |
 | `status` | string | 固定为 `ok` |
 | `version` | string | 服务版本 |
-| `runtime` | string | 当前固定为 `process` |
-| `landlock_supported` | boolean | 当前主机是否支持 Landlock |
+| `runtime` | string | 当前运行时：`bubblewrap` 或 `windows` |
+| `landlock_supported` | boolean | 当前主机是否支持 Landlock；不适用时为 `false` |
 | `sandboxes_active` | integer | 当前处于 `ready` 状态的沙箱数量 |
 
 ## 健康检查
@@ -221,11 +235,48 @@ print(resp.json())
 {
   "status": "ok",
   "version": "0.1.0",
-  "runtime": "process",
+  "runtime": "bubblewrap",
   "landlock_supported": true,
   "sandboxes_active": 1
 }
 ```
+
+## 运行时能力探测
+
+### 查询运行时能力
+
+接口：`GET /api/v1/capabilities`
+
+用途：报告当前主机上可加载的运行时及其能力集，供部署前探测。无法加载的运行时标记为 `available: false`，不会静默列出。
+
+响应示例：
+
+```json
+{
+  "default_runtime": "bubblewrap",
+  "runtimes": {
+    "bubblewrap": {
+      "available": true,
+      "capabilities": {
+        "local_pid": true,
+        "background_jobs": true,
+        "fast_file_io": true,
+        "recursive_search": true,
+        "live_policy_update": false,
+        "network_identity": false,
+        "filesystem_acl": false,
+        "process_tree_containment": false,
+        "egress_filter": true,
+        "soft_delete": false
+      }
+    },
+    "windows": { "available": false },
+    "conch": { "available": false }
+  }
+}
+```
+
+字段随运行时实现而变；调用方应以实际返回为准，不要把某种能力当成所有运行时都支持。
 
 ## 沙箱接口
 
@@ -233,16 +284,18 @@ print(resp.json())
 
 接口：`POST /api/v1/sandboxes`
 
-用途：创建沙箱。
+用途：创建沙箱。成功返回 `201 Created`。
 
 请求字段：
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
+| `command` | string[] | 否 | 沙箱启动后执行的命令；省略时按运行时默认行为启动 |
 | `env` | object | 否 | 沙箱公共环境变量 |
 | `policy` | object/null | 否 | 覆盖或追加的 policy 数据 |
 | `policy_mode` | string | 否 | `override` 或 `append`，默认 `override` |
-| `sandbox_id` | string/null | 否 | 可选，指定沙箱 ID。长度 4~16，仅允许小写字母、数字、减号（`-`）和下划线（`_`）。省略或空字符串时服务端自动生成（形如 `6011f5ca-76a`）。格式非法返回 400；与已有 ID 冲突返回 409 |
+| `sandbox_id` | string/null | 否 | 可选，指定沙箱 ID。长度 4-40，仅允许小写字母、数字、减号（`-`）和下划线（`_`）。省略或空字符串时服务端自动生成（形如 `6011f5ca-76a`）。格式非法返回 400；与已有 ID 冲突返回 409 |
+| `sandbox_runtime` | string/null | 否 | 显式选择运行时：`bubblewrap` / `windows` / `conch`；省略时按服务默认值或平台默认值选择 |
 
 Python 请求示例：
 
@@ -270,7 +323,7 @@ print(resp.json())
 {
   "id": "my-sb_01",
   "phase": "ready",
-  "runtime": "process",
+  "runtime": "bubblewrap",
   "pid": 12345,
   "created_at": "2026-04-25T11:30:00.000000",
   "started_at": "2026-04-25T11:30:01.000000+00:00",
@@ -304,7 +357,7 @@ print(resp.json())
   {
     "id": "abc123def456",
     "phase": "ready",
-    "runtime": "process",
+    "runtime": "bubblewrap",
     "pid": 12345,
     "created_at": "2026-04-25T11:30:00.000000",
     "started_at": "2026-04-25T11:30:01.000000+00:00",
@@ -337,7 +390,7 @@ print(resp.json())
 {
   "id": "abc123def456",
   "phase": "ready",
-  "runtime": "process",
+  "runtime": "bubblewrap",
   "pid": 12345,
   "created_at": "2026-04-25T11:30:00.000000",
   "started_at": "2026-04-25T11:30:01.000000+00:00",
@@ -391,7 +444,7 @@ print(resp.json())
 {
   "id": "abc123def456",
   "phase": "ready",
-  "runtime": "process",
+  "runtime": "bubblewrap",
   "pid": 12345,
   "created_at": "2026-04-25T11:30:00.000000",
   "started_at": "2026-04-25T11:31:00.000000+00:00",
@@ -423,7 +476,7 @@ print(resp.json())
 {
   "id": "abc123def456",
   "phase": "stopped",
-  "runtime": "process",
+  "runtime": "bubblewrap",
   "pid": null,
   "created_at": "2026-04-25T11:30:00.000000",
   "started_at": "2026-04-25T11:31:00.000000+00:00",
@@ -455,7 +508,7 @@ print(resp.json())
 {
   "id": "abc123def456",
   "phase": "ready",
-  "runtime": "process",
+  "runtime": "bubblewrap",
   "pid": 22345,
   "created_at": "2026-04-25T11:30:00.000000",
   "started_at": "2026-04-25T11:32:00.000000+00:00",
@@ -523,7 +576,7 @@ print(resp.json())
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `command` | string[] | 是 | 要执行的命令 argv |
-| `job_id` | string | 否 | 自定义 job id（4–16 位，`[0-9a-z_-]`）；省略则服务端自动生成 |
+| `job_id` | string | 否 | 自定义 job id（4-40 位，`[0-9a-z_-]`）；省略则服务端自动生成 |
 | `workdir` | string | 否 | 沙箱内工作目录 |
 | `env` | object | 否 | 额外环境变量 |
 | `stdin` | string | 否 | 标准输入文本 |
@@ -638,7 +691,7 @@ jiuwenbox sandbox bg-kill my-sb http-srv --signal 9
 
 接口：`GET /api/v1/sandboxes/{sandbox_id}/logs`
 
-用途：读取沙箱审计日志。
+用途：读取沙箱审计日志。默认没有持久化文件，接口返回空字符串；启动时传 `--save-logs DIR`（或设置 `JIUWENBOX_SAVE_LOGS_DIR`）后返回该沙箱的 JSONL 审计记录。沙箱销毁后审计文件仍保留。
 
 Python 请求示例：
 
@@ -651,11 +704,10 @@ print(resp.status_code)
 print(resp.text)
 ```
 
-响应示例：
+响应示例（`--save-logs` 开启后返回 JSONL 审计记录；默认未开启时返回空字符串）：
 
-```text
-[2026-04-25T11:30:00.000000] sandbox_created
-[2026-04-25T11:30:01.000000] sandbox_started
+```json
+{"timestamp": "2026-04-25T11:30:01.123456", "event_type": "sandbox_started", "sandbox_id": "abc123def456", "details": {"ok": true}}
 ```
 
 ### 上传文件
@@ -828,6 +880,68 @@ print(resp.json())
   ]
 }
 ```
+
+### 文件快照与条件替换
+
+接口：`POST /api/v1/sandboxes/{sandbox_id}/file-snapshot`
+
+用途：在沙箱已有的安全上下文内读取文件，或按期望状态做原子条件替换（compare-and-swap）。沙箱必须是 `ready`，否则返回 `409`。
+
+请求字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `operation` | string | 是 | `read` 或 `compare_replace` |
+| `path` | string | 是 | 沙箱内绝对路径；不能经过符号链接或重解析点，Windows 拒绝 `\\.\`、`\\?\` 设备路径 |
+| `options` | object | 否 | 见下表 |
+| `content_base64` | string | 条件 | `compare_replace` 的新内容，base64 编码；`read` 必须为空 |
+
+`options` 字段：
+
+| 字段 | 适用操作 | 说明 |
+| --- | --- | --- |
+| `missing_ok` | `read` | 文件不存在时是否返回成功；默认 `false`，不存在返回 `not_found` |
+| `expected_exists` | `compare_replace` | 必填，期望文件是否存在 |
+| `expected_content_sha256` | `compare_replace` | 必填，期望内容的 SHA-256 十六进制 |
+| `create_if_not_exist` | `compare_replace` | 为 `false` 且文件不存在时返回 `not_found` |
+| `lock_timeout` | `compare_replace` | 旁路锁等待秒数，0~30，默认 30 |
+| `permissions` | `compare_replace` | 新建文件的八进制权限，默认 `644` |
+
+`read` 成功响应：
+
+```json
+{
+  "ok": true,
+  "exists": true,
+  "content_sha256": "…",
+  "content_size": 12,
+  "content_base64": "…"
+}
+```
+
+`compare_replace` 成功响应：
+
+```json
+{
+  "ok": true,
+  "atomic_replace": true,
+  "content_size": 12
+}
+```
+
+失败响应使用 `{"ok": false, "error": "..."}`，常见错误码：
+
+| 错误码 | 含义 |
+| --- | --- |
+| `not_found` | 文件不存在且不允许缺失 |
+| `conflict` | 实际状态与期望状态不一致，未写入 |
+| `lock_timeout` | 同一路径的并发替换等待超时 |
+| `bad_request` | 路径、参数或 base64 非法 |
+| `too_large` | 内容超过 256 MiB |
+| `outcome_unknown` | 写入传输中断，结果不确定，**不要重放** |
+| `unsupported` | 当前运行时不支持该能力 |
+
+当前该接口由 bubblewrap 运行时实现；Windows 运行时尚未覆写，会返回 `unsupported`。CLI 未封装此接口。
 
 ## Policy 接口
 

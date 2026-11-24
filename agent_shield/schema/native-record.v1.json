@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "native-record/v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["spec", "request_id", "operation_id", "time", "process", "operation"],
+  "properties": {
+    "spec": { "const": "native-record/v1" },
+    "request_id": { "type": "string", "minLength": 1 },
+    "operation_id": { "type": "string", "minLength": 1 },
+    "time": { "type": "string", "minLength": 1 },
+    "process": {
+      "type": "object",
+      "required": ["pid", "tid", "process_instance_id"],
+      "properties": {
+        "pid": { "type": "integer" },
+        "tid": { "type": "integer" },
+        "process_instance_id": { "type": "string" }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "required": ["category", "kind", "access", "resources"],
+      "properties": {
+        "category": { "enum": ["file", "process", "network"] },
+        "kind": { "type": "string" },
+        "access": { "enum": ["read", "write", "delete", "execute", "connect"] },
+        "resources": { "type": "array" }
+      }
+    },
+    "cause": {
+      "type": "object",
+      "required": ["tool_call_id", "name"],
+      "properties": {
+        "tool_call_id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

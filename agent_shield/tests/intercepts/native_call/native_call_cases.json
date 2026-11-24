@@ -1,0 +1,3769 @@
+[
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_001",
+      "operation_id": "op_nc_001",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/app.py",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-001"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_002",
+      "operation_id": "op_nc_002",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/main.py",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-002"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_003",
+      "operation_id": "op_nc_003",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/util.py",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-003"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_004",
+      "operation_id": "op_nc_004",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/config.py",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-004"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_005",
+      "operation_id": "op_nc_005",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/api.py",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-005"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_006",
+      "operation_id": "op_nc_006",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/models.py",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-006"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_007",
+      "operation_id": "op_nc_007",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/README.md",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-007"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_008",
+      "operation_id": "op_nc_008",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/LICENSE",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-008"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_009",
+      "operation_id": "op_nc_009",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/docs/design.md",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-009"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_010",
+      "operation_id": "op_nc_010",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/docs/readme.md",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-010"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_011",
+      "operation_id": "op_nc_011",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tests/test_app.py",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-011"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_012",
+      "operation_id": "op_nc_012",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/package.json",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-012"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_013",
+      "operation_id": "op_nc_013",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/pyproject.toml",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-013"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_014",
+      "operation_id": "op_nc_014",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/pkg/__init__.py",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-014"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_015",
+      "operation_id": "op_nc_015",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/pkg/service.py",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-015"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_016",
+      "operation_id": "op_nc_016",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tests/conftest.py",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-016"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_017",
+      "operation_id": "op_nc_017",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/docs/api.md",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-017"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_018",
+      "operation_id": "op_nc_018",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/cli.py",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-018"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_019",
+      "operation_id": "op_nc_019",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/scripts/build.ps1",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-019"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_020",
+      "operation_id": "op_nc_020",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/logging.py",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-020"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_021",
+      "operation_id": "op_nc_021",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/errors.py",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-021"
+  },
+  {
+    "label": "workspace read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_022",
+      "operation_id": "op_nc_022",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tests/test_api.py",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-022"
+  },
+  {
+    "label": "workspace write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_023",
+      "operation_id": "op_nc_023",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/out.py",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-023"
+  },
+  {
+    "label": "workspace write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_024",
+      "operation_id": "op_nc_024",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/generated.py",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-024"
+  },
+  {
+    "label": "workspace write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_025",
+      "operation_id": "op_nc_025",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/new_module.py",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-025"
+  },
+  {
+    "label": "workspace write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_026",
+      "operation_id": "op_nc_026",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/docs/notes.md",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-026"
+  },
+  {
+    "label": "workspace write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_027",
+      "operation_id": "op_nc_027",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/build/note.txt",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-027"
+  },
+  {
+    "label": "workspace write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_028",
+      "operation_id": "op_nc_028",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/log.txt",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-028"
+  },
+  {
+    "label": "workspace write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_029",
+      "operation_id": "op_nc_029",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tests/test_new.py",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-029"
+  },
+  {
+    "label": "workspace write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_030",
+      "operation_id": "op_nc_030",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/pkg/extra.py",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-030"
+  },
+  {
+    "label": "workspace write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_031",
+      "operation_id": "op_nc_031",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/docs/changelog.md",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-031"
+  },
+  {
+    "label": "workspace write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_032",
+      "operation_id": "op_nc_032",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/cache.json",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-032"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_033",
+      "operation_id": "op_nc_033",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-1.txt",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-033"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_034",
+      "operation_id": "op_nc_034",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-2.txt",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-034"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_035",
+      "operation_id": "op_nc_035",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-3.txt",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-035"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_036",
+      "operation_id": "op_nc_036",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-4.txt",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-036"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_037",
+      "operation_id": "op_nc_037",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-5.txt",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-037"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_038",
+      "operation_id": "op_nc_038",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-6.txt",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-038"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_039",
+      "operation_id": "op_nc_039",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-7.txt",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-039"
+  },
+  {
+    "label": "workspace delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_040",
+      "operation_id": "op_nc_040",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/old-8.txt",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-040"
+  },
+  {
+    "label": "workspace mkdir",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_041",
+      "operation_id": "op_nc_041",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "mkdir",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/pkg",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-041"
+  },
+  {
+    "label": "workspace mkdir",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_042",
+      "operation_id": "op_nc_042",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "mkdir",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tests/fixtures",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-042"
+  },
+  {
+    "label": "workspace copy",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_043",
+      "operation_id": "op_nc_043",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "copy",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/app.py",
+            "role": "source"
+          },
+          {
+            "path": "C:/Users/me/proj/src/app.copy.py",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-043"
+  },
+  {
+    "label": "workspace move",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_044",
+      "operation_id": "op_nc_044",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "move",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/tmp/log.txt",
+            "role": "source"
+          },
+          {
+            "path": "C:/Users/me/proj/tmp/log-old.txt",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-044"
+  },
+  {
+    "label": "workspace symlink",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_045",
+      "operation_id": "op_nc_045",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "symlink",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/src/app.py",
+            "role": "source"
+          },
+          {
+            "path": "C:/Users/me/proj/src/app.link.py",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-045"
+  },
+  {
+    "label": "workspace hardlink",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_046",
+      "operation_id": "op_nc_046",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "hardlink",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/README.md",
+            "role": "source"
+          },
+          {
+            "path": "C:/Users/me/proj/README.link.md",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-046"
+  },
+  {
+    "label": "sensitive read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_047",
+      "operation_id": "op_nc_047",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/.env",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-047"
+  },
+  {
+    "label": "sensitive read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_048",
+      "operation_id": "op_nc_048",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/.env.local",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-048"
+  },
+  {
+    "label": "sensitive read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_049",
+      "operation_id": "op_nc_049",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/secrets/id_rsa",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-049"
+  },
+  {
+    "label": "sensitive read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_050",
+      "operation_id": "op_nc_050",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/keys/server.pem",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-050"
+  },
+  {
+    "label": "sensitive read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_051",
+      "operation_id": "op_nc_051",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/.ssh/authorized_keys",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-051"
+  },
+  {
+    "label": "sensitive read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_052",
+      "operation_id": "op_nc_052",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/.kube/config",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-052"
+  },
+  {
+    "label": "sensitive read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_053",
+      "operation_id": "op_nc_053",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/proj/.npmrc",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-053"
+  },
+  {
+    "label": "sensitive read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_054",
+      "operation_id": "op_nc_054",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/me/.aws/credentials",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-054"
+  },
+  {
+    "label": "system critical delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_055",
+      "operation_id": "op_nc_055",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Windows/System32/kernel32.dll",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-055"
+  },
+  {
+    "label": "system critical delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_056",
+      "operation_id": "op_nc_056",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Windows/System32/ntdll.dll",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-056"
+  },
+  {
+    "label": "system critical delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_057",
+      "operation_id": "op_nc_057",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Windows/System32/drivers/etc/hosts",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-057"
+  },
+  {
+    "label": "system critical delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_058",
+      "operation_id": "op_nc_058",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Windows/SysWOW64/ntdll.dll",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-058"
+  },
+  {
+    "label": "system critical delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_059",
+      "operation_id": "op_nc_059",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Windows/System32/config/SAM",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-059"
+  },
+  {
+    "label": "system critical delete",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_060",
+      "operation_id": "op_nc_060",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "delete",
+        "access": "delete",
+        "resources": [
+          {
+            "path": "C:/Windows/System32/cmd.exe",
+            "role": "target"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-060"
+  },
+  {
+    "label": "system write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_061",
+      "operation_id": "op_nc_061",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Windows/Temp/agent-new.dll",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-061"
+  },
+  {
+    "label": "system write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_062",
+      "operation_id": "op_nc_062",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Windows/System32/newfilter.sys",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-062"
+  },
+  {
+    "label": "system write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_063",
+      "operation_id": "op_nc_063",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Program Files/Vendor/new.exe",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-063"
+  },
+  {
+    "label": "system write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_064",
+      "operation_id": "op_nc_064",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Windows/System32/drivers/extra.sys",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-064"
+  },
+  {
+    "label": "system write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_065",
+      "operation_id": "op_nc_065",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Program Files/Common Files/plant.dll",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-065"
+  },
+  {
+    "label": "system write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_066",
+      "operation_id": "op_nc_066",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Windows/Temp/staged.exe",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-066"
+  },
+  {
+    "label": "outside read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_067",
+      "operation_id": "op_nc_067",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/other/notes.txt",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-067"
+  },
+  {
+    "label": "outside read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_068",
+      "operation_id": "op_nc_068",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "D:/public/readme.txt",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-068"
+  },
+  {
+    "label": "outside read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_069",
+      "operation_id": "op_nc_069",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/other/docs/guide.md",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-069"
+  },
+  {
+    "label": "outside read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_070",
+      "operation_id": "op_nc_070",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "D:/archive/report.pdf",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-070"
+  },
+  {
+    "label": "outside read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_071",
+      "operation_id": "op_nc_071",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Temp/shared.txt",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-071"
+  },
+  {
+    "label": "outside read",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_072",
+      "operation_id": "op_nc_072",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "C:/Users/other/Desktop/todo.txt",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-072"
+  },
+  {
+    "label": "outside write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_073",
+      "operation_id": "op_nc_073",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/other/plant.txt",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-073"
+  },
+  {
+    "label": "outside write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_074",
+      "operation_id": "op_nc_074",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "D:/drop/payload.bin",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-074"
+  },
+  {
+    "label": "outside write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_075",
+      "operation_id": "op_nc_075",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Temp/staged.txt",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-075"
+  },
+  {
+    "label": "outside write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_076",
+      "operation_id": "op_nc_076",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Users/other/AppData/secret.dat",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-076"
+  },
+  {
+    "label": "outside write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_077",
+      "operation_id": "op_nc_077",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "D:/archive/old.dat",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-077"
+  },
+  {
+    "label": "outside write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_078",
+      "operation_id": "op_nc_078",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "create",
+        "access": "write",
+        "resources": [
+          {
+            "path": "C:/Temp/leftover.log",
+            "role": "target",
+            "exists": false
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-078"
+  },
+  {
+    "label": "network connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_079",
+      "operation_id": "op_nc_079",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": "files.pythonhosted.org",
+            "ip": null,
+            "port": 443
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-079"
+  },
+  {
+    "label": "network connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_080",
+      "operation_id": "op_nc_080",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": "pypi.org",
+            "ip": null,
+            "port": 443
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-080"
+  },
+  {
+    "label": "network connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_081",
+      "operation_id": "op_nc_081",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": "example.com",
+            "ip": null,
+            "port": 443
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-081"
+  },
+  {
+    "label": "network connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_082",
+      "operation_id": "op_nc_082",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": "example.org",
+            "ip": null,
+            "port": 80
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-082"
+  },
+  {
+    "label": "network connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_083",
+      "operation_id": "op_nc_083",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": null,
+            "ip": "8.8.8.8",
+            "port": 53
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-083"
+  },
+  {
+    "label": "network connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_084",
+      "operation_id": "op_nc_084",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": null,
+            "ip": "1.1.1.1",
+            "port": 443
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-084"
+  },
+  {
+    "label": "network connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_085",
+      "operation_id": "op_nc_085",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": "localhost",
+            "ip": null,
+            "port": 80
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-085"
+  },
+  {
+    "label": "network connect",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_086",
+      "operation_id": "op_nc_086",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "network",
+        "kind": "connect",
+        "access": "connect",
+        "resources": [
+          {
+            "role": "peer",
+            "host": null,
+            "ip": "127.0.0.1",
+            "port": 443
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-086"
+  },
+  {
+    "label": "git status",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_087",
+      "operation_id": "op_nc_087",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "process",
+        "kind": "create_process",
+        "access": "execute",
+        "resources": [
+          {
+            "role": "image",
+            "image": "C:/Program Files/Git/cmd/git.exe",
+            "command_line": "git status"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-087"
+  },
+  {
+    "label": "git diff",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_088",
+      "operation_id": "op_nc_088",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "process",
+        "kind": "create_process",
+        "access": "execute",
+        "resources": [
+          {
+            "role": "image",
+            "image": "C:/Program Files/Git/cmd/git.exe",
+            "command_line": "git diff"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-088"
+  },
+  {
+    "label": "git log",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_089",
+      "operation_id": "op_nc_089",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "process",
+        "kind": "create_process",
+        "access": "execute",
+        "resources": [
+          {
+            "role": "image",
+            "image": "C:/Program Files/Git/cmd/git.exe",
+            "command_line": "git log -1"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-089"
+  },
+  {
+    "label": "python script",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_090",
+      "operation_id": "op_nc_090",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "process",
+        "kind": "create_process",
+        "access": "execute",
+        "resources": [
+          {
+            "role": "image",
+            "image": "C:/Python311/python.exe",
+            "command_line": "python src/app.py"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-090"
+  },
+  {
+    "label": "pip install",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_091",
+      "operation_id": "op_nc_091",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "process",
+        "kind": "create_process",
+        "access": "execute",
+        "resources": [
+          {
+            "role": "image",
+            "image": "C:/Python311/python.exe",
+            "command_line": "pip install requests"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-091"
+  },
+  {
+    "label": "git force push",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_092",
+      "operation_id": "op_nc_092",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "process",
+        "kind": "create_process",
+        "access": "execute",
+        "resources": [
+          {
+            "role": "image",
+            "image": "C:/Program Files/Git/cmd/git.exe",
+            "command_line": "git push --force origin main"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-092"
+  },
+  {
+    "label": "encoded powershell",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_093",
+      "operation_id": "op_nc_093",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "process",
+        "kind": "create_process",
+        "access": "execute",
+        "resources": [
+          {
+            "role": "image",
+            "image": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+            "command_line": "powershell -EncodedCommand QQ=="
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-093"
+  },
+  {
+    "label": "privilege escalate",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_094",
+      "operation_id": "op_nc_094",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "process",
+        "kind": "create_process",
+        "access": "execute",
+        "resources": [
+          {
+            "role": "image",
+            "image": "C:/Windows/System32/sudo.exe",
+            "command_line": "sudo rm C:/Windows/System32/kernel32.dll"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-094"
+  },
+  {
+    "label": "runas",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_095",
+      "operation_id": "op_nc_095",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "process",
+        "kind": "create_process",
+        "access": "execute",
+        "resources": [
+          {
+            "role": "image",
+            "image": "C:/Windows/System32/runas.exe",
+            "command_line": "runas /user:Administrator cmd.exe"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-095"
+  },
+  {
+    "label": "curl download",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_096",
+      "operation_id": "op_nc_096",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "process",
+        "kind": "create_process",
+        "access": "execute",
+        "resources": [
+          {
+            "role": "image",
+            "image": "C:/Windows/System32/curl.exe",
+            "command_line": "curl https://example.com/tool.ps1 -o tool.ps1"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-096"
+  },
+  {
+    "label": "pseudo device",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_097",
+      "operation_id": "op_nc_097",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "NUL",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-097"
+  },
+  {
+    "label": "pseudo device",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_098",
+      "operation_id": "op_nc_098",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "\\\\.\\CON",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-098"
+  },
+  {
+    "label": "raw disk write",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_099",
+      "operation_id": "op_nc_099",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "device_open",
+        "access": "write",
+        "resources": [
+          {
+            "path": "\\\\.\\PhysicalDrive0",
+            "role": "subject",
+            "device_class": "raw_disk"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-099"
+  },
+  {
+    "label": "named pipe",
+    "body": {
+      "spec": "native-record/v1",
+      "request_id": "req_nc_100",
+      "operation_id": "op_nc_100",
+      "time": "2026-11-05T02:00:00Z",
+      "process": {
+        "pid": 4200,
+        "tid": 4212,
+        "parent_pid": 3100,
+        "process_instance_id": "4200:134214912000000000",
+        "image": "C:/Program Files/PowerShell/7/pwsh.exe",
+        "command_line": "pwsh -File build.ps1",
+        "identity": {
+          "user_sid": "S-1-5-21-1",
+          "integrity_level": "medium"
+        }
+      },
+      "operation": {
+        "category": "file",
+        "kind": "pipe_open",
+        "access": "read",
+        "resources": [
+          {
+            "path": "\\\\.\\pipe\\other-service",
+            "role": "subject"
+          }
+        ]
+      },
+      "cause": {
+        "tool_call_id": "call_native_batch",
+        "name": "bash"
+      }
+    },
+    "id": "nc-100"
+  }
+]

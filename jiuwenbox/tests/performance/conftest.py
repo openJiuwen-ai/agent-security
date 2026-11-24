@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Shared fixtures for jiuwenbox performance tests."""
 
 from __future__ import annotations

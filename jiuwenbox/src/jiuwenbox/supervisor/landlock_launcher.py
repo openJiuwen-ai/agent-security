@@ -31,6 +31,7 @@ import ctypes
 import json
 import logging
 import os
+import stat
 import sys
 import types
 
@@ -124,21 +125,13 @@ def _fail_or_continue(payload: dict, message: str) -> bool:
     if payload["compatibility"] == "hard_requirement":
         logger.error("%s", message)
         raise LandlockHardRequirementError(message)
+    logger.warning("Landlock best_effort: %s", message)
     return False
 
 
 def _rule_anchor_path(path: str) -> str:
-    """Landlock path-beneath rules must be anchored on a directory fd.
-
-    For file mounts such as /etc/resolv.conf, fall back to the parent
-    directory (e.g. /etc) so rule installation remains valid.
-    """
-    if os.path.isdir(path):
-        return path
-
-    normalized = path.rstrip("/") or "/"
-    parent = os.path.dirname(normalized) or "/"
-    return parent
+    """Anchor the exact declared object; a file must not authorize its parent."""
+    return path
 
 
 def _add_rule(ruleset_fd: int, path: str, access: int) -> None:
@@ -152,7 +145,11 @@ def _add_rule(ruleset_fd: int, path: str, access: int) -> None:
     fd = os.open(anchor_path, os.O_PATH | os.O_CLOEXEC, 0o600)
     try:
         rule = LandlockPathBeneathAttr()
-        rule.allowed_access = access
+        # Directory-only rights make a file rule invalid. Keep only rights
+        # supported by file inodes instead of widening its anchor to a directory.
+        rule.allowed_access = access if stat.S_ISDIR(os.fstat(fd).st_mode) else (
+            access & (READ_FILE | WRITE_FILE | EXECUTE | TRUNCATE)
+        )
         rule.parent_fd = fd
         ret = _syscall(
             LANDLOCK_ADD_RULE,
@@ -194,14 +191,12 @@ def apply_landlock(payload: dict) -> None:
         return
 
     try:
-        try:
-            for path in payload["read_only"]:
-                _add_rule(ruleset_fd, path, read_only_access)
-            for path in payload["read_write"]:
-                _add_rule(ruleset_fd, path, read_write_access)
-        except OSError as exc:
-            _fail_or_continue(payload, str(exc))
-            return
+        for axis, access in (("read_only", read_only_access), ("read_write", read_write_access)):
+            for path in payload[axis]:
+                try:
+                    _add_rule(ruleset_fd, path, access)
+                except OSError as exc:
+                    _fail_or_continue(payload, f"Landlock rule failed for {path}: {exc}")
 
         if _syscall(LANDLOCK_RESTRICT_SELF, ruleset_fd, 0) < 0:
             _fail_or_continue(payload, "landlock_restrict_self failed")

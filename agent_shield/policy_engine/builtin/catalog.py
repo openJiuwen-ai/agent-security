@@ -1,0 +1,92 @@
+"""Builtin behavior ids, display names, and catalog kinds."""
+
+from __future__ import annotations
+
+DEFAULT_RISK = {
+    "privilege.escalate": "critical",
+    "fs.delete.protectedFiles": "critical",
+    "fs.device.raw_write": "critical",
+    "net.egress.secret": "critical",
+    "fs.write.protectedFiles": "high",
+    "fs.read.protectedReadFiles": "high",
+    "fs.read.sensitiveFiles": "high",
+    "fs.write.sensitiveFiles": "high",
+    "fs.delete.sensitiveFiles": "high",
+    "fs.delete.outside_force": "high",
+    "fs.device": "high",
+    "fs.delete.bulk": "high",
+    "exec.unobserved": "high",
+    "shell.obfuscated": "medium",
+    "exec.remote_script": "medium",
+    "fs.write.outside": "medium",
+    "fs.delete.outside": "medium",
+    "fs.write.system_new": "medium",
+    "net.egress": "medium",
+    "schedule.create": "medium",
+    "git.force_push": "medium",
+    "fs.read.userFiles": "low",
+    "fs.write.userFiles": "low",
+    "fs.delete.userFiles": "low",
+    "net.fetch.get": "low",
+    "net.connect.unlisted": "low",
+    "fs.read.nonsensitive_outside": "none",
+    "net.connect.allowlist": "none",
+    "net.fetch.allowlist": "none",
+    "net.egress.allowlist": "none",
+}
+
+DISPLAY_NAME = {
+    "privilege.escalate": "提权执行",
+    "fs.delete.protectedFiles": "删除受保护文件",
+    "fs.device.raw_write": "写入裸磁盘或卷",
+    "net.egress.secret": "外发敏感数据",
+    "fs.write.protectedFiles": "写入受保护文件",
+    "fs.read.protectedReadFiles": "读取受保护文件",
+    "fs.read.sensitiveFiles": "读取敏感文件",
+    "fs.write.sensitiveFiles": "写入敏感文件",
+    "fs.delete.sensitiveFiles": "删除敏感文件",
+    "fs.delete.outside_force": "强制删除工作区外的文件",
+    "fs.device": "访问设备或命名管道",
+    "fs.delete.bulk": "批量删除文件",
+    "exec.unobserved": "命令无法完整解析且没有运行时拦截",
+    "shell.obfuscated": "执行混淆命令",
+    "exec.remote_script": "执行远程脚本",
+    "fs.write.outside": "写入工作区外的文件",
+    "fs.delete.outside": "删除工作区外的文件",
+    "fs.write.system_new": "在系统目录中新建文件",
+    "net.egress": "向外发送数据",
+    "schedule.create": "创建定时任务",
+    "git.force_push": "强制推送",
+    "fs.read.userFiles": "读取用户文件",
+    "fs.write.userFiles": "写入用户文件",
+    "fs.delete.userFiles": "删除用户文件",
+    "net.fetch.get": "从外部读取数据",
+    "net.connect.unlisted": "连接未列入名单的网络端点",
+    "fs.read.nonsensitive_outside": "读取工作区外的非敏感文件",
+    "net.connect.allowlist": "连接允许名单中的网络端点",
+    "net.fetch.allowlist": "拉取允许名单中的网络端点",
+    "net.egress.allowlist": "向外发送到允许名单中的网络端点",
+}
+
+CATALOG_KIND = {
+    "protectedFiles": "path",
+    "protectedReadFiles": "path",
+    "sensitiveFiles": "glob",
+    "userFiles": "user",
+    "nativeToolsDenyList": "program",
+    "nativeToolsAskList": "program",
+    "allowlist_hosts": "host",
+    "allowlist_cidrs": "cidr",
+    "privilege_argv0": "program",
+    "interpreter_sinks": "program",
+    "systemPrefixes": "prefix",
+}
+
+FORBIDDEN_CATALOGS = frozenset(
+    {
+        "builtin_denylist_hosts",
+        "builtin_denylist_cidrs",
+        "user_denylist_hosts",
+        "user_denylist_cidrs",
+    }
+)

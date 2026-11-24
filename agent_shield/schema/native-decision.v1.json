@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "native-decision/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["spec", "request_id", "operation_id", "event_id", "allow", "reason"],
+  "properties": {
+    "spec": { "const": "native-decision/v1" },
+    "request_id": { "type": "string" },
+    "operation_id": { "type": "string" },
+    "event_id": { "type": "string" },
+    "allow": { "type": "boolean" },
+    "reason": { "type": "string" }
+  }
+}

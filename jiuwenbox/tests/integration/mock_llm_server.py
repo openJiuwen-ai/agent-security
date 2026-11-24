@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Mock LLM server for testing inference privacy proxy.
 
 Simulates an OpenAI-like API endpoint that accepts chat completion requests.

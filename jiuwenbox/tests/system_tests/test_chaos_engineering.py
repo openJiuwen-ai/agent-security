@@ -1,3 +1,5 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
 """Chaos engineering tests for resilience testing."""
 
 from __future__ import annotations
