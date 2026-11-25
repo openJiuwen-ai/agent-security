@@ -85,6 +85,22 @@ agent-shield 把这些调用统一成事件，再做一次集中裁决：
 未注册任何转发器的进程行为不变。配套用例见
 `agent_shield/tests/tool_permission/test_permission_meta_tools.py`。
 
+**注入检测的跨方言规则表**。Injection 组件按路由方言选规则表：PowerShell 方言
+查 PS 表（iex / `-EncodedCommand` / `&` 调用符 / `ScriptBlock::Create`），POSIX
+方言查 bash 表（反引号 / `$()` / `<()`）。但方言声明不改变命令文本的语义——
+bash 入口收到的 PowerShell 载荷，在 Windows 上会被执行侧按语法嗅探改道
+powershell.exe 执行，`powershell.exe -EncodedCommand …` 本身也是合法 bash 行
+（jiuwenswarm#6957 的复现路径）；通用入口（`mcp_exec_command`）的 `shell_type`
+来自模型参数、可谎报方言。因此 POSIX/UNKNOWN 方言在 bash 表之上加一层
+**命令位锚定**的 PS 规则（行首 / `;` / `|` / `&` 之后），CMD 方言也套这层：
+非 PowerShell 方言的命令里，PS 构造出现在命令位才是"将要执行的东西"，出现
+在参数位只是普通字符串（`grep iex .`、`git commit -m "…iex…"`），不整词硬拦；
+这与 UNKNOWN 方言也套 POSIX 规则的既有 fail-closed 取向一致。PowerShell 方言
+自身保持整词松匹配——PS 代码的命令出现在管道、脚本块等多种位置，命令位锚定
+过严。已知边界：嵌套解释器引号内的载荷（`powershell -Command "iex …"`）不经
+这层，由结构组件的解释器 sink 与内置规则（ask 级）兜底。配套用例见
+`agent_shield/tests/tool_permission/toolguard/test_injection_cross_dialect.py`。
+
 ## 5. Windows 原生防护
 
 Windows 上提供两套方案，接入方式不同：
