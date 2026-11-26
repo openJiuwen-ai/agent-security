@@ -6,6 +6,8 @@
 使用 httpx.AsyncClient + ASGI transport 测试 FastAPI,不启动真实端口。
 """
 
+import asyncio
+
 import httpx
 import pytest
 from httpx import ASGITransport
@@ -333,3 +335,131 @@ class _FailingCloseBackend:
 
     async def close(self):
         raise RuntimeError("simulated close failure")
+
+
+@pytest.mark.integration
+@pytest.mark.level1
+class TestHttpServerLazyInitRace:
+    """并发冷启动请求只允许构建一个 backend。"""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_cold_start_builds_single_backend(self, app, monkeypatch):
+        """两个并发首请求:initialize 含 await,无锁时会各建一个 backend。
+
+        输者 backend 的 SQLite WAL 句柄与清理任务无人关闭(lifespan 只关
+        app.state.ssas_backend)。用计数器锁定只构建一次。
+        """
+        from agent_ssas.core.framework.access_adapter import http_server as hs
+
+        created = []
+
+        class CountingBackend(hs.AgentSSASBackend):
+            def __init__(self, config):
+                created.append(self)
+                super().__init__(config)
+
+        monkeypatch.setattr(hs, "AgentSSASBackend", CountingBackend)
+
+        raw_event = {
+            "common": {
+                "source": "AgentSSASSecurityRail",
+                "event_type": "tool_input",
+                "event_class": "lifecycle",
+                "timestamp": 1715000000.0,
+                "interaction_seq": 0,
+                "session_id": "session-race",
+                "conversation_id": "session-race",
+                "agent_id": "deep-agent-1",
+                "trace_id": "trace-race",
+                "context_id": "ctx-race",
+                "llm_call_seq": 0,
+                "tool_call_seq": 0,
+                "subsession_id": "",
+                "tool_call_id": "call_race",
+            }
+        }
+
+        transport = ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+            replies = await asyncio.gather(
+                c.post("/api/v1/events", json={"raw_event": raw_event}),
+                c.post("/api/v1/events", json={"raw_event": raw_event}),
+            )
+
+        for response in replies:
+            assert response.status_code == 200, response.text
+        assert len(created) == 1, f"懒初始化构建了 {len(created)} 个 backend,第二个是泄漏的"
+        assert app.state.ssas_backend is created[0]
+
+
+@pytest.mark.integration
+@pytest.mark.level1
+class TestHttpServerLazyInitFailure:
+    """initialize() 失败时必须回收已建 backend,且下个请求可重试。"""
+
+    @pytest.mark.asyncio
+    async def test_failed_initialize_is_closed_and_retried(self, app, monkeypatch):
+        """initialize 抛异常时回收 backend,下个请求重试成功。"""
+        from agent_ssas.core.framework.access_adapter import http_server as hs
+
+        created: list[dict] = []
+
+        class FlakyBackend:
+            def __init__(self, config):
+                created.append({"backend": self, "closed": False, "calls": 0})
+
+            async def initialize(self):
+                entry = created[-1]
+                entry["calls"] += 1
+                if len(created) == 1:
+                    raise RuntimeError("simulated initialize failure")
+
+            async def close(self):
+                created[-1]["closed"] = True
+
+            async def report_event(self, raw_event):
+                class _Assessment:
+                    @staticmethod
+                    def to_dict():
+                        return {}
+
+                return _Assessment()
+
+        monkeypatch.setattr(hs, "AgentSSASBackend", FlakyBackend)
+
+        raw_event = {
+            "common": {
+                "source": "AgentSSASSecurityRail",
+                "event_type": "tool_input",
+                "event_class": "lifecycle",
+                "timestamp": 1715000000.0,
+                "interaction_seq": 0,
+                "session_id": "session-fail",
+                "conversation_id": "session-fail",
+                "agent_id": "deep-agent-1",
+                "trace_id": "trace-fail",
+                "context_id": "ctx-fail",
+                "llm_call_seq": 0,
+                "tool_call_seq": 0,
+                "subsession_id": "",
+                "tool_call_id": "call_fail",
+            }
+        }
+
+        transport = ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+            with pytest.raises(Exception, match="simulated initialize failure"):
+                await c.post("/api/v1/events", json={"raw_event": raw_event})
+
+            # 失败的 backend 必须被关闭,状态不被污染
+            assert created[0]["closed"] is True, "initialize 失败的 backend 未被 close()"
+            assert app.state.ssas_backend is None
+
+            # 下一个请求重试并成功
+            ok = await c.post("/api/v1/events", json={"raw_event": raw_event})
+            assert ok.status_code == 200, ok.text
+
+        assert len(created) == 2, "重试应新建 backend"
+        assert created[0]["closed"] is True
+        assert created[1]["closed"] is False, "存活的 backend 不应被关闭"
+        assert app.state.ssas_backend is created[1]["backend"]

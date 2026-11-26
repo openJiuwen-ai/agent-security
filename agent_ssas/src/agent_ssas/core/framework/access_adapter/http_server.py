@@ -13,6 +13,7 @@ AgentSSASRemoteBackend 转发的事件,调用进程内 AgentSSASBackend
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
@@ -109,6 +110,9 @@ def create_app(config: AgentSSASConfig | None = None) -> FastAPI:
     # 使用 app.state 存储后端实例,支持懒初始化
     app.state.ssas_config = config
     app.state.ssas_backend: AgentSSASBackend | None = None
+    # 懒初始化互斥锁:initialize() 中有 await(模块扫描/文件 IO),并发冷启动
+    # 请求会各建一个 backend(SQLite WAL 句柄 + 清理任务泄漏),输者无人关闭。
+    app.state.ssas_backend_lock = asyncio.Lock()
 
     # 当配置了 http_token 时,启用 Bearer token 认证中间件
     if config.http_token is not None:
@@ -124,11 +128,30 @@ def create_app(config: AgentSSASConfig | None = None) -> FastAPI:
         """
         backend: AgentSSASBackend | None = app.state.ssas_backend
         if backend is None:
-            # 懒初始化:首次请求时创建并初始化后端
-            backend = AgentSSASBackend(app.state.ssas_config)
-            await backend.initialize()
-            app.state.ssas_backend = backend
-            logger.info("SSAS HTTP 服务端后端懒初始化完成")
+            async with app.state.ssas_backend_lock:
+                # 双检:持锁期间前一个请求可能已完成初始化
+                if app.state.ssas_backend is None:
+                    backend = AgentSSASBackend(app.state.ssas_config)
+                    try:
+                        await backend.initialize()
+                    except (Exception, asyncio.CancelledError):
+                        # 构造即建立 SQLite 连接(WAL 句柄),initialize 可能已
+                        # 启动周期清理任务;失败不回滚的话,每次重试都泄漏一份。
+                        # close() 对未完成初始化的实例安全(各清理步骤自吞异常)。
+                        # CancelledError 显式列入:请求被取消时同样要回收,
+                        # 再原样上抛。
+                        try:
+                            await backend.close()
+                        except Exception:
+                            logger.warning(
+                                "SSAS HTTP 服务端初始化失败后关闭后端异常,忽略",
+                                exc_info=True,
+                            )
+                        raise
+                    app.state.ssas_backend = backend
+                    logger.info("SSAS HTTP 服务端后端懒初始化完成")
+                else:
+                    backend = app.state.ssas_backend
         assessment = await backend.report_event(request.raw_event)
         return AssessmentResponse(assessment=assessment.to_dict())
 
