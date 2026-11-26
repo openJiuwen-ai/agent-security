@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}配置 · HyperShell{% endblock %}
+{% block content %}
+<h1>管理员配置 (admin.yaml)</h1>
+<p class="muted">保存前会用与 CLI 相同的严格校验，保存时原子写盘并备份、记录审计。保存不会热更新实例；需要新权限生效时，先停止旧实例，再按新配置启动。</p>
+
+{% if validation %}
+  {% if validation.ok %}
+    <div class="msg">校验通过。</div>
+  {% else %}
+    <div class="msg err">
+      校验失败：<code>{{ validation.error.code }}</code> — {{ validation.error.message }}
+      {% if validation.error.details %}<div class="muted">{{ validation.error.details }}</div>{% endif %}
+    </div>
+  {% endif %}
+{% endif %}
+
+{% if comparison_warning %}<div class="msg warning" role="alert">{{ comparison_warning }}</div>{% endif %}
+{% if affected_users is defined and affected_users is not none %}
+  <div class="msg info">
+    {% if affected_users %}
+      可能受影响的用户：{% for uid in affected_users %}<strong>{{ uid }}</strong>{% if not loop.last %}、{% endif %}{% endfor %}。
+      保存不更新实例；请在总览核查并按需重建。
+    {% else %}
+      与保存前配置相比，未发现用户运行配置变化。
+    {% endif %}
+  </div>
+{% endif %}
+
+{% if application_notes %}
+  <h2>实例应用提示</h2>
+  <ul>
+  {% for note in application_notes %}
+    <li><strong>{{ note.user }} · {{ note.label }}</strong>{% if note.description %}<p class="muted cell-note">{{ note.description }}</p>{% endif %}</li>
+  {% endfor %}
+  </ul>
+{% endif %}
+
+<form method="post" action="/admin/config/save">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label for="admin-config-text">管理员配置 YAML</label>
+  <textarea id="admin-config-text" name="text" spellcheck="false">{{ text }}</textarea>
+  <div class="row">
+    <button type="submit" formaction="/admin/config/validate" class="secondary">校验</button>
+    <button type="submit">保存（备份 + 审计）</button>
+  </div>
+</form>
+
+<h2>最近备份</h2>
+{% if backups %}
+<ul>{% for b in backups %}<li class="muted">{{ b }}</li>{% endfor %}</ul>
+{% else %}<p class="muted">暂无备份。</p>{% endif %}
+{% endblock %}

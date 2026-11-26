@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}策略预览 · HyperShell{% endblock %}
+{% block content %}
+<h1>策略预览</h1>
+<p class="muted">{% if scope %}{{ scope }}{% else %}仅预览预计工作负载资源挂载，不创建沙箱；不包含运行时附加挂载、环境和网络配置，不是运行实例的策略读回。{% endif %}</p>
+
+<form method="get" action="/admin/preview" class="row">
+  <div class="form-field">
+    <label for="preview-user">用户</label>
+    <select id="preview-user" name="user">
+      {% for u in summary.users %}<option value="{{ u.id }}" {% if u.id == chosen %}selected{% endif %}>{{ u.id }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="form-field">
+    <label for="preview-mode">预览范围</label>
+    <select id="preview-mode" name="mode">
+      <option value="request" {% if mode != 'authorized' %}selected{% endif %}>实际启动请求</option>
+      <option value="authorized" {% if mode == 'authorized' %}selected{% endif %}>全部可申请权限</option>
+    </select>
+  </div>
+  <button type="submit">查看预览</button>
+</form>
+
+{% if mode == 'authorized' %}
+<div class="msg info">当前显示此用户按配置可申请的全部权限，用于检查授权上限；实际启动只使用启动请求中申请并获准的资源。</div>
+{% else %}
+<div class="msg info">当前按实际启动请求{% if request_name %} <code>{{ request_name }}</code>{% endif %} 预览下次启动的权限；未申请的已授权资源不会自动挂载。</div>
+{% endif %}
+
+{% if error %}
+  <div class="msg err" role="alert">{% if error.code %}<code>{{ error.code }}</code> — {% endif %}{{ error.message }}</div>
+  <p class="muted">请求无法编译，以下保留配置授权来源供排查；不能据此认定任何资源将成功挂载。</p>
+{% endif %}
+  <h2>{{ chosen }} 的资源权限</h2>
+  <div class="table-wrap">
+    <table class="permission-table">
+      <thead><tr><th>资源与路径</th><th>授权来源</th><th>配置授权</th><th>个人限制</th><th>最终可申请</th><th>本次申请</th><th>预计挂载</th></tr></thead>
+      <tbody>
+      {% for row in rows %}
+        <tr>
+          <td><strong>{{ row.id }}</strong><div class="muted cell-note">宿主：<code>{{ row.host_path }}</code><br>工作负载：<code>{{ row.sandbox_path }}</code></div></td>
+          <td>{{ row.source_text }}</td>
+          <td>{{ row.granted }}</td><td>{{ row.limit }}</td><td>{{ row.effective }}</td><td>{{ row.requested }}</td><td>{{ row.mount_mode }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="muted">当前范围没有资源。</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">“最终可申请”表示配置允许申请的权限；“预计挂载”表示本次计划实际使用的权限。</p>
+{% if not error %}
+  <details>
+    <summary>启动计划 JSON（LaunchPlan）</summary>
+    <pre>{% if plan is string %}{{ plan }}{% else %}{{ plan|tojson(indent=2) }}{% endif %}</pre>
+  </details>
+  <details>
+    <summary>后端策略 JSON（JiuwenBox SecurityPolicy）</summary>
+    <pre>{% if policy is string %}{{ policy }}{% else %}{{ policy|tojson(indent=2) }}{% endif %}</pre>
+    <p class="muted" style="overflow-wrap:anywhere">策略摘要：<code>{{ digest }}</code></p>
+  </details>
+{% endif %}
+{% endblock %}

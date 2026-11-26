@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}总览 · HyperShell{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <h1>管理员总览</h1>
+  <a href="/admin" class="button">刷新状态</a>
+</div>
+<div class="grid">
+  <div class="card"><div class="k">运行中</div><div class="v">{{ counts.running }}</div></div>
+  <div class="card"><div class="k">需处理</div><div class="v">{{ counts.attention }}</div></div>
+  <div class="card"><div class="k">配置待重建</div><div class="v">{{ counts.pending }}</div></div>
+</div>
+<p class="muted">状态查询时间：{{ checked_at }} · 配置格式 v{{ summary.version }} · {{ summary.users|length }} 个用户 · {{ summary.resources|length }} 项资源 · {{ summary.roles|length }} 个角色</p>
+
+<h2>实例状态</h2>
+<div class="table-wrap">
+<table class="instance-table">
+  <thead><tr><th>用户与身份</th><th>角色</th><th>运行状态</th><th>配置与实例</th><th>操作</th></tr></thead>
+  <tbody>
+  {% for u in summary.users %}
+    {% set view = instance_views.get(u.id, {}) %}
+    {% set drift = view.drift or {} %}
+    <tr>
+      <td><strong>{{ u.id }}</strong><div class="muted cell-note">登录 UID {{ u.login_uid }}<br>运行身份 {{ u.run_as_user }}:{{ u.run_as_group }}</div></td>
+      <td>{% for r in u.roles %}<span class="badge">{{ r }}</span> {% else %}<span class="muted">无角色</span>{% endfor %}</td>
+      <td class="state-cell">
+        <span class="badge {{ view.tone }}">{{ view.label }}</span>
+        {% if view.description %}<p class="muted cell-note">{{ view.description }}</p>{% endif %}
+        {% if view.hint %}<p class="muted cell-note">{{ view.hint }}</p>{% endif %}
+        <details>
+          <summary>诊断详情</summary>
+          <dl class="diagnostic">
+            <dt>原始状态码</dt><dd><code>{{ view.phase or 'UNKNOWN' }}</code></dd>
+            <dt>当前配置授权摘要</dt><dd><code>{{ drift.current_authorization_digest or '未取得' }}</code></dd>
+            <dt>实例记录授权摘要</dt><dd><code>{{ drift.recorded_authorization_digest or '未记录' }}</code></dd>
+            <dt>当前启动计划摘要</dt><dd><code>{{ drift.current_plan_digest or '未取得' }}</code></dd>
+            <dt>实例记录计划摘要</dt><dd><code>{{ drift.recorded_plan_digest or '未记录' }}</code></dd>
+          </dl>
+          <div class="diagnostic"><pre>{{ view.raw|default({})|tojson(indent=2) }}</pre></div>
+        </details>
+      </td>
+      <td class="state-cell">
+        <span class="badge {% if drift.state == 'pending' %}warning{% elif drift.state == 'aligned' %}success{% else %}neutral{% endif %}">{{ drift.label or '无法判断' }}</span>
+        {% if drift.description %}<p class="muted cell-note">{{ drift.description }}</p>{% endif %}
+      </td>
+      <td>
+        <div class="actions">
+          {% for action in view.actions %}
+          <form method="post" action="/admin/instances/{{ u.id }}/{{ action.action }}" data-pending="正在{{ action.label }}，请稍候…" {% if action.confirm %}data-confirm="{{ action.confirm }}"{% endif %}>
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button class="{% if action.tone in ['danger', 'error', 'warn', 'warning'] %}warn{% else %}secondary{% endif %}" type="submit">{{ action.label }}</button>
+            <span class="pending-status" role="status" hidden></span>
+          </form>
+          {% endfor %}
+        </div>
+        <p class="cell-note"><a href="/admin/preview?user={{ u.id|urlencode }}&amp;mode=request">查看启动权限预览</a></p>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h2>活跃会话</h2>
+<div class="table-wrap">
+<table class="instance-table">
+  <thead><tr><th>用户</th><th>类型</th><th>PID</th><th>开始时间</th><th>时长</th><th>操作</th></tr></thead>
+  <tbody>
+  {% for s in session_rows %}
+    <tr>
+      <td><strong>{{ s.user_id }}</strong></td>
+      <td><span class="badge">{{ 'Web' if s.kind == 'web' else 'TUI' }}</span></td>
+      <td><code>{{ s.pid }}</code></td>
+      <td class="muted">{{ s.started_text }}</td>
+      <td class="muted">{{ s.duration_text }}</td>
+      <td>
+        <form method="post" action="/admin/sessions/{{ s.user_id }}/{{ s.id }}/terminate" data-pending="正在终止会话…" data-confirm="确定终止该会话？">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="warn" type="submit">终止</button>
+          <span class="pending-status" role="status" hidden></span>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  {% if session_count == 0 %}
+    <tr><td colspan="6" class="muted">当前没有活跃的 TUI/Web 会话</td></tr>
+  {% endif %}
+  </tbody>
+</table>
+</div>
+<p class="muted">保存配置不会热更新运行中的实例。需要按新配置启动时，先停止旧实例，再启动；配置权限已修改不代表旧实例权限已撤销。</p>
+{% endblock %}

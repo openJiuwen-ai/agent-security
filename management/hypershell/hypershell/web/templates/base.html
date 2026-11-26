@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}HyperShell{% endblock %}</title>
+  <style>
+    :root { --bg:#0f172a; --panel:#ffffff; --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb; --ok:#059669; --warn:#b45309; --err:#dc2626; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: -apple-system, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif; color:#1f2937; background:#f3f4f6; }
+    header.top { background:#0f172a; color:#fff; padding:12px 20px; display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+    header.top .brand { font-weight:700; letter-spacing:.5px; }
+    header.top nav { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+    header.top nav a { color:#cbd5e1; text-decoration:none; padding:4px 8px; border-radius:6px; }
+    header.top nav a:hover, header.top nav a[aria-current=page] { background:#1e293b; color:#fff; }
+    header.top nav a[aria-current=page] { box-shadow:inset 0 -2px 0 #60a5fa; }
+    header.top .who { color:#94a3b8; font-size:13px; margin-left:8px; }
+    form.inline { display:inline; }
+    button.link { background:none; border:none; color:#cbd5e1; cursor:pointer; font-size:14px; }
+    main { max-width:1080px; margin:24px auto; padding:0 16px; }
+    h1 { font-size:22px; margin:0 0 16px; }
+    h2 { font-size:17px; margin:24px 0 10px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+    .card .k { color:var(--muted); font-size:12px; }
+    .card .v { font-size:20px; font-weight:600; margin-top:4px; }
+    .table-wrap { max-width:100%; overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:#fff; }
+    .table-wrap table { border:0; border-radius:0; }
+    table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+    th, td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); font-size:14px; vertical-align:top; }
+    th { background:#f9fafb; color:#374151; font-weight:600; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; background:#eef2ff; color:#3730a3; }
+    .badge.success, .badge.ok { background:#ecfdf5; color:#065f46; }
+    .badge.warning, .badge.warn { background:#fffbeb; color:#92400e; }
+    .badge.error, .badge.danger { background:#fef2f2; color:#991b1b; }
+    .badge.neutral, .badge.muted { background:#f3f4f6; color:#4b5563; }
+    .phase-RUNNING { color:var(--ok); font-weight:600; }
+    .phase-STOPPED { color:var(--muted); }
+    .phase-LOST, .phase-ERROR { color:var(--err); font-weight:600; }
+    .msg { background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; padding:10px 12px; border-radius:8px; margin-bottom:14px; }
+    .msg.err, .msg.error, .msg.danger { background:#fef2f2; border-color:#fecaca; color:#991b1b; }
+    .msg.warning, .msg.warn { background:#fffbeb; border-color:#fde68a; color:#92400e; }
+    .msg.info { background:#eff6ff; border-color:#bfdbfe; color:#1e40af; }
+    .muted { color:var(--muted); font-size:13px; }
+    textarea { width:100%; min-height:420px; font-family:"Cascadia Code", Consolas, monospace; font-size:13px; padding:10px; border:1px solid var(--line); border-radius:8px; }
+    input[type=text], input[type=password], select, input[type=number] { padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px; width:100%; max-width:420px; }
+    button { padding:8px 14px; border-radius:8px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; font-size:14px; }
+    button.secondary { background:#fff; color:var(--accent); }
+    button.warn { background:#fff; color:var(--err); border-color:#fca5a5; }
+    button:disabled { cursor:wait; opacity:.6; }
+    a { color:var(--accent); }
+    a.button { display:inline-block; padding:8px 14px; border:1px solid var(--accent); border-radius:8px; background:#fff; color:var(--accent); text-decoration:none; font-size:14px; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:10px 0; }
+    .page-heading { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom:14px; }
+    .page-heading h1 { margin-bottom:0; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .actions form { margin:0; }
+    .cell-note { margin:5px 0 0; line-height:1.55; }
+    .state-cell { min-width:180px; }
+    .instance-table th:first-child { min-width:150px; }
+    .instance-table th:last-child { min-width:170px; }
+    .actions button { white-space:nowrap; }
+    .pending-status { display:block; font-size:12px; color:var(--muted); margin-top:5px; }
+    .pending-status[hidden] { display:none; }
+    details { margin-top:9px; }
+    summary { cursor:pointer; font-size:13px; color:var(--accent); }
+    .diagnostic { margin:10px 0; font-size:12px; }
+    .diagnostic dt { color:var(--muted); margin-top:7px; }
+    .diagnostic dd { margin:3px 0 0; overflow-wrap:anywhere; }
+    .diagnostic pre { white-space:pre-wrap; overflow-wrap:anywhere; max-width:100%; }
+    .permission-table { min-width:980px; }
+    .permission-table code { overflow-wrap:anywhere; }
+    .form-field { flex:1 1 220px; max-width:420px; }
+    .form-field label { margin-top:0; }
+    pre { background:#0b1220; color:#e2e8f0; padding:14px; border-radius:10px; overflow:auto; font-size:12px; }
+    .login-wrap { max-width:380px; margin:8vh auto; }
+    label { display:block; margin:10px 0 4px; font-size:14px; color:#374151; }
+    .checks label { display:inline-flex; align-items:center; gap:6px; margin:4px 14px 4px 0; }
+    @media (max-width:640px) {
+      header.top { padding:12px 16px; gap:10px; }
+      header.top nav { gap:6px; }
+      main { margin-top:18px; padding:0 12px; }
+      th, td { padding:10px; }
+      .grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+      .card { padding:12px; }
+      .card .k { line-height:1.5; }
+      .instance-table { min-width:850px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">HyperShell</div>
+    {% if user %}
+    <nav>
+      {% if user.role == 'admin' %}
+        <a href="/admin" {% if request.url.path == '/admin' or request.url.path.startswith('/admin/instances/') %}aria-current="page"{% endif %}>总览</a>
+        <a href="/admin/config" {% if request.url.path.startswith('/admin/config') %}aria-current="page"{% endif %}>配置</a>
+        <a href="/admin/users" {% if request.url.path.startswith('/admin/users') %}aria-current="page"{% endif %}>用户与角色</a>
+        <a href="/admin/preview" {% if request.url.path == '/admin/preview' %}aria-current="page"{% endif %}>策略预览</a>
+      {% else %}
+        <a href="/me">我的工作区</a>
+      {% endif %}
+      <span class="who">{{ user.display }} · {{ user.role }}</span>
+      <form method="post" action="/logout" class="inline">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="link" type="submit">退出</button>
+      </form>
+    </nav>
+    {% endif %}
+  </header>
+  <main>
+    {% if message %}<div class="msg {{ message_level|default('success', true) }}" role="status">{{ message }}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    document.addEventListener('submit', function (event) {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement)) return;
+      const submitter = event.submitter;
+      const confirmation = (submitter && submitter.dataset.confirm) || form.dataset.confirm;
+      if (confirmation && !window.confirm(confirmation)) {
+        event.preventDefault();
+        return;
+      }
+      if (!form.hasAttribute('data-pending')) return;
+      if (form.dataset.submitting === 'true') {
+        event.preventDefault();
+        return;
+      }
+      form.dataset.submitting = 'true';
+      form.setAttribute('aria-busy', 'true');
+      const status = form.querySelector('.pending-status');
+      if (status) {
+        status.textContent = form.dataset.pending || '正在处理，请稍候…';
+        status.hidden = false;
+      }
+      // Keep native submission (including the chosen button's formaction) intact.
+      window.setTimeout(function () {
+        form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function (button) {
+          button.disabled = true;
+        });
+      }, 0);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+resources:
+  - id: u1.state
+    mode: read_write
+  - id: u1.home
+    mode: read_write
+  - id: desktop-project
+    mode: read_write

@@ -1,0 +1,2 @@
+# Install from the component root; shares dependencies with CI.
+-e .[dev,web]

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}登录 · HyperShell{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <div class="card">
+    <h1>登录 HyperShell</h1>
+    {% if error %}<div class="msg err">{{ error }}</div>{% endif %}
+    <form method="post" action="/login">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label for="username">用户名</label>
+      <input id="username" type="text" name="username" autocomplete="username" autofocus>
+      <label for="password">密码</label>
+      <input id="password" type="password" name="password" autocomplete="current-password">
+      <div class="row"><button type="submit">登录</button></div>
+    </form>
+    <p class="muted">管理员用管理员账号登录；普通用户用各自账号登录进入自己的工作区。</p>
+  </div>
+</div>
+{% endblock %}
