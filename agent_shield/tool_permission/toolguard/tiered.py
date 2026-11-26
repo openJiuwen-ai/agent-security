@@ -86,10 +86,17 @@ def _compile_wildcard(pattern: str) -> re.Pattern[str] | None:
     to_escape = set(".+^${}()|[]\\")
     escaped = "".join("\\" + char if char in to_escape else char for char in normalized_pattern)
     escaped = escaped.replace("?", chars)
-    if escaped.endswith(" *"):
-        escaped = escaped[:-2] + "( " + chars + "*)?"
-    else:
-        escaped = escaped.replace("*", chars + "*")
+    # A trailing " *" also matches the bare prefix (``git *`` matches ``git``),
+    # so that tail becomes optional. Every other star still has to turn into a
+    # character class: leaving one as a raw "*" makes it a regex quantifier on
+    # the preceding character and silently breaks the glob (``python * -c *``
+    # used to match ``python -c x`` but not ``python a.py -c x``).
+    trailing_optional = escaped.endswith(" *")
+    if trailing_optional:
+        escaped = escaped[:-2]
+    escaped = escaped.replace("*", chars + "*")
+    if trailing_optional:
+        escaped += "( " + chars + "*)?"
     flags = re.IGNORECASE if sys.platform == "win32" else 0
     try:
         return re.compile(escaped, flags)
