@@ -23,6 +23,7 @@ by all subsequent forks).
 from __future__ import annotations
 
 import enum
+import errno
 import logging
 import os
 import shutil
@@ -192,12 +193,17 @@ def _ensure_jiuwenbox_root_v2() -> Path:
     except OSError as exc:
         # If the jiuwenbox root already has the controllers enabled, this
         # write either succeeds or returns EBUSY; treat any other failure
-        # as a real error.
-        if getattr(exc, "errno", None) not in (0, None):
+        # as a real error. (A real OSError always carries a non-zero errno,
+        # so tolerating EBUSY must compare against errno.EBUSY itself.)
+        if getattr(exc, "errno", None) != errno.EBUSY:
             raise CgroupSetupError(
                 f"failed to enable controllers in {jiuwenbox_root}: "
                 f"{exc.strerror or exc}"
             ) from exc
+        logger.debug(
+            "controllers already enabled in %s (EBUSY tolerated): %s",
+            jiuwenbox_root, exc,
+        )
 
     return jiuwenbox_root
 
