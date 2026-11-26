@@ -34,6 +34,33 @@ def test_file_guard_denies_outside_workspace() -> None:
         assert "file_guard" in result.matched_rule
 
 
+def test_composed_config_still_allows_discard_sinks() -> None:
+    """A layered (composed) config must keep the builtin /dev/null exemption."""
+
+    with tempfile.TemporaryDirectory() as workspace:
+        perms = {
+            "file_guard": {
+                "enabled": True,
+                "defaults": {"read": "ask", "write": "ask", "exec": "ask"},
+                "workspace": {"read": "allow", "write": "allow", "exec": "allow"},
+            },
+            "composition": {
+                "schema_version": 1,
+                "revision": "synthetic",
+                "source_order": ["user", "cloud", "builtin"],
+            },
+        }
+        checker = build_file_guard_checker(perms, workspace_root=Path(workspace))
+        assert checker is not None
+        assert checker.evaluate_accesses([(Path("/dev/null"), "write")]) is None
+
+        # The exemption stays specific to discard sinks: other outside paths
+        # still fall through to the composed defaults.
+        other = checker.evaluate_accesses([(Path("/tmp/other.txt"), "write")])
+        assert other is not None
+        assert other.permission is PermissionLevel.ASK
+
+
 def _path_engine(workspace: str, file_guard: dict, tools: dict | None = None) -> PermissionEngine:
     return PermissionEngine({
         "file_guard": file_guard,
