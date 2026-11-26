@@ -71,6 +71,10 @@ _WRITE_PATH_TOOLS = frozenset({
 _NT_CMD_SWITCH_BODY = re.compile(r"^[A-Za-z]{1,2}(?::[^\s/\\]+)?$")
 _FD_ALIAS_RE = re.compile(r"^&\d+$")
 _UNEXPANDED_VAR_RE = re.compile(r"(?i)\$(\w+|\{[^}]+\}|env:\w+)")
+# Environment references an operand may carry: ``$env:X`` / ``${X}`` / ``$X`` for
+# POSIX-style dialects, ``%X%`` for cmd.
+_SHELL_VAR_RE = re.compile(r"(?i)\$env:(\w+)|\$\{(\w+)\}|\$(\w+)")
+_CMD_VAR_RE = re.compile(r"%([^%\r\n]+)%")
 _WIN_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 
 
@@ -126,6 +130,57 @@ def _looks_like_path(token: str) -> bool:
     if re.match(r"^[A-Za-z]:[\\/]", t):
         return True
     return "\\" in t or "/" in t
+
+
+def _env_value(name: str) -> str | None:
+    value = os.environ.get(name)
+    if value is None and name.upper() in {"HOME", "USERPROFILE"}:
+        value = str(Path.home())
+    return value
+
+
+def _expand_shell_vars(text: str, shell_type: str) -> str | None:
+    """Expand environment references this host can resolve.
+
+    Returns ``None`` when any reference stays opaque, so callers keep the
+    existing "cannot analyze this operand" behaviour instead of guessing.
+    """
+    missing: list[str] = []
+
+    def substitute(name: str, original: str) -> str:
+        value = _env_value(name)
+        if value is None:
+            missing.append(name)
+            return original
+        return value
+
+    def posix(match: re.Match[str]) -> str:
+        name = match.group(1) or match.group(2) or match.group(3)
+        return substitute(name, match.group(0))
+
+    def cmd(match: re.Match[str]) -> str:
+        return substitute(match.group(1), match.group(0))
+
+    if shell_type == "cmd":
+        text = _CMD_VAR_RE.sub(cmd, text)
+    else:
+        text = _SHELL_VAR_RE.sub(posix, text)
+    if missing or _opaque_var(text, shell_type):
+        return None
+    return text
+
+
+def _opaque_var(text: str, shell_type: str) -> bool:
+    if _UNEXPANDED_VAR_RE.search(text):
+        return True
+    return shell_type == "cmd" and bool(_CMD_VAR_RE.search(text))
+
+
+def _redirect_target(token: str, shell_type: str) -> str | None:
+    """Resolve env vars in a redirect target; ``None`` leaves it opaque."""
+    if not _opaque_var(token, shell_type):
+        return token
+    return _expand_shell_vars(token.strip().strip('"').strip("'"), shell_type)
 
 
 def _looks_like_redirect_target(token: str) -> bool:
@@ -325,8 +380,8 @@ def _segment_tokens(segment: str, shell_type: str = "auto") -> tuple[list[str], 
             if glued and _token_is_fd_alias(tokens[-1]):
                 tokens.pop()
             if idx + 1 < len(words):
-                target = words[idx + 1].group()
-                if _looks_like_redirect_target(target):
+                target = _redirect_target(words[idx + 1].group(), shell_type)
+                if target is not None and _looks_like_redirect_target(target):
                     redirects.append((target, "read" if word == "<" else "write"))
                 idx += 1
         else:
@@ -346,10 +401,13 @@ def _resolve_shell_operand(
         except (ValueError, IndexError):
             return None
     tok = _decode_cmd_word(tok.strip()) if shell_type == "cmd" else tok.strip().strip('"').strip("'")
-    if not tok or _UNEXPANDED_VAR_RE.search(tok):
+    if not tok:
         return None
-    if shell_type == "cmd" and re.search(r"%[^%\r\n]+%", tok):
-        return None
+    if _opaque_var(tok, shell_type):
+        expanded = _expand_shell_vars(tok, shell_type)
+        if expanded is None:
+            return None
+        tok = expanded
     expands_home = not quoted and shell_type in {"bash", "sh"}
     home_token = tok == "~" or tok.startswith("~/")
     if expands_home and home_token:

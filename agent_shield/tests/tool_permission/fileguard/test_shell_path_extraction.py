@@ -3,6 +3,7 @@
 """Literal shell resources retain the cwd and grammar of their execution segment."""
 
 import asyncio
+import os
 
 import pytest
 
@@ -45,6 +46,42 @@ def test_child_directory_changes_do_not_escape_to_parent(tmp_path, extractor, ch
     assert (tmp_path / "child" / "inside", "read") in accesses
     assert (tmp_path / "outside", "read") in accesses
     assert (tmp_path / "child" / "outside", "read") not in accesses
+
+
+def test_quoted_env_var_is_expanded_for_reads(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    accesses = paths.extract_shell_path_accesses(
+        'cat "$HOME/.ssh/id_rsa"', tmp_path, shell_type="bash")
+    assert (tmp_path / ".ssh" / "id_rsa", "read") in accesses
+
+
+def test_quoted_env_var_is_expanded_for_redirects(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    accesses = paths.extract_shell_path_accesses(
+        'echo pwned > "$HOME/.ssh/authorized_keys"', tmp_path, shell_type="bash")
+    assert (tmp_path / ".ssh" / "authorized_keys", "write") in accesses
+
+
+def test_powershell_env_drive_is_expanded(tmp_path, monkeypatch):
+    monkeypatch.setenv("PS_HOME_TEST", str(tmp_path))
+    # Join with os.sep: the extractor resolves the operand through Path, and a
+    # backslash is not a separator on POSIX hosts (CI runs on Linux).
+    command = "Get-Content $env:PS_HOME_TEST" + os.sep + ".ssh" + os.sep + "id_rsa"
+    accesses = paths.extract_shell_path_accesses(command, tmp_path, shell_type="powershell")
+    assert (tmp_path / ".ssh" / "id_rsa", "read") in accesses
+
+
+def test_cmd_percent_variable_is_expanded(tmp_path, monkeypatch):
+    monkeypatch.setenv("CMD_HOME_TEST", str(tmp_path))
+    command = "type %CMD_HOME_TEST%" + os.sep + ".ssh" + os.sep + "id_rsa"
+    accesses = paths.extract_shell_path_accesses(command, tmp_path, shell_type="cmd")
+    assert (tmp_path / ".ssh" / "id_rsa", "read") in accesses
+
+
+def test_unknown_variable_keeps_the_operand_opaque(tmp_path):
+    accesses = paths.extract_shell_path_accesses(
+        "cat $NOT_SET_FOR_PATH_TEST/.ssh/id_rsa", tmp_path, shell_type="bash")
+    assert accesses == []
 
 
 @pytest.mark.parametrize("dialect,command", [
