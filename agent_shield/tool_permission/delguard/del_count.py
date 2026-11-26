@@ -183,6 +183,54 @@ def _is_link_like(path: str | os.PathLike[str], info: os.stat_result | None = No
     return bool(getattr(info, "st_file_attributes", 0) & _FILE_ATTRIBUTE_REPARSE_POINT)
 
 
+# readlink 返回的绝对路径可能带 ``\\?\`` / ``\\?\UNC\`` 扩展前缀；去掉后
+# 才与普通绝对路径（realpath 的返回形态）一致，否则审批列表展示和路径
+# 去重（normcase+normpath）会把同一目标当成两个路径。
+_EXTENDED_PREFIXES = ("\\\\?\\UNC\\", "\\\\?\\")
+
+
+def _strip_extended_prefix(path: str) -> str:
+    for prefix in _EXTENDED_PREFIXES:
+        if path.startswith(prefix):
+            if path.startswith("\\\\?\\UNC\\"):
+                return "\\\\" + path[len("\\\\?\\UNC\\"):]
+            return path[len(prefix):]
+    return path
+
+
+def _link_target_or_self(path: str | os.PathLike[str]) -> str:
+    """跟随一层/多层链接语义取「目标路径」字符串；无法跟随时返回自身。
+
+    优先 ``os.path.realpath``；对 Windows 目录连接点在部分 Python/系统组合下
+    抛 ``WinError 448``（无法穿越不受信任的装入点）时，回退为有界的
+    ``readlink`` 链。链在非链接处中断（含悬空链接）即止，结果不要求存在。
+
+    首个 hop 的 ``readlink`` 就失败属于异常情形（调用方已确认这是链接/连接点，
+    却读不出目标）：此时删除范围无法判定，抛 ``_DeletionCountIncompleteError``
+    保守转审批，而不是退化成「按链接本体计 1」让达阈值的批量删除静默放行。
+    """
+    try:
+        return os.path.realpath(path)
+    except OSError:
+        pass
+    current = os.path.abspath(os.fspath(path))
+    for hop in range(40):  # 防御链接环；与常见 realpath 环阈值同量级
+        try:
+            nxt = os.readlink(current)
+        except OSError as exc:
+            if hop == 0:
+                raise _DeletionCountIncompleteError(
+                    f"Deletion link target unreadable: {current}"
+                ) from exc
+            return current
+        if os.name == "nt":
+            nxt = _strip_extended_prefix(nxt)
+        if not os.path.isabs(nxt):
+            nxt = os.path.join(os.path.dirname(current), nxt)
+        current = os.path.abspath(nxt)
+    return current
+
+
 def _glob_targets(base: Path, parts: tuple[str, ...]) -> Iterable[Path]:
     """Use standard glob matching, but never suppress directory read errors.
 
@@ -250,7 +298,10 @@ def _expand_target(raw: str, base: Path | None, shell_type: str) -> list[Path]:
         if trailing_sep and _is_link_like(candidate, info):
             # 计数对象换成链接的目标目录：_entry_cost 对目录递归计内容数，
             # 与实际删除范围一致；否则只计 1 会让达阈值的批量删除静默放行。
-            return [Path(os.path.realpath(candidate))]
+            # Windows 上 os.path.realpath 对目录连接点（junction）在部分
+            # Python/系统组合下抛 WinError 448（不能穿越不受信任的装入点），
+            # 需回退到 readlink 链并手工规范化 \\?\ 前缀。
+            return [Path(_link_target_or_self(candidate))]
         return [candidate]
 
     # glob 特殊字符（* ? [）在 Windows 文件名中非法，出现即视为通配意图；

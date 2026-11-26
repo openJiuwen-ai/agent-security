@@ -102,6 +102,88 @@ def test_trailing_separator_counts_link_target_contents(tmp_path):
     assert del_count.count_deletion_targets("rm -rf link/", "bash", tmp_path) == (3, [str(target)])
 
 
+def test_trailing_separator_on_link_survives_realpath_failure(tmp_path, monkeypatch):
+    """realpath 在链接上抛 OSError（如 junction 的 WinError 448）时不允许丢计数。"""
+    if sys.platform == "win32":
+        import _winapi
+
+        target = tmp_path / "target"
+        target.mkdir()
+        for number in range(3):
+            (target / str(number)).write_text("data", encoding="utf-8")
+        link = tmp_path / "link"
+        try:
+            _winapi.CreateJunction(str(target), str(link))
+        except OSError as exc:
+            pytest.skip(f"junction creation unavailable: {exc}")
+        cleanup = os.rmdir
+    else:
+        target = tmp_path / "target"
+        target.mkdir()
+        for number in range(3):
+            (target / str(number)).write_text("data", encoding="utf-8")
+        link = tmp_path / "link"
+        try:
+            link.symlink_to(target, target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"symlink creation unavailable: {exc}")
+        cleanup = os.unlink
+    monkeypatch.setattr(
+        del_count.os.path, "realpath",
+        lambda path, **kwargs: (_ for _ in ()).throw(OSError("simulated realpath failure")),
+    )
+    try:
+        count, paths = del_count.count_deletion_targets("rm -rf link/", "bash", tmp_path)
+        assert count == 3
+        assert paths == [str(target)]
+    finally:
+        cleanup(link)
+
+
+def test_unreadable_link_target_requests_approval_not_undercount(tmp_path, monkeypatch):
+    """realpath 与首个 readlink 都失败时,不允许退化成按链接本体计 1。
+
+    带尾部分隔符的链接删除按目标目录内容保守计数;链接读不出目标时
+    删除范围无法判定,必须转审批(_DeletionCountIncompleteError),否则
+    达阈值的批量删除会静默放行——正是该分支注释要避免的低估。
+    """
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "file").write_text("data", encoding="utf-8")
+    link = tmp_path / "link"
+    if sys.platform == "win32":
+        import _winapi
+
+        try:
+            _winapi.CreateJunction(str(target), str(link))
+        except OSError as exc:
+            pytest.skip(f"junction creation unavailable: {exc}")
+        cleanup = os.rmdir
+    else:
+        try:
+            link.symlink_to(target, target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"symlink creation unavailable: {exc}")
+        cleanup = os.unlink
+    monkeypatch.setattr(
+        del_count.os.path, "realpath",
+        lambda path, **kwargs: (_ for _ in ()).throw(OSError("simulated realpath failure")),
+    )
+    monkeypatch.setattr(
+        del_count.os, "readlink",
+        lambda path: (_ for _ in ()).throw(OSError("unreadable reparse data")),
+    )
+    try:
+        with pytest.raises(ValueError):
+            del_count.count_deletion_targets("rm -rf link/", "bash", tmp_path)
+        result = DeletionGuard(
+            soft_delete_enabled=True, workspace_root=str(tmp_path)
+        ).evaluate("bash", {"command": "rm -rf link/", "shell_type": "bash"})
+        assert result is not None and result.permission is PermissionLevel.ASK
+    finally:
+        cleanup(link)
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows directory junction")
 def test_native_junction_retains_identity_and_trailing_separator_range(tmp_path):
     import _winapi
