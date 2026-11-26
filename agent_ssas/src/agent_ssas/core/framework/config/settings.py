@@ -208,7 +208,10 @@ class AgentSSASConfig:
         for env_key, field_name in bool_fields.items():
             val = os.environ.get(env_key)
             if val is not None:
-                setattr(self, field_name, val.lower() == "true")
+                # 与本仓库 _config_bool(detection_modules 内两处)的既有约定
+                # 一致:{"1", "true", "yes", "on"} 视为真。此前只认 "true",
+                # 运维按惯例写 SSAS_ENABLED=1 会静默关闭整个安全子系统。
+                setattr(self, field_name, val.strip().lower() in {"1", "true", "yes", "on"})
 
         # int 字段映射(snake_case 命名)
         int_fields = {
