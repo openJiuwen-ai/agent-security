@@ -244,6 +244,30 @@ def test_wildcard_star_accepts_non_ascii_but_not_shell_metacharacters() -> None:
         assert not pattern.fullmatch(spliced), spliced
 
 
+def test_wildcard_interior_star_matches_interior_arguments() -> None:
+    """A trailing `` *`` must not stop interior ``*`` wildcards from expanding.
+
+    Regression: ``_compile_wildcard`` only expanded ``*`` in the ``else``
+    branch, so patterns ending in `` *`` left interior stars as regex
+    quantifiers and under-matched (e.g. "python * -c *" missed
+    "python foo.py -c x").
+    """
+    from agent_shield.tool_permission.toolguard.tiered import _compile_wildcard
+
+    pattern = _compile_wildcard("python * -c *")
+    assert pattern is not None
+    assert pattern.fullmatch("python foo.py -c x")
+    assert pattern.fullmatch("python a b -c y z")
+    # Shell metacharacters spliced into an interior wildcard must still be rejected.
+    assert not pattern.fullmatch("python foo.py -c x; rm y")
+
+    # The trailing-optional shape keeps working when there is no interior star.
+    trailing = _compile_wildcard("git *")
+    assert trailing is not None
+    assert trailing.fullmatch("git commit -m msg")
+    assert trailing.fullmatch("git")
+
+
 def test_rules_see_both_original_and_unwrapped_command() -> None:
     config = {
         **_ALLOW_BASH,
