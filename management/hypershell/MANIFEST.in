@@ -1,0 +1,9 @@
+include LICENSE README.md README.zh.md SECURITY.md CONTRIBUTING.md CHANGELOG.md
+include requirements-test.txt
+recursive-include docs *.md
+recursive-include examples *.py *.yaml *.md
+recursive-include scripts *.py *.sh
+recursive-include tests *.py
+recursive-include hypershell/web/templates *.html
+global-exclude __pycache__ *.py[cod]
+include THIRD_PARTY_NOTICES.md

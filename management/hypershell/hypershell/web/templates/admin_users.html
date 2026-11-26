@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}用户与角色 · HyperShell{% endblock %}
+{% block content %}
+<h1>用户与角色</h1>
+<p class="muted">在这里绑定用户角色（配置格式 v2）。表格展示当前配置授权，运行实例不会随角色保存热更新。更多字段可在“配置”页编辑。</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>用户</th><th>UID</th><th>运行身份</th><th>角色</th><th>配置授权</th><th>个人上限</th><th>配额</th></tr></thead>
+  <tbody>
+  {% for u in summary.users %}
+    <tr>
+      <td><strong>{{ u.id }}</strong><p class="cell-note"><a href="/admin/preview?user={{ u.id|urlencode }}&amp;mode=authorized">查看权限预览</a></p></td>
+      <td>{{ u.login_uid }}</td>
+      <td>{{ u.run_as_user }}:{{ u.run_as_group }}</td>
+      <td>{% for r in u.roles %}<span class="badge">{{ r }}</span> {% endfor %}{% if not u.roles %}<span class="muted">无</span>{% endif %}</td>
+      <td>{% for rid, mode in u.grants.items() %}{{ rid }}={{ mode }}<br>{% endfor %}</td>
+      <td>{% for rid, mode in u.resource_limits.items() %}{{ rid }}={{ mode }}<br>{% endfor %}{% if not u.resource_limits %}<span class="muted">—</span>{% endif %}</td>
+      <td class="muted">{{ u.quotas }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h2>角色定义</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>角色</th><th>说明</th><th>授权</th></tr></thead>
+  <tbody>
+  {% for r in summary.roles %}
+    <tr><td><strong>{{ r.id }}</strong></td><td class="muted">{{ r.description }}</td>
+        <td>{% for rid, mode in r.grants.items() %}{{ rid }}={{ mode }}<br>{% endfor %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if summary.version == 2 %}
+<h2>编辑用户角色</h2>
+<p class="muted">保存只修改配置，不会停止或重建实例。需要生效时，请回到总览停止旧实例，再按新配置启动。</p>
+{% for u in summary.users %}
+<form method="post" action="/admin/users/roles" class="row">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="user" value="{{ u.id }}">
+  <strong style="min-width:60px">{{ u.id }}</strong>
+  <span class="checks">
+    {% for r in summary.roles %}
+      <label><input type="checkbox" name="roles" value="{{ r.id }}" {% if r.id in u.roles %}checked{% endif %}> {{ r.id }}</label>
+    {% endfor %}
+  </span>
+  <button type="submit">保存角色</button>
+</form>
+{% endfor %}
+{% else %}
+<p class="muted">当前为 version: 1，不支持角色绑定；如需角色请将配置升级到 version: 2。</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,66 @@
+# Role-enabled preview example. Real deployment paths must be administrator-controlled.
+version: 2
+allowed_roots:
+- /srv/hypershell/users
+- /srv/hypershell/resources
+- /srv/hypershell/unapproved
+quotas:
+  cpu: 2
+  memory_bytes: 4294967296
+  pids: 256
+resources:
+  u1.state:
+    type: directory
+    host_path: /srv/hypershell/users/u1/agent-state
+    sandbox_path: /data
+    max_mode: read_write
+  u1.home:
+    type: directory
+    host_path: /srv/hypershell/users/u1/home
+    sandbox_path: /home/agent
+    max_mode: read_write
+  u1.project:
+    type: directory
+    host_path: /srv/hypershell/users/u1/project
+    sandbox_path: /workspace
+    max_mode: read_write
+  company-knowledge:
+    type: directory
+    host_path: /srv/hypershell/resources/knowledge
+    sandbox_path: /resources/knowledge
+    max_mode: read
+  desktop-project:
+    type: directory
+    host_path: /srv/hypershell/unapproved/desktop-project
+    sandbox_path: /resources/desktop-project
+    max_mode: read_write
+users:
+  u1:
+    login_uid: 1000
+    run_as_user: hs-u1
+    run_as_group: hs-u1
+    grants:
+      u1.state: read_write
+      u1.home: read_write
+      u1.project: read_write
+      desktop-project: read_write
+    required:
+      u1.state: read_write
+      u1.home: read_write
+    quotas:
+      cpu: 1
+      memory_bytes: 2147483648
+      pids: 128
+    roles:
+    - employee
+    - project_viewer
+    resource_limits:
+      desktop-project: read
+roles:
+  employee:
+    description: Shared company knowledge
+    grants:
+      company-knowledge: read
+  project_viewer:
+    grants:
+      desktop-project: read
