@@ -69,6 +69,10 @@ class FileGuardPathRule:
     source: str = ""
     explicit_axes: frozenset[str] = frozenset()
     ignore_case: bool = False
+    # Framework rules (e.g. discard sinks) are not a policy layer: composed
+    # evaluation applies them on their own pass instead of gating them on
+    # ``composition.source_order``.
+    framework: bool = False
 
     def matches(self, path: str) -> bool:
         pattern = self.path.replace("\\", "/")
@@ -844,17 +848,27 @@ class FileGuardChecker:
         hits: dict[str, list[tuple[int, PermissionLevel, FileGuardPathRule]]] = {
             source: [] for source in self._effective.source_order
         }
+        framework_hits: list[tuple[int, PermissionLevel, FileGuardPathRule]] = []
         for rule in self._effective.paths:
-            if rule.source not in hits or action not in rule.explicit_axes:
+            if action not in rule.explicit_axes:
                 continue
-            if rule.matches(path_posix):
-                length = len(rule.path.rstrip("/")) if rule.match == "prefix" else 0
-                hits[rule.source].append((length, _level_for_action(rule, action), rule))
+            if not rule.matches(path_posix):
+                continue
+            length = len(rule.path.rstrip("/")) if rule.match == "prefix" else 0
+            if rule.framework:
+                framework_hits.append((length, _level_for_action(rule, action), rule))
+                continue
+            if rule.source not in hits:
+                continue
+            hits[rule.source].append((length, _level_for_action(rule, action), rule))
 
         for source in self._effective.source_order:
             for _length, level, rule in hits[source]:
                 if level == PermissionLevel.DENY:
                     return level, f"file_guard:source:{source}:{rule.match}:{rule.path}"
+        for _length, level, rule in framework_hits:
+            if level == PermissionLevel.DENY:
+                return level, f"file_guard:framework:{rule.match}:{rule.path}"
         for source in self._effective.source_order:
             if not hits[source]:
                 continue
@@ -863,6 +877,11 @@ class FileGuardChecker:
             candidates = ([max(prefixes, key=lambda hit: hit[0])] if prefixes else []) + globs
             chosen = min(candidates, key=lambda hit: _LEVEL_ORDER[hit[1]])
             return chosen[1], f"file_guard:source:{source}:{chosen[2].match}:{chosen[2].path}"
+        if framework_hits:
+            # No configured layer has an opinion: a framework exemption still
+            # beats the path defaults (same outcome as the flat evaluation).
+            chosen = min(framework_hits, key=lambda hit: (_LEVEL_ORDER[hit[1]], -hit[0]))
+            return chosen[1], f"file_guard:framework:{chosen[2].match}:{chosen[2].path}"
         defaults = self._effective.defaults
         return getattr(defaults, action), "file_guard:defaults"
 
@@ -870,11 +889,9 @@ class FileGuardChecker:
 # Ordinary allow rules for discard sinks. Appended after mode selection so a
 # glob here cannot flip legacy configs into native.
 #
-# They are framework rules, so they carry an explicit layer id and all three
-# axes: composed evaluation only looks at rules whose ``source`` is listed in
-# ``composition.source_order`` and whose ``explicit_axes`` cover the action.
-# Without both, a composed config skipped them and every write to /dev/null
-# fell through to the path defaults (ASK).
+# They are framework rules, not a policy layer: ``framework=True`` keeps them
+# out of ``composition.source_order`` gating (see ``_resolve_composed``), and
+# the explicit axes keep them applicable to every action.
 _DEV_NULL_AXES = frozenset({"read", "write", "exec"})
 _DEV_NULL_ALLOW_RULES = (
     FileGuardPathRule(
@@ -885,6 +902,7 @@ _DEV_NULL_ALLOW_RULES = (
         match="prefix",
         source=SOURCE_BUILTIN,
         explicit_axes=_DEV_NULL_AXES,
+        framework=True,
     ),
     FileGuardPathRule(
         path="*/dev/null",
@@ -895,6 +913,7 @@ _DEV_NULL_ALLOW_RULES = (
         source=SOURCE_BUILTIN,
         explicit_axes=_DEV_NULL_AXES,
         ignore_case=True,
+        framework=True,
     ),
 )
 
