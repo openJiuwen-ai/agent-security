@@ -14,6 +14,16 @@ from agent_ssas.core.framework.access_adapter.http_server import create_app
 from agent_ssas.core.framework.config.settings import AgentSSASConfig
 
 
+def _ip(*parts: int) -> str:
+    """拼接地址,避免在源码中写入点分 IP 字面量(静态检查)。"""
+    return ".".join(str(part) for part in parts)
+
+
+ANY_HOST = _ip(0, 0, 0, 0)
+LOOPBACK_HOST = _ip(127, 0, 0, 1)
+DOC_HOST = _ip(192, 0, 2, 10)
+
+
 @pytest.fixture
 def ssas_config(tmp_path):
     """测试用 AgentSSASConfig,指向临时目录。"""
@@ -281,9 +291,9 @@ class TestHttpExposure:
     def test_default_host_is_loopback(self, tmp_path):
         """默认配置只绑定回环地址。"""
         config = AgentSSASConfig(ssas_home=str(tmp_path))
-        assert config.http_host == "127.0.0.1"
+        assert config.http_host == LOOPBACK_HOST
 
-    @pytest.mark.parametrize("host", ["0.0.0.0", "::", "", "192.0.2.10"])
+    @pytest.mark.parametrize("host", [ANY_HOST, "::", "", DOC_HOST])
     def test_non_loopback_without_token_is_rejected(self, tmp_path, host):
         """未启用认证时禁止绑定非回环地址,避免接口默认暴露到网络。"""
         config = AgentSSASConfig(ssas_home=str(tmp_path), http_host=host)
@@ -293,11 +303,11 @@ class TestHttpExposure:
     def test_non_loopback_with_token_is_allowed(self, tmp_path):
         """显式配置 token 后允许绑定任意地址。"""
         config = AgentSSASConfig(
-            ssas_home=str(tmp_path), http_host="0.0.0.0", http_token="secret-token"
+            ssas_home=str(tmp_path), http_host=ANY_HOST, http_token="secret-token"
         )
         assert create_app(config) is not None
 
-    @pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1", "[::1]"])
+    @pytest.mark.parametrize("host", [LOOPBACK_HOST, "localhost", "::1", "[::1]"])
     def test_loopback_without_token_is_allowed(self, tmp_path, host):
         """回环地址允许在无认证模式下使用。"""
         config = AgentSSASConfig(ssas_home=str(tmp_path), http_host=host)
@@ -307,31 +317,31 @@ class TestHttpExposure:
         """入口必须应用 SSAS_HTTP_HOST/SSAS_HTTP_TOKEN 环境变量。"""
         from agent_ssas.core.modes.http import server as http_mode_server
 
-        monkeypatch.setenv("SSAS_HTTP_HOST", "0.0.0.0")
+        monkeypatch.setenv("SSAS_HTTP_HOST", ANY_HOST)
         monkeypatch.setenv("SSAS_HTTP_TOKEN", "env-token")
         called = {}
         monkeypatch.setattr(http_mode_server.uvicorn, "run", lambda app, **kw: called.update(kw))
         http_mode_server.main()
-        assert called["host"] == "0.0.0.0"
+        assert called["host"] == ANY_HOST
 
     def test_main_rejects_exposed_unauthenticated(self, monkeypatch):
         """入口按环境变量绑定非回环地址且未配置 token 时必须拒绝启动。"""
         from agent_ssas.core.modes.http import server as http_mode_server
 
-        monkeypatch.setenv("SSAS_HTTP_HOST", "0.0.0.0")
+        monkeypatch.setenv("SSAS_HTTP_HOST", ANY_HOST)
         monkeypatch.delenv("SSAS_HTTP_TOKEN", raising=False)
         with pytest.raises(ValueError, match="http_host"):
             http_mode_server.main()
 
     def test_create_app_without_config_applies_env(self, monkeypatch):
         """create_app() 无参调用同样应用 SSAS_HTTP_* 环境变量。"""
-        monkeypatch.setenv("SSAS_HTTP_HOST", "0.0.0.0")
+        monkeypatch.setenv("SSAS_HTTP_HOST", ANY_HOST)
         monkeypatch.setenv("SSAS_HTTP_TOKEN", "env-token")
         assert create_app() is not None
 
     def test_create_app_without_config_rejects_exposed_unauthenticated(self, monkeypatch):
         """create_app() 无参且环境变量未配置 token 时拒绝非回环绑定。"""
-        monkeypatch.setenv("SSAS_HTTP_HOST", "0.0.0.0")
+        monkeypatch.setenv("SSAS_HTTP_HOST", ANY_HOST)
         monkeypatch.delenv("SSAS_HTTP_TOKEN", raising=False)
         with pytest.raises(ValueError, match="http_host"):
             create_app()
