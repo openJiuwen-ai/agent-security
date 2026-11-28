@@ -179,6 +179,39 @@ class TestTokenAuth:
             assert resp.status_code == 200
             assert "assessment" in resp.json()
 
+    @pytest.mark.parametrize("token", ["", "   ", "\t\n"])
+    def test_empty_token_is_rejected(self, tmp_path, token):
+        """空 token 视为配置错误:启动即失败,不能静默关闭认证。"""
+        config = AgentSSASConfig(ssas_home=str(tmp_path), http_token=token)
+        with pytest.raises(ValueError, match="http_token"):
+            create_app(config)
+
+    def test_empty_env_token_is_rejected(self, tmp_path, monkeypatch):
+        """SSAS_HTTP_TOKEN 为空字符串时同样拒绝启动。"""
+        monkeypatch.setenv("SSAS_HTTP_TOKEN", "")
+        config = AgentSSASConfig.from_dict({"ssas_home": str(tmp_path)})
+        assert config.http_token == ""
+        with pytest.raises(ValueError, match="http_token"):
+            create_app(config)
+
+    @pytest.mark.asyncio
+    async def test_surrounding_whitespace_in_token_is_ignored(self, tmp_path):
+        """token 两端空白被忽略,避免部署注入换行导致认证不可用。"""
+        config = AgentSSASConfig(ssas_home=str(tmp_path), http_token="  secret-token\n")
+        app = create_app(config)
+        transport = ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            ok = await client.post(
+                "/api/v1/events",
+                json=_make_raw_event_payload(),
+                headers={"Authorization": "Bearer secret-token"},
+            )
+            missing = await client.post("/api/v1/events", json=_make_raw_event_payload())
+            assert ok.status_code == 200
+            assert missing.status_code == 401
+
     @pytest.mark.asyncio
     async def test_token_configured_missing_header_returns_401(self, tmp_path):
         """配置 token 后无 Authorization 头返回 401。"""
@@ -238,6 +271,55 @@ class TestTokenAuth:
             resp = await client.get("/health")
             assert resp.status_code == 200
             assert resp.json() == {"status": "ok"}
+
+
+@pytest.mark.integration
+@pytest.mark.level1
+class TestHttpExposure:
+    """默认监听面与认证开关的组合约束。"""
+
+    def test_default_host_is_loopback(self, tmp_path):
+        """默认配置只绑定回环地址。"""
+        config = AgentSSASConfig(ssas_home=str(tmp_path))
+        assert config.http_host == "127.0.0.1"
+
+    @pytest.mark.parametrize("host", ["0.0.0.0", "::", "", "192.0.2.10"])
+    def test_non_loopback_without_token_is_rejected(self, tmp_path, host):
+        """未启用认证时禁止绑定非回环地址,避免接口默认暴露到网络。"""
+        config = AgentSSASConfig(ssas_home=str(tmp_path), http_host=host)
+        with pytest.raises(ValueError, match="http_host"):
+            create_app(config)
+
+    def test_non_loopback_with_token_is_allowed(self, tmp_path):
+        """显式配置 token 后允许绑定任意地址。"""
+        config = AgentSSASConfig(ssas_home=str(tmp_path), http_host="0.0.0.0", http_token="secret-token")
+        assert create_app(config) is not None
+
+    @pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1", "[::1]"])
+    def test_loopback_without_token_is_allowed(self, tmp_path, host):
+        """回环地址允许在无认证模式下使用。"""
+        config = AgentSSASConfig(ssas_home=str(tmp_path), http_host=host)
+        assert create_app(config) is not None
+
+    def test_main_applies_env_overrides(self, monkeypatch):
+        """入口必须应用 SSAS_HTTP_HOST/SSAS_HTTP_TOKEN 环境变量。"""
+        from agent_ssas.core.modes.http import server as http_mode_server
+
+        monkeypatch.setenv("SSAS_HTTP_HOST", "0.0.0.0")
+        monkeypatch.setenv("SSAS_HTTP_TOKEN", "env-token")
+        called = {}
+        monkeypatch.setattr(http_mode_server.uvicorn, "run", lambda app, **kw: called.update(kw))
+        http_mode_server.main()
+        assert called["host"] == "0.0.0.0"
+
+    def test_main_rejects_exposed_unauthenticated(self, monkeypatch):
+        """入口按环境变量绑定非回环地址且未配置 token 时必须拒绝启动。"""
+        from agent_ssas.core.modes.http import server as http_mode_server
+
+        monkeypatch.setenv("SSAS_HTTP_HOST", "0.0.0.0")
+        monkeypatch.delenv("SSAS_HTTP_TOKEN", raising=False)
+        with pytest.raises(ValueError, match="http_host"):
+            http_mode_server.main()
 
 
 @pytest.mark.integration

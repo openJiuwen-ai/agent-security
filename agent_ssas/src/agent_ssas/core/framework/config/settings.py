@@ -50,7 +50,8 @@ class AgentSSASConfig:
     http_endpoint: str = "http://localhost:8443"
     http_timeout: float = 5.0
     http_token: str | None = None
-    http_host: str = "0.0.0.0"
+    # 默认仅绑定回环地址:未配置 token 时管理端点不得暴露到网络。
+    http_host: str = "127.0.0.1"
     http_port: int = 8443
 
     # 存储(遵循 JIUWENSWARM_HOME 约定)
