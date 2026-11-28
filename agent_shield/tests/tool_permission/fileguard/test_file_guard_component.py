@@ -203,3 +203,94 @@ def test_dev_null_redirect_write_is_allowed_by_builtin_path() -> None:
             "bash", {"command": f"echo hi > {outside}", "shell_type": "bash"},
         ))
         assert asked.permission is PermissionLevel.ASK
+
+
+def test_dev_null_allow_survives_composed_source_order() -> None:
+    """The /dev/null discard-sink allow must hold in composed (stacked) mode too.
+
+    Regression: the builtin allow rules carry no ``source``, so
+    ``_resolve_composed`` used to skip them and fall back to ``defaults``,
+    turning ``2>/dev/null`` into an ASK even though plain mode allowed it.
+    """
+    permissions = {
+        "file_guard": {
+            "enabled": True,
+            "defaults": {"read": "allow", "write": "ask", "exec": "ask"},
+        },
+        "composition": {"source_order": ["user", "cloud", "builtin"]},
+    }
+    checker = build_file_guard_checker(permissions)
+    assert checker is not None
+    assert checker.evaluate_accesses([(Path("/dev/null"), "write")]) is None
+    # An ordinary path still falls through to the composed defaults (ask).
+    other = checker.evaluate_accesses([(Path("/tmp/other.log"), "write")])
+    assert other is not None and other.permission is PermissionLevel.ASK
+
+
+def test_dev_null_allow_survives_composed_without_builtin_layer() -> None:
+    """Even when ``source_order`` omits ``builtin`` the discard sink stays allowed."""
+    permissions = {
+        "file_guard": {
+            "enabled": True,
+            "defaults": {"read": "allow", "write": "ask", "exec": "ask"},
+        },
+        "composition": {"source_order": ["user", "cloud"]},
+    }
+    checker = build_file_guard_checker(permissions)
+    assert checker is not None
+    assert checker.evaluate_accesses([(Path("/dev/null"), "write")]) is None
+
+
+def test_unscoped_deny_is_not_reversed_in_composed_mode() -> None:
+    """A ``paths`` entry without ``layer`` keeps DENY in composed mode.
+
+    Regression: the unscoped branch only collected ALLOW rules, so an explicit
+    deny was dropped and the composed verdict fell through to the builtin
+    /dev/null allow -- i.e. composed mode was more permissive than plain mode.
+    """
+    target = Path("/dev/null").resolve()
+    base = {
+        "file_guard": {
+            "enabled": True,
+            "defaults": {"read": "allow", "write": "allow", "exec": "allow"},
+            "paths": [{"path": str(target), "read": "deny", "write": "deny", "exec": "deny"}],
+        },
+    }
+    plain = build_file_guard_checker(base)
+    assert plain is not None
+    plain_result = plain.evaluate_accesses([(target, "write")])
+    assert plain_result is not None
+    assert plain_result.permission is PermissionLevel.DENY
+
+    composed = build_file_guard_checker(
+        dict(base, composition={"source_order": ["user", "cloud", "builtin"]}),
+    )
+    assert composed is not None
+    composed_result = composed.evaluate_accesses([(target, "write")])
+    assert composed_result is not None
+    assert composed_result.permission is PermissionLevel.DENY
+
+
+def test_unscoped_ask_is_not_reversed_in_composed_mode() -> None:
+    """A ``paths`` entry without ``layer`` keeps ASK instead of becoming ALLOW."""
+    target = Path("/dev/null").resolve()
+    base = {
+        "file_guard": {
+            "enabled": True,
+            "defaults": {"read": "allow", "write": "allow", "exec": "allow"},
+            "paths": [{"path": str(target), "read": "ask", "write": "ask", "exec": "ask"}],
+        },
+    }
+    plain = build_file_guard_checker(base)
+    assert plain is not None
+    plain_result = plain.evaluate_accesses([(target, "write")])
+    assert plain_result is not None
+    assert plain_result.permission is PermissionLevel.ASK
+
+    composed = build_file_guard_checker(
+        dict(base, composition={"source_order": ["user", "cloud", "builtin"]}),
+    )
+    assert composed is not None
+    result = composed.evaluate_accesses([(target, "write")])
+    assert result is not None
+    assert result.permission is PermissionLevel.ASK

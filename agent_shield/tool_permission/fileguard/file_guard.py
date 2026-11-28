@@ -844,8 +844,21 @@ class FileGuardChecker:
         hits: dict[str, list[tuple[int, PermissionLevel, FileGuardPathRule]]] = {
             source: [] for source in self._effective.source_order
         }
+        # Rules synthesised outside the layer model (e.g. the discard-sink
+        # allow rules for /dev/null) and hand-written ``paths`` entries that
+        # carry no ``layer`` both end up with ``source == ""`` in composed
+        # mode.  They are evaluated as a lowest-priority pseudo-layer: their
+        # DENY joins the same "deny wins" pass as a real layer, while ASK /
+        # ALLOW only apply when no layer matched.  Keeping only the ALLOW half
+        # (as an earlier revision did) silently dropped an explicit ``deny``
+        # and reversed it into an allow, i.e. composed mode ended up more
+        # permissive than non-composed mode.
+        unscoped: list[tuple[int, PermissionLevel, FileGuardPathRule]] = []
         for rule in self._effective.paths:
             if rule.source not in hits or action not in rule.explicit_axes:
+                if not rule.source and rule.matches(path_posix):
+                    length = len(rule.path.rstrip("/")) if rule.match == "prefix" else 0
+                    unscoped.append((length, _level_for_action(rule, action), rule))
                 continue
             if rule.matches(path_posix):
                 length = len(rule.path.rstrip("/")) if rule.match == "prefix" else 0
@@ -855,6 +868,9 @@ class FileGuardChecker:
             for _length, level, rule in hits[source]:
                 if level == PermissionLevel.DENY:
                     return level, f"file_guard:source:{source}:{rule.match}:{rule.path}"
+        for _length, level, rule in unscoped:
+            if level == PermissionLevel.DENY:
+                return level, f"file_guard:unscoped:{rule.match}:{rule.path}"
         for source in self._effective.source_order:
             if not hits[source]:
                 continue
@@ -863,6 +879,20 @@ class FileGuardChecker:
             candidates = ([max(prefixes, key=lambda hit: hit[0])] if prefixes else []) + globs
             chosen = min(candidates, key=lambda hit: _LEVEL_ORDER[hit[1]])
             return chosen[1], f"file_guard:source:{source}:{chosen[2].match}:{chosen[2].path}"
+        if unscoped:
+            # Same shape as a layer: the longest prefix wins, then the strictest
+            # level among the remaining glob hits.  Every candidate sharing the
+            # longest prefix is kept so an ask cannot be outvoted by a sibling
+            # allow that merely happens to be appended later.
+            prefixes = [hit for hit in unscoped if hit[2].match == "prefix"]
+            globs = [hit for hit in unscoped if hit[2].match == "glob"]
+            if prefixes:
+                longest = max(hit[0] for hit in prefixes)
+                candidates = [hit for hit in prefixes if hit[0] == longest] + globs
+            else:
+                candidates = globs
+            chosen = min(candidates, key=lambda hit: _LEVEL_ORDER[hit[1]])
+            return chosen[1], f"file_guard:unscoped:{chosen[2].match}:{chosen[2].path}"
         defaults = self._effective.defaults
         return getattr(defaults, action), "file_guard:defaults"
 
