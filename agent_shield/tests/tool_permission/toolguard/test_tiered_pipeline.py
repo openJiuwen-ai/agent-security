@@ -244,6 +244,19 @@ def test_wildcard_star_accepts_non_ascii_but_not_shell_metacharacters() -> None:
         assert not pattern.fullmatch(spliced), spliced
 
 
+def test_wildcard_star_in_the_middle_of_a_pattern_is_a_glob() -> None:
+    from agent_shield.tool_permission.toolguard.tiered import _compile_wildcard
+
+    pattern = _compile_wildcard("python * -c *")
+    assert pattern is not None
+    # Glob semantics: each " *" is its own argument slot, so "python a.py -c x"
+    # matches while "python -c x" (one space) does not.
+    for allowed in ("python a.py -c x", "python a b -c c d", "python  -c  x"):
+        assert pattern.fullmatch(allowed), allowed
+    for rejected in ("python -c x", "python a.py -d x", "python -c x; rm y"):
+        assert not pattern.fullmatch(rejected), rejected
+
+
 def test_rules_see_both_original_and_unwrapped_command() -> None:
     config = {
         **_ALLOW_BASH,
