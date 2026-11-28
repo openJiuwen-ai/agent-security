@@ -12,6 +12,7 @@ import httpx
 import pytest
 from agent_ssas.core.framework.access_adapter.http_server import create_app
 from agent_ssas.core.framework.config.settings import AgentSSASConfig
+from agent_ssas.core.modes.http import server as http_mode_server
 from httpx import ASGITransport
 
 # 运行时生成,避免在源码中写入 token 字面量(静态检查)。
@@ -312,8 +313,6 @@ class TestHttpExposure:
 
     def test_main_applies_env_overrides(self, monkeypatch):
         """入口必须应用 SSAS_HTTP_HOST/SSAS_HTTP_TOKEN 环境变量。"""
-        from agent_ssas.core.modes.http import server as http_mode_server
-
         monkeypatch.setenv("SSAS_HTTP_HOST", ANY_HOST)
         monkeypatch.setenv("SSAS_HTTP_TOKEN", TEST_TOKEN)
         called = {}
@@ -323,8 +322,6 @@ class TestHttpExposure:
 
     def test_main_rejects_exposed_unauthenticated(self, monkeypatch):
         """入口按环境变量绑定非回环地址且未配置 token 时必须拒绝启动。"""
-        from agent_ssas.core.modes.http import server as http_mode_server
-
         monkeypatch.setenv("SSAS_HTTP_HOST", ANY_HOST)
         monkeypatch.delenv("SSAS_HTTP_TOKEN", raising=False)
         with pytest.raises(ValueError, match="http_host"):
