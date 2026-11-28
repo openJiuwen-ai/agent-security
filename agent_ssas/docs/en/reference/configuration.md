@@ -33,8 +33,8 @@ Environment variable parsing rules:
 | `mode` | str (`inprocess` / `http`) | `inprocess` | `SSAS_MODE` | Operating mode |
 | `http_endpoint` | str | `http://localhost:8443` | `SSAS_HTTP_ENDPOINT` | HTTP mode server address (used by the client) |
 | `http_timeout` | float | `5.0` | `SSAS_HTTP_TIMEOUT` | HTTP client timeout in seconds |
-| `http_token` | str / None | `None` | `SSAS_HTTP_TOKEN` | Bearer token authentication; enabled when not None |
-| `http_host` | str | `0.0.0.0` | `SSAS_HTTP_HOST` | HTTP server listen address |
+| `http_token` | str / None | `None` | `SSAS_HTTP_TOKEN` | Bearer token authentication; enabled when not None and non-empty, an empty string is a configuration error |
+| `http_host` | str | `127.0.0.1` | `SSAS_HTTP_HOST` | HTTP server listen address; a non-loopback address requires `http_token` |
 | `http_port` | int | `8443` | `SSAS_HTTP_PORT` | HTTP server port |
 | `ssas_home` | str / None | `None` | `SSAS_HOME` | Storage root; when None, resolved via the environment variable chain |
 | `storage_backend` | str | `sqlite` | — | Storage backend (Reserved; only `sqlite` is currently supported, other values are ineffective and log a warning) |
@@ -104,8 +104,8 @@ ssas:
   # HTTP mode only (effective when mode=http)
   http_endpoint: "http://localhost:8443"
   http_timeout: 5.0
-  http_token:                  # Empty (Null) disables authentication; setting a value enables Bearer token authentication
-  http_host: "0.0.0.0"
+  http_token:                  # Unset (Null) disables authentication; a configured value must be non-empty
+  http_host: "127.0.0.1"       # A non-loopback address (e.g. 0.0.0.0) requires http_token
   http_port: 8443
 
   # Per detection module configuration

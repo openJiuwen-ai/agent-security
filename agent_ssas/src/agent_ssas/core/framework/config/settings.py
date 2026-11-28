@@ -31,6 +31,10 @@ class AgentSSASMode(str, Enum):
     HTTP = "http"
 
 
+# 默认只绑定回环地址,避免未认证的管理端点暴露到网络。
+_DEFAULT_HTTP_HOST = "127.0.0.1"
+
+
 @dataclass
 class AgentSSASConfig:
     """AgentSSAS 子系统配置。
@@ -50,7 +54,8 @@ class AgentSSASConfig:
     http_endpoint: str = "http://localhost:8443"
     http_timeout: float = 5.0
     http_token: str | None = None
-    http_host: str = "0.0.0.0"
+    # 默认仅绑定回环地址:未配置 token 时管理端点不得暴露到网络。
+    http_host: str = _DEFAULT_HTTP_HOST
     http_port: int = 8443
 
     # 存储(遵循 JIUWENSWARM_HOME 约定)

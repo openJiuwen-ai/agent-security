@@ -23,7 +23,9 @@ from agent_ssas.core.framework.config.settings import AgentSSASConfig
 
 def main() -> None:
     """启动 AgentSSAS HTTP 服务端。"""
-    config = AgentSSASConfig()
+    # 走 from_dict(None) 而不是直接构造,确保 SSAS_HTTP_HOST/PORT/TOKEN 等
+    # 环境变量覆盖生效(直接构造不会调用 _apply_env_overrides)。
+    config = AgentSSASConfig.from_dict(None)
     app = create_app(config)
     uvicorn.run(
         app,

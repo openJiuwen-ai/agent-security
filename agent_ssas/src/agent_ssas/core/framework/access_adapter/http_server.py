@@ -13,9 +13,12 @@ AgentSSASRemoteBackend 转发的事件,调用进程内 AgentSSASBackend
 
 from __future__ import annotations
 
+import hmac
+import ipaddress
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -31,10 +34,43 @@ logger = logging.getLogger(__name__)
 _NO_AUTH_PATHS: frozenset[str] = frozenset({"/health"})
 
 
+def _is_loopback_host(host: str) -> bool:
+    """Whether ``host`` can only be reached from the local machine."""
+    value = (host or "").strip()
+    if value.startswith("[") and value.endswith("]"):
+        value = value[1:-1]
+    if value.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        return False
+
+
+def _normalized_token(token: str | None) -> str | None:
+    """Return the token to enforce, or ``None`` when authentication is off.
+
+    ``None`` disables authentication; an empty or whitespace-only value is a
+    misconfiguration and must fail closed instead of silently disabling the
+    middleware.
+    """
+    if token is None:
+        return None
+    if not isinstance(token, str):
+        raise ValueError("ssas.http_token must be a string or null")
+    normalized = token.strip()
+    if not normalized:
+        raise ValueError(
+            "ssas.http_token is set but empty; remove it to disable authentication "
+            "or configure a non-empty token"
+        )
+    return normalized
+
+
 class TokenAuthMiddleware(BaseHTTPMiddleware):
     """HTTP Bearer token 认证中间件。
 
-    当 AgentSSASConfig.http_token 不为 None 时,校验请求的 Authorization 头
+    当 ``app.state.ssas_token`` 不为 None 时,校验请求的 Authorization 头
     是否为 "Bearer <token>"。未携带或不匹配时返回 401。
     /health 端点免认证。
     """
@@ -44,15 +80,17 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
         if request.url.path in _NO_AUTH_PATHS:
             return await call_next(request)
 
-        config: AgentSSASConfig | None = getattr(request.app.state, "ssas_config", None)
-        expected_token = config.http_token if config else None
-        if expected_token:
-            auth_header = request.headers.get("Authorization", "")
-            if auth_header != f"Bearer {expected_token}":
-                return JSONResponse(
-                    status_code=401,
-                    content={"detail": "Unauthorized"},
-                )
+        expected_token: str | None = getattr(request.app.state, "ssas_token", None)
+        if expected_token is None:
+            return await call_next(request)
+
+        supplied = request.headers.get("Authorization", "").encode("latin-1", "replace")
+        expected = f"Bearer {expected_token}".encode()
+        if not hmac.compare_digest(supplied, expected):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Unauthorized"},
+            )
         return await call_next(request)
 
 
@@ -79,7 +117,8 @@ def create_app(config: AgentSSASConfig | None = None) -> FastAPI:
         FastAPI 应用实例,已注册 POST /api/v1/events 端点。
     """
     if config is None:
-        config = AgentSSASConfig()
+        # 无参调用同样要走 from_dict,否则 SSAS_HTTP_* 环境变量不会生效。
+        config = AgentSSASConfig.from_dict(None)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -110,8 +149,19 @@ def create_app(config: AgentSSASConfig | None = None) -> FastAPI:
     app.state.ssas_config = config
     app.state.ssas_backend: AgentSSASBackend | None = None
 
+    # 空 token 视为配置错误并拒绝启动,避免"配置了认证却静默放行"。
+    token = _normalized_token(config.http_token)
+    app.state.ssas_token = token
+
+    # 未启用认证时只允许回环绑定,避免事件上报接口默认暴露到网络。
+    if token is None and not _is_loopback_host(config.http_host):
+        raise ValueError(
+            "ssas.http_host must be a loopback address when ssas.http_token is not "
+            "configured; bind a loopback address or configure a non-empty token"
+        )
+
     # 当配置了 http_token 时,启用 Bearer token 认证中间件
-    if config.http_token is not None:
+    if token is not None:
         app.add_middleware(TokenAuthMiddleware)
         logger.info("SSAS HTTP 服务端启用 Bearer token 认证")
 

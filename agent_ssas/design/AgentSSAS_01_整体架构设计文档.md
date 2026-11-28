@@ -629,7 +629,7 @@ HTTP 服务模式下 FastAPI 暴露以下端点。0.1版本实现事件上报端
 
 > **0.1版本说明**：0.1版本 HTTP 服务模式只需实现 `POST /api/v1/events` 与 `GET /health` 端点，满足 AgentSSASSecurityRail 上报事件并获取安全决策、以及部署侧健康检查的需求。查询、告警确认、大屏、WebSocket 推送等端点为后续版本拓展支持。
 >
-> **HTTP 认证**：当 `AgentSSASConfig.http_token` 不为 None 时，服务端启用 Bearer token 认证中间件（`TokenAuthMiddleware`），未携带有效 `Authorization: Bearer <token>` 头的请求返回 401。`/health` 端点免认证。
+> **HTTP 认证**：当 `AgentSSASConfig.http_token` 为非空字符串时，服务端启用 Bearer token 认证中间件（`TokenAuthMiddleware`），未携带有效 `Authorization: Bearer <token>` 头的请求返回 401。`/health` 端点免认证；空串视为配置错误，启动时报错。未配置 token 时仅允许绑定回环地址。
 
 ### 6.4 AgentSSASConfig 配置
 
@@ -662,8 +662,8 @@ ssas:
   # HTTP 模式专用
   http_endpoint: "http://localhost:8443"
   http_timeout: 5.0
-  http_token:                    # Bearer token 认证（默认空/None 时无认证）
-  http_host: "0.0.0.0"
+  http_token:                    # Bearer token 认证（不配置/None 时无认证；配置后必须非空）
+  http_host: "127.0.0.1"         # 非回环地址必须同时配置 http_token
   http_port: 8443
 ```
 

@@ -16,10 +16,11 @@ Related documentation:
 python -m agent_ssas.core.modes.http.server
 ```
 
-Uses the `AgentSSASConfig()` defaults and listens on `0.0.0.0:8443`. The listen address, port, and storage root can be overridden via environment variables:
+Uses the `AgentSSASConfig()` defaults and listens on `127.0.0.1:8443`. The listen address, port, and storage root can be overridden via environment variables (a non-loopback address requires `SSAS_HTTP_TOKEN`):
 
 ```bash
 SSAS_HTTP_HOST=0.0.0.0
+SSAS_HTTP_TOKEN=<token>   # required when binding to a non-loopback address
 SSAS_HTTP_PORT=8443
 SSAS_HOME=<storage root>
 ```
@@ -153,9 +154,9 @@ Response:
 
 ## Bearer Token Authentication
 
-When `AgentSSASConfig.http_token` is not `None`, the server enables the Bearer token authentication middleware (`TokenAuthMiddleware`):
+When `AgentSSASConfig.http_token` is a non-empty string, the server enables the Bearer token authentication middleware (`TokenAuthMiddleware`):
 
-- All requests except `/health` must carry an `Authorization: Bearer <token>` header, and the token must exactly match the configured value.
+- All requests except `/health` must carry an `Authorization: Bearer <token>` header, and the token must match the configured value (surrounding whitespace in the configured value is trimmed).
 - A missing, malformed, or mismatched token returns:
 
 ```text
@@ -172,7 +173,7 @@ ssas:
   http_token: "my-secret-token"
 ```
 
-When `http_token` is left at the default `None` (empty in YAML), authentication is disabled and all requests pass through.
+When `http_token` is left at the default `None` (not configured), authentication is disabled. An explicitly empty value (YAML `""` or `SSAS_HTTP_TOKEN=`) is rejected at startup instead of silently disabling authentication.
 
 ## Lazy Initialization Behavior
 

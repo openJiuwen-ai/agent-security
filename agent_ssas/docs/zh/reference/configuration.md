@@ -33,8 +33,8 @@ AgentSSAS 的配置由 `AgentSSASConfig`（定义于 `src/agent_ssas/core/framew
 | `mode` | str（`inprocess` / `http`） | `inprocess` | `SSAS_MODE` | 运行模式 |
 | `http_endpoint` | str | `http://localhost:8443` | `SSAS_HTTP_ENDPOINT` | HTTP 模式服务端地址（客户端用） |
 | `http_timeout` | float | `5.0` | `SSAS_HTTP_TIMEOUT` | HTTP 客户端超时秒数 |
-| `http_token` | str / None | `None` | `SSAS_HTTP_TOKEN` | Bearer token 认证；非 None 时启用 |
-| `http_host` | str | `0.0.0.0` | `SSAS_HTTP_HOST` | HTTP 服务端监听地址 |
+| `http_token` | str / None | `None` | `SSAS_HTTP_TOKEN` | Bearer token 认证；非 None 且非空时启用，空串视为配置错误 |
+| `http_host` | str | `127.0.0.1` | `SSAS_HTTP_HOST` | HTTP 服务端监听地址；非回环地址必须同时配置 `http_token` |
 | `http_port` | int | `8443` | `SSAS_HTTP_PORT` | HTTP 服务端端口 |
 | `ssas_home` | str / None | `None` | `SSAS_HOME` | 存储根目录；None 时按环境变量链解析 |
 | `storage_backend` | str | `sqlite` | — | 存储后端（预留，当前仅支持 `sqlite`，其他值不生效并记 warning） |
@@ -104,8 +104,8 @@ ssas:
   # HTTP 模式专用(mode=http 时生效)
   http_endpoint: "http://localhost:8443"
   http_timeout: 5.0
-  http_token:                  # 留空(Null)不启用认证; 填写后启用 Bearer token 认证
-  http_host: "0.0.0.0"
+  http_token:                  # 不配置(Null)不启用认证; 配置后必须非空并启用 Bearer token
+  http_host: "127.0.0.1"       # 非回环地址(如 0.0.0.0)必须同时配置 http_token
   http_port: 8443
 
   # 各检测模块专属配置

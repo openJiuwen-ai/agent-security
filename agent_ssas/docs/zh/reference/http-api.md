@@ -16,10 +16,11 @@ HTTP 服务模式（`mode: http`）下，AgentSSASCore 以独立 FastAPI 服务�
 python -m agent_ssas.core.modes.http.server
 ```
 
-使用 `AgentSSASConfig()` 默认配置，监听 `0.0.0.0:8443`。可通过环境变量覆盖监听地址、端口与存储根目录：
+使用 `AgentSSASConfig()` 默认配置，监听 `127.0.0.1:8443`。可通过环境变量覆盖监听地址、端口与存储根目录（绑定非回环地址时必须同时配置 `SSAS_HTTP_TOKEN`）：
 
 ```bash
 SSAS_HTTP_HOST=0.0.0.0
+SSAS_HTTP_TOKEN=<token>   # 绑定非回环地址时必填
 SSAS_HTTP_PORT=8443
 SSAS_HOME=<存储根目录>
 ```
@@ -153,9 +154,9 @@ curl http://localhost:8443/health
 
 ## Bearer token 认证
 
-当 `AgentSSASConfig.http_token` 不为 `None` 时，服务端启用 Bearer token 认证中间件（`TokenAuthMiddleware`）：
+当 `AgentSSASConfig.http_token` 为非空字符串时，服务端启用 Bearer token 认证中间件（`TokenAuthMiddleware`）：
 
-- 除 `/health` 外的所有请求必须携带 `Authorization: Bearer <token>` 请求头，且 token 与配置值完全一致。
+- 除 `/health` 外的所有请求必须携带 `Authorization: Bearer <token>` 请求头，且 token 与配置值一致（配置值两端空白会被裁剪）。
 - 未携带、格式错误或不匹配时返回：
 
 ```text
@@ -172,7 +173,7 @@ ssas:
   http_token: "my-secret-token"
 ```
 
-`http_token` 为默认值 `None`（YAML 中留空）时不启用认证，所有请求直接放行。
+`http_token` 保持默认值 `None`（不配置）时不启用认证；若显式配置为空串（YAML `""` 或 `SSAS_HTTP_TOKEN=`），启动时报错，不会静默放行。
 
 ## 懒初始化行为
 
