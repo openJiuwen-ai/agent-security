@@ -61,6 +61,72 @@ def test_composed_config_still_allows_discard_sinks() -> None:
         assert other.permission is PermissionLevel.ASK
 
 
+def test_composed_config_without_builtin_layer_still_allows_discard_sinks() -> None:
+    """The discard-sink exemption is a framework rule, not a policy layer.
+
+    ``composition.source_order`` only selects policy layers; a config that
+    omits ``builtin`` (or lists ``user`` alone) must not turn /dev/null writes
+    back into ASK.
+    """
+
+    for order in (["user", "cloud"], ["user"]):
+        with tempfile.TemporaryDirectory() as workspace:
+            perms = {
+                "file_guard": {
+                    "enabled": True,
+                    "defaults": {"read": "ask", "write": "ask", "exec": "ask"},
+                    "workspace": {"read": "allow", "write": "allow", "exec": "allow"},
+                },
+                "composition": {
+                    "schema_version": 1,
+                    "revision": "synthetic",
+                    "source_order": order,
+                },
+            }
+            checker = build_file_guard_checker(perms, workspace_root=Path(workspace))
+            assert checker is not None
+            assert checker.evaluate_accesses([(Path("/dev/null"), "write")]) is None
+            assert checker.evaluate_accesses([(Path("/dev/null"), "read")]) is None
+
+            # The exemption stays specific to discard sinks.
+            other = checker.evaluate_accesses([(Path("/tmp/other.txt"), "write")])
+            assert other is not None
+            assert other.permission is PermissionLevel.ASK
+
+
+def test_composed_config_explicit_layer_rule_beats_framework_exemption() -> None:
+    """A framework exemption fills the gap but never overrides a layer rule."""
+
+    with tempfile.TemporaryDirectory() as workspace:
+        perms = {
+            "file_guard": {
+                "enabled": True,
+                "defaults": {"read": "ask", "write": "ask", "exec": "ask"},
+                "paths": [
+                    {
+                        "path": "/dev/null",
+                        "match": "glob",
+                        "layer": "user",
+                        "read": "ask",
+                        "write": "ask",
+                        "exec": "ask",
+                    },
+                ],
+                "workspace": {"read": "allow", "write": "allow", "exec": "allow"},
+            },
+            "composition": {
+                "schema_version": 1,
+                "revision": "synthetic",
+                "source_order": ["user"],
+            },
+        }
+        checker = build_file_guard_checker(perms, workspace_root=Path(workspace))
+        assert checker is not None
+        result = checker.evaluate_accesses([(Path("/dev/null"), "write")])
+        assert result is not None
+        assert result.permission is PermissionLevel.ASK
+
+
 def _path_engine(workspace: str, file_guard: dict, tools: dict | None = None) -> PermissionEngine:
     return PermissionEngine({
         "file_guard": file_guard,
