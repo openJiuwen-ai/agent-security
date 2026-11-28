@@ -16,8 +16,9 @@ from __future__ import annotations
 import hmac
 import ipaddress
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -84,7 +85,7 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         supplied = request.headers.get("Authorization", "").encode("latin-1", "replace")
-        expected = f"Bearer {expected_token}".encode("utf-8")
+        expected = f"Bearer {expected_token}".encode()
         if not hmac.compare_digest(supplied, expected):
             return JSONResponse(
                 status_code=401,
@@ -155,8 +156,8 @@ def create_app(config: AgentSSASConfig | None = None) -> FastAPI:
     # 未启用认证时只允许回环绑定,避免事件上报接口默认暴露到网络。
     if token is None and not _is_loopback_host(config.http_host):
         raise ValueError(
-            f"ssas.http_host={config.http_host!r} exposes the unauthenticated "
-            "AgentSSAS HTTP API; bind a loopback address or configure ssas.http_token"
+            "ssas.http_host must be a loopback address when ssas.http_token is not "
+            "configured; bind a loopback address or configure a non-empty token"
         )
 
     # 当配置了 http_token 时,启用 Bearer token 认证中间件

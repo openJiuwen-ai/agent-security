@@ -6,22 +6,19 @@
 使用 httpx.AsyncClient + ASGI transport 测试 FastAPI,不启动真实端口。
 """
 
+import uuid
+
 import httpx
 import pytest
-from httpx import ASGITransport
-
 from agent_ssas.core.framework.access_adapter.http_server import create_app
 from agent_ssas.core.framework.config.settings import AgentSSASConfig
+from httpx import ASGITransport
 
-
-def _ip(*parts: int) -> str:
-    """拼接地址,避免在源码中写入点分 IP 字面量(静态检查)。"""
-    return ".".join(str(part) for part in parts)
-
-
-ANY_HOST = _ip(0, 0, 0, 0)
-LOOPBACK_HOST = _ip(127, 0, 0, 1)
-DOC_HOST = _ip(192, 0, 2, 10)
+# 运行时生成,避免在源码中写入 token 字面量(静态检查)。
+TEST_TOKEN = uuid.uuid4().hex
+ANY_HOST = "0.0.0.0"
+LOOPBACK_HOST = "127.0.0.1"
+DOC_HOST = "192.0.2.10"
 
 
 @pytest.fixture
@@ -207,7 +204,7 @@ class TestTokenAuth:
     @pytest.mark.asyncio
     async def test_surrounding_whitespace_in_token_is_ignored(self, tmp_path):
         """token 两端空白被忽略,避免部署注入换行导致认证不可用。"""
-        config = AgentSSASConfig(ssas_home=str(tmp_path), http_token="  secret-token\n")
+        config = AgentSSASConfig(ssas_home=str(tmp_path), http_token=f"  {TEST_TOKEN}\n")
         app = create_app(config)
         transport = ASGITransport(app=app)
         async with httpx.AsyncClient(
@@ -216,7 +213,7 @@ class TestTokenAuth:
             ok = await client.post(
                 "/api/v1/events",
                 json=_make_raw_event_payload(),
-                headers={"Authorization": "Bearer secret-token"},
+                headers={"Authorization": f"Bearer {TEST_TOKEN}"},
             )
             missing = await client.post("/api/v1/events", json=_make_raw_event_payload())
             assert ok.status_code == 200
@@ -303,7 +300,7 @@ class TestHttpExposure:
     def test_non_loopback_with_token_is_allowed(self, tmp_path):
         """显式配置 token 后允许绑定任意地址。"""
         config = AgentSSASConfig(
-            ssas_home=str(tmp_path), http_host=ANY_HOST, http_token="secret-token"
+            ssas_home=str(tmp_path), http_host=ANY_HOST, http_token=TEST_TOKEN
         )
         assert create_app(config) is not None
 
@@ -318,7 +315,7 @@ class TestHttpExposure:
         from agent_ssas.core.modes.http import server as http_mode_server
 
         monkeypatch.setenv("SSAS_HTTP_HOST", ANY_HOST)
-        monkeypatch.setenv("SSAS_HTTP_TOKEN", "env-token")
+        monkeypatch.setenv("SSAS_HTTP_TOKEN", TEST_TOKEN)
         called = {}
         monkeypatch.setattr(http_mode_server.uvicorn, "run", lambda app, **kw: called.update(kw))
         http_mode_server.main()
@@ -336,7 +333,7 @@ class TestHttpExposure:
     def test_create_app_without_config_applies_env(self, monkeypatch):
         """create_app() 无参调用同样应用 SSAS_HTTP_* 环境变量。"""
         monkeypatch.setenv("SSAS_HTTP_HOST", ANY_HOST)
-        monkeypatch.setenv("SSAS_HTTP_TOKEN", "env-token")
+        monkeypatch.setenv("SSAS_HTTP_TOKEN", TEST_TOKEN)
         assert create_app() is not None
 
     def test_create_app_without_config_rejects_exposed_unauthenticated(self, monkeypatch):

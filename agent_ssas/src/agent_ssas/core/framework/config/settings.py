@@ -31,8 +31,8 @@ class AgentSSASMode(str, Enum):
     HTTP = "http"
 
 
-# 拼接回环地址,避免在源码中写入点分 IP 字面量(静态检查)。
-_DEFAULT_HTTP_HOST = ".".join(("127", "0", "0", "1"))
+# 默认只绑定回环地址,避免未认证的管理端点暴露到网络。
+_DEFAULT_HTTP_HOST = "127.0.0.1"
 
 
 @dataclass
