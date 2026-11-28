@@ -243,3 +243,39 @@ class TestAgentSSASConfig:
         monkeypatch.setenv("JIUWENSWARM_HOME", "/tmp/jw_home")
         resolved = c._resolve_ssas_home()  # pylint: disable=protected-access
         assert resolved == Path("/tmp/jw_home")
+
+    @staticmethod
+    @pytest.mark.unit
+    @pytest.mark.level1
+    @pytest.mark.parametrize("value,expected", [
+        ("1", True), ("true", True), ("TRUE", True), ("Yes", True), ("on", True),
+        (" true ", True),
+        ("0", False), ("false", False), ("no", False), ("off", False), ("", False),
+    ])
+    def test_bool_env_override_accepts_common_truthy_spellings(
+        monkeypatch: pytest.MonkeyPatch,
+        value: str,
+        expected: bool,
+    ) -> None:
+        """验证 SSAS_ENABLED 环境变量的布尔解析约定。
+
+        与本仓库 _config_bool 的约定一致:{"1", "true", "yes", "on"} 为真。
+        此前只认字面 "true",运维按惯例写 SSAS_ENABLED=1 会静默关闭安全子系统。
+        """
+        monkeypatch.setenv("SSAS_ENABLED", value)
+        c = AgentSSASConfig.from_dict(None)
+        assert c.enabled is expected
+
+    @staticmethod
+    @pytest.mark.unit
+    @pytest.mark.level1
+    def test_exception_hooks_bool_env_override(
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """验证 SSAS_ENABLE_EXCEPTION_HOOKS 与同一布尔解析约定。"""
+        monkeypatch.setenv("SSAS_ENABLE_EXCEPTION_HOOKS", "1")
+        c = AgentSSASConfig.from_dict(None)
+        assert c.enable_exception_hooks is True
+        monkeypatch.setenv("SSAS_ENABLE_EXCEPTION_HOOKS", "off")
+        c2 = AgentSSASConfig.from_dict(None)
+        assert c2.enable_exception_hooks is False
