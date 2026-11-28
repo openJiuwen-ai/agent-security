@@ -293,14 +293,19 @@ class InferencePrivacyProxy:
             route = self._match_route(original_path)
             if route is None:
                 self._log(f"[{conn_id}] No route matched for path: {original_path}")
+                # Content-Length 必须与实际写出的字节数一致:路径长度不定,且
+                # original_path 可含非 ASCII(decode(errors="replace") 的产物),
+                # len() 数的是码点、encode() 写的是 UTF-8 字节,二者不等会让
+                # keep-alive 连接的后续字节被错切成下一条响应。
+                error_body = f"No route matched: {original_path}"
+                error_body_bytes = error_body.encode()
                 error_response = (
                     "HTTP/1.1 404 Not Found\r\n"
                     "Content-Type: text/plain\r\n"
-                    "Content-Length: 20\r\n"
+                    f"Content-Length: {len(error_body_bytes)}\r\n"
                     "\r\n"
-                    f"No route matched: {original_path}"
-                )
-                client_writer.write(error_response.encode())
+                ).encode() + error_body_bytes
+                client_writer.write(error_response)
                 await client_writer.drain()
                 return
 
