@@ -29,7 +29,7 @@ from .path_extract import (
 from .path_policy import (
     strictest as tiered_strictest,
 )
-from .policy_sources import SOURCE_USER
+from .policy_sources import SOURCE_BUILTIN, SOURCE_USER
 from .tool_categories import (
     is_shell_tool,
     shell_tools_from_config,
@@ -869,6 +869,13 @@ class FileGuardChecker:
 
 # Ordinary allow rules for discard sinks. Appended after mode selection so a
 # glob here cannot flip legacy configs into native.
+#
+# They are framework rules, so they carry an explicit layer id and all three
+# axes: composed evaluation only looks at rules whose ``source`` is listed in
+# ``composition.source_order`` and whose ``explicit_axes`` cover the action.
+# Without both, a composed config skipped them and every write to /dev/null
+# fell through to the path defaults (ASK).
+_DEV_NULL_AXES = frozenset({"read", "write", "exec"})
 _DEV_NULL_ALLOW_RULES = (
     FileGuardPathRule(
         path="/dev/null",
@@ -876,6 +883,8 @@ _DEV_NULL_ALLOW_RULES = (
         write=PermissionLevel.ALLOW,
         exec=PermissionLevel.ALLOW,
         match="prefix",
+        source=SOURCE_BUILTIN,
+        explicit_axes=_DEV_NULL_AXES,
     ),
     FileGuardPathRule(
         path="*/dev/null",
@@ -883,6 +892,8 @@ _DEV_NULL_ALLOW_RULES = (
         write=PermissionLevel.ALLOW,
         exec=PermissionLevel.ALLOW,
         match="glob",
+        source=SOURCE_BUILTIN,
+        explicit_axes=_DEV_NULL_AXES,
         ignore_case=True,
     ),
 )
