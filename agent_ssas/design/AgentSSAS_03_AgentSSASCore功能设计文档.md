@@ -231,8 +231,8 @@ AgentSSASCore 子系统的插件化架构支持两类生态参与者：
 | 全局开关 | `enabled` | bool | `True` | SSAS 总开关，设为 `False` 不加载 AgentSSASSecurityRail |
 | 运行模式 | `mode` | AgentSSASMode | `INPROCESS` | `inprocess`（进程内库模式）或 `http`（独立 HTTP 服务模式） |
 | HTTP 模式 | `http_endpoint` | str | `http://localhost:8443` | AgentSSASRemoteBackend 连接的服务端地址 |
-| HTTP 模式 | `http_token` | str \| None | `None` | HTTP 模式客户端认证令牌 |
-| HTTP 模式 | `http_host` | str | `0.0.0.0` | FastAPI 服务端监听地址 |
+| HTTP 模式 | `http_token` | str \| None | `None` | HTTP 模式客户端认证令牌（非空才启用认证） |
+| HTTP 模式 | `http_host` | str | `127.0.0.1` | FastAPI 服务端监听地址（非回环地址必须配置 `http_token`） |
 | HTTP 模式 | `http_port` | int | `8443` | FastAPI 服务端监听端口 |
 | HTTP 模式 | `http_timeout` | float | `5.0` | HTTP 调用超时秒数，超时后 fail-open |
 | 存储 | `ssas_home` | str \| None | `None` | 存储根目录，`None` 时按 `SSAS_HOME` → `JIUWENSWARM_DATA_DIR` → `JIUWENSWARM_HOME` → `~/.jiuwenswarm` 顺序解析 |
@@ -306,8 +306,8 @@ AgentSSASCore 子系统的插件化架构支持两类生态参与者：
 | `mode` | AgentSSASMode | `INPROCESS` | 运行模式 |
 | `http_endpoint` | str | `"http://localhost:8443"` | HTTP 模式服务端地址 |
 | `http_timeout` | float | `5.0` | HTTP 请求超时（秒） |
-| `http_token` | str \| None | `None` | HTTP 认证 token |
-| `http_host` | str | `"0.0.0.0"` | HTTP 服务监听地址 |
+| `http_token` | str \| None | `None` | HTTP 认证 token（非空才启用认证） |
+| `http_host` | str | `"127.0.0.1"` | HTTP 服务监听地址（非回环地址必须配置 `http_token`） |
 | `http_port` | int | `8443` | HTTP 服务监听端口 |
 | `ssas_home` | str \| None | `None` | 存储根目录，None → 自动解析 `SSAS_HOME` / `JIUWENSWARM_DATA_DIR` / `JIUWENSWARM_HOME` / `~/.jiuwenswarm` |
 | `storage_backend` | str | `"sqlite"` | 存储后端类型（预留字段，当前版本未生效，无消费代码；实际后端固定为 SQLiteStore。`from_dict` 传入非 `sqlite` 值时记 warning，不抛错，值按传入记录） |
@@ -2881,7 +2881,7 @@ HTTP 服务模式下，所有接口都基于单一 `report_event` 设计。FastA
 
 - **核心单一接口**：`POST /api/v1/events` 是 `report_event` 的 HTTP 映射，是唯一的"事件上报 + 风险评估返回"通道。
 - **事件类型由字段区分**：请求体中的 `raw_event.common.event_type` 字段区分生命周期事件（`event_class="lifecycle"`）和安全检测事件（`event_class="security"`）。
-- **认证**：当 `AgentSSASConfig.http_token` 不为 `None` 时，启用 Bearer token 认证中间件，未携带有效 `Authorization: Bearer <token>` 头的请求返回 401；`/health` 端点免认证。
+- **认证**：当 `AgentSSASConfig.http_token` 为非空字符串时，启用 Bearer token 认证中间件，未携带有效 `Authorization: Bearer <token>` 头的请求返回 401；`/health` 端点免认证。空串视为配置错误，启动时报错；未配置 token 时仅允许绑定回环地址。
 - **查询端点为辅助**：GET/PATCH/WS 端点是审计、告警确认、实时推送的辅助端点，不参与 `report_event` 的决策返回路径。
 
 ---

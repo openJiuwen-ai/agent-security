@@ -116,7 +116,8 @@ def create_app(config: AgentSSASConfig | None = None) -> FastAPI:
         FastAPI 应用实例,已注册 POST /api/v1/events 端点。
     """
     if config is None:
-        config = AgentSSASConfig()
+        # 无参调用同样要走 from_dict,否则 SSAS_HTTP_* 环境变量不会生效。
+        config = AgentSSASConfig.from_dict(None)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

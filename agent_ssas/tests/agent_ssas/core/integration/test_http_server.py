@@ -292,7 +292,9 @@ class TestHttpExposure:
 
     def test_non_loopback_with_token_is_allowed(self, tmp_path):
         """显式配置 token 后允许绑定任意地址。"""
-        config = AgentSSASConfig(ssas_home=str(tmp_path), http_host="0.0.0.0", http_token="secret-token")
+        config = AgentSSASConfig(
+            ssas_home=str(tmp_path), http_host="0.0.0.0", http_token="secret-token"
+        )
         assert create_app(config) is not None
 
     @pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1", "[::1]"])
@@ -320,6 +322,19 @@ class TestHttpExposure:
         monkeypatch.delenv("SSAS_HTTP_TOKEN", raising=False)
         with pytest.raises(ValueError, match="http_host"):
             http_mode_server.main()
+
+    def test_create_app_without_config_applies_env(self, monkeypatch):
+        """create_app() 无参调用同样应用 SSAS_HTTP_* 环境变量。"""
+        monkeypatch.setenv("SSAS_HTTP_HOST", "0.0.0.0")
+        monkeypatch.setenv("SSAS_HTTP_TOKEN", "env-token")
+        assert create_app() is not None
+
+    def test_create_app_without_config_rejects_exposed_unauthenticated(self, monkeypatch):
+        """create_app() 无参且环境变量未配置 token 时拒绝非回环绑定。"""
+        monkeypatch.setenv("SSAS_HTTP_HOST", "0.0.0.0")
+        monkeypatch.delenv("SSAS_HTTP_TOKEN", raising=False)
+        with pytest.raises(ValueError, match="http_host"):
+            create_app()
 
 
 @pytest.mark.integration
